@@ -8,7 +8,7 @@ use ox_core::render::format_value;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use wordcraft_doc::para::OBJ;
-use wordcraft_doc::props::Underline;
+use wordcraft_doc::props::{Underline, VMerge};
 use wordcraft_doc::{Block, CharProps, Document, InlineObject, Paragraph, Table, TextColor};
 
 use crate::{CAPTION_SUFFIX, PROP_DOCUMENT, PROP_REVISION, TAG_PREFIX, WordError, revision_of};
@@ -140,6 +140,33 @@ fn canonical(runs: &[Value]) -> Vec<Value> {
 
 /// A second block with the same tag (pasted copy): the original's match becomes a best guess, and
 /// the copy is imported as new content.
+/// A list's id in the model: the name Milleleaf gave its definition on export, else `list-<num>`.
+fn list_id(doc: &Document, num: u32) -> String {
+    doc.numbering
+        .abstract_of(num)
+        .and_then(|a| a.name.clone())
+        .filter(|n| n.starts_with("list-"))
+        .unwrap_or_else(|| format!("list-{num}"))
+}
+
+/// A list's definition as data: its levels (WordCraft's `Level`), with the list's own overrides.
+fn list_def(doc: &Document, num: u32) -> Option<Value> {
+    let a = doc.numbering.abstract_of(num)?;
+    let n = doc.numbering.num(num)?;
+    let mut levels = a.levels.clone();
+    for (l, def) in &n.level_overrides {
+        if let Some(x) = levels.get_mut(*l as usize) {
+            *x = def.clone();
+        }
+    }
+    for (l, start) in &n.start_overrides {
+        if let Some(x) = levels.get_mut(*l as usize) {
+            x.start = *start;
+        }
+    }
+    Some(json!({ "levels": serde_json::to_value(levels).ok()? }))
+}
+
 fn duplicate(report: &mut ImportReport, path: &str, what: &str) {
     let already = report
         .matches
@@ -265,11 +292,54 @@ fn cell_text(c: &wordcraft_doc::Cell) -> String {
         .to_string()
 }
 
+/// The table's text on its grid: a cell spanning columns fills its first column and leaves the
+/// rest empty, so every row has a cell for every column.
 fn table_grid(t: &Table) -> Vec<Vec<String>> {
     t.rows
         .iter()
-        .map(|r| r.cells.iter().map(cell_text).collect())
+        .map(|r| {
+            r.cells
+                .iter()
+                .flat_map(|c| {
+                    std::iter::once(cell_text(c)).chain((1..c.props.span.max(1)).map(|_| String::new()))
+                })
+                .collect()
+        })
         .collect()
+}
+
+/// Merged cells on the grid: `{row, col, rows, cols}`, row 0 being the first (header) row.
+fn table_merges(t: &Table) -> Vec<Value> {
+    // (row, grid column) → (vmerge, span) for every cell.
+    let mut at: Vec<Vec<(VMerge, u32)>> = Vec::new();
+    for r in &t.rows {
+        let mut row = Vec::new();
+        for c in &r.cells {
+            row.push((c.props.vmerge, c.props.span.max(1)));
+            row.extend((1..c.props.span.max(1)).map(|_| (VMerge::None, 0)));
+        }
+        at.push(row);
+    }
+    let mut out = Vec::new();
+    for (ri, row) in at.iter().enumerate() {
+        for (ci, &(vm, span)) in row.iter().enumerate() {
+            if span == 0 || vm == VMerge::Continue {
+                continue;
+            }
+            let rows = if vm == VMerge::Restart {
+                1 + at[ri + 1..]
+                    .iter()
+                    .take_while(|r| r.get(ci).is_some_and(|c| c.0 == VMerge::Continue))
+                    .count()
+            } else {
+                1
+            };
+            if rows > 1 || span > 1 {
+                out.push(json!({ "row": ri, "col": ci, "rows": rows, "cols": span }));
+            }
+        }
+    }
+    out
 }
 
 /// The grid a composed `office::data::table` exports as: header names, then formatted rows.
@@ -386,7 +456,8 @@ pub fn adopt(
     let (mut layer, report) = import_into(&empty, edited, header, true)?;
     match layer.data.iter_mut().find(|n| n.path == path) {
         Some(n) => {
-            n.attributes.insert("word::document".into(), json!({ "title": title }));
+            let wd = n.attributes.entry("word::document").or_insert_with(|| json!({}));
+            wd["title"] = json!(title);
         }
         None => layer.data.insert(
             0,
@@ -441,6 +512,8 @@ fn import_into(
     };
 
     let mut nodes: Vec<Node> = Vec::new();
+    // Lists the paragraphs use: list id → numbering instance in the edited file.
+    let mut lists_used: BTreeMap<String, u32> = BTreeMap::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut captions_seen: BTreeSet<String> = BTreeSet::new();
     let mut new_order: Vec<String> = Vec::new();
@@ -580,7 +653,12 @@ fn import_into(
                         runs.push(json!({ "field": new_name }));
                     }
                 }
-                let new_para = json!({ "style": style, "runs": runs });
+                let mut new_para = json!({ "style": style, "runs": runs });
+                if let Some(n) = p.props.numbering.filter(|n| n.num != 0) {
+                    let id = list_id(edited, n.num);
+                    lists_used.entry(id.clone()).or_insert(n.num);
+                    new_para["list"] = json!({ "id": id, "level": n.level });
+                }
                 match existing {
                     Some(c) => {
                         seen.insert(c.path.clone());
@@ -602,7 +680,8 @@ fn import_into(
                                     .unwrap_or(&[]),
                             );
                         let same_style =
-                            old.get("style").and_then(Value::as_str).unwrap_or("Normal") == style;
+                            old.get("style").and_then(Value::as_str).unwrap_or("Normal") == style
+                                && old.get("list") == new_para.get("list");
                         if !(same_runs && same_style) || !children.is_empty() {
                             // Keep the original field runs' formatting where the field is unchanged.
                             let mut merged = new_para.clone();
@@ -723,11 +802,15 @@ fn import_into(
                             grid.first()
                         ));
                         let header = grid.first().cloned().unwrap_or_default();
+                        // How the table looks: merged cells, and whether its first row is a
+                        // header (its text becomes the column names either way).
+                        let mut wt = Map::new();
                         if !t.rows.first().is_some_and(|r| r.props.header) {
-                            report.warnings.push(format!(
-                                "table starting `{}`: its first row becomes the column names, which export as a bold header row",
-                                header.join(" | ").chars().take(40).collect::<String>()
-                            ));
+                            wt.insert("header".into(), json!(false));
+                        }
+                        let merges = table_merges(t);
+                        if !merges.is_empty() {
+                            wt.insert("merges".into(), json!(merges));
                         }
                         let body: Vec<&Vec<String>> = grid.iter().skip(1).collect();
                         let cols: Vec<Value> = header
@@ -769,7 +852,7 @@ fn import_into(
                                     "office::data::table".into(),
                                     json!({ "columns": cols, "rows": rows }),
                                 ),
-                                ("word::table".into(), json!({})),
+                                ("word::table".into(), Value::Object(wt)),
                             ]),
                             ..Node::default()
                         });
@@ -819,6 +902,25 @@ fn import_into(
                 ..Node::default()
             },
         );
+    }
+    // Definitions of lists the document doesn't have yet (a list made in Word, or adopted).
+    let wd = obj(node, "word::document").cloned().unwrap_or_default();
+    let known = wd.get("lists").and_then(Value::as_object).cloned().unwrap_or_default();
+    let new_lists: Map<String, Value> = lists_used
+        .iter()
+        .filter(|(id, _)| !known.contains_key(*id))
+        .filter_map(|(id, num)| Some((id.clone(), list_def(edited, *num)?)))
+        .collect();
+    if !new_lists.is_empty() {
+        let mut wd = wd.clone();
+        let mut all = known.clone();
+        all.extend(new_lists);
+        wd.insert("lists".into(), Value::Object(all));
+        nodes.push(Node {
+            path: node.path.clone(),
+            attributes: Map::from_iter([("word::document".into(), Value::Object(wd))]),
+            ..Node::default()
+        });
     }
     // Merge statements about the same path (a paragraph changed twice, a caption and a table…).
     let mut merged: Vec<Node> = Vec::new();

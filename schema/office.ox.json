@@ -167,6 +167,10 @@
                 ]
               },
               "optional": true
+            },
+            "lists": {
+              "dataType": "Object",
+              "optional": true
             }
           }
         }
@@ -223,6 +227,20 @@
                   }
                 }
               }
+            },
+            "list": {
+              "dataType": "Object",
+              "optional": true,
+              "objectRestrictions": {
+                "values": {
+                  "id": {
+                    "dataType": "String"
+                  },
+                  "level": {
+                    "dataType": "Integer"
+                  }
+                }
+              }
             }
           }
         }
@@ -240,6 +258,35 @@
             "caption": {
               "dataType": "String",
               "optional": true
+            },
+            "header": {
+              "dataType": "Boolean",
+              "optional": true
+            },
+            "merges": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "row": {
+                        "dataType": "Integer"
+                      },
+                      "col": {
+                        "dataType": "Integer"
+                      },
+                      "rows": {
+                        "dataType": "Integer"
+                      },
+                      "cols": {
+                        "dataType": "Integer"
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

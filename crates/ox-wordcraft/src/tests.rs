@@ -415,3 +415,60 @@ fn unicode_survives_a_docx_round_trip_code_point_for_code_point() {
     let got: Vec<String> = back.body.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text().to_string()).filter(|t| !t.is_empty()).collect();
     assert_eq!(got, cases.iter().map(|s| s.to_string()).collect::<Vec<_>>());
 }
+
+#[test]
+fn adopt_carries_lists_merged_cells_and_a_plain_first_row() {
+    use wordcraft_doc::numbering::ListKind;
+    use wordcraft_doc::props::{NumRef, VMerge};
+    use wordcraft_doc::{Cell, Table};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let num = doc.numbering.add_list(ListKind::Numbered);
+    for (text, level) in [("first", 0u8), ("nested", 1), ("second", 0)] {
+        let mut p = Paragraph::with_text(text, CharProps::default());
+        p.props.numbering = Some(NumRef { num, level });
+        doc.body.push(Arc::new(Block::Para(p)));
+    }
+    // 3 × 3: row 1 spans columns 0–1; column 2 is merged down rows 1–2. The first row isn't a header.
+    let mut t = Table::new(3, 3, 400.0);
+    for (r, row) in [["a", "b", "c"], ["wide", "", "tall"], ["x", "y", ""]].iter().enumerate() {
+        for (c, text) in row.iter().enumerate() {
+            t.rows[r].cells[c] = Cell::with_text(text);
+        }
+    }
+    t.rows[1].cells[0].props.span = 2;
+    t.rows[1].cells.remove(1);
+    t.rows[1].cells[1].props.vmerge = VMerge::Restart;
+    t.rows[2].cells[2].props.vmerge = VMerge::Continue;
+    doc.body.push(Arc::new(Block::Table(t)));
+    let doc = from_docx(&to_docx(&doc).unwrap()).unwrap();
+
+    let (layer, _) = crate::adopt(&doc, "adopted", "lists", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    let node = find(&trees, "adopted").expect("document");
+    let (out, report) = export(node, &[]).expect("exports");
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let out = from_docx(&to_docx(&out).unwrap()).unwrap();
+
+    let levels: Vec<(u8, wordcraft_doc::section::NumFormat)> = out
+        .body
+        .iter()
+        .filter_map(|b| b.as_para()?.props.numbering)
+        .map(|n| (n.level, out.numbering.level(n.num, n.level).unwrap().format))
+        .collect();
+    let want: Vec<_> = [0u8, 1, 0].iter().map(|&l| (l, doc.numbering.level(num, l).unwrap().format)).collect();
+    assert_eq!(levels, want);
+    let t = out.body.iter().find_map(|b| match &**b {
+        Block::Table(t) => Some(t),
+        _ => None,
+    });
+    let t = t.expect("table");
+    assert!(!t.rows[0].props.header, "a plain first row stays plain");
+    assert_eq!(t.rows[1].cells.len(), 2);
+    assert_eq!(t.rows[1].cells[0].props.span, 2);
+    assert_eq!(t.rows[1].cells[1].props.vmerge, VMerge::Restart);
+    assert_eq!(t.rows[2].cells[2].props.vmerge, VMerge::Continue);
+}

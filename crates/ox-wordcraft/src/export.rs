@@ -1,11 +1,14 @@
 //! Composed `word::document` → WordCraft `Document`.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use ox_core::Composed;
 use ox_core::render::{field_text, format_value};
 use serde_json::{Map, Value};
+use wordcraft_doc::numbering::Level;
 use wordcraft_doc::para::OBJ;
+use wordcraft_doc::props::{NumRef, VMerge};
 use wordcraft_doc::props::Underline;
 use wordcraft_doc::{
     Align, Block, Cell, CharProps, ContentControl, ControlKind, ControlLock, CustomProp, Document,
@@ -121,6 +124,7 @@ fn style_id(doc: &Document, name: &str) -> Option<String> {
 fn paragraph_block(
     doc: &Document,
     node: &Composed,
+    lists: &HashMap<String, u32>,
     report: &mut ExportReport,
 ) -> Result<Paragraph, WordError> {
     let wp = obj(node, "word::paragraph").cloned().unwrap_or_default();
@@ -132,6 +136,17 @@ fn paragraph_block(
             "{}: style `{style_name}` not in the document; used Normal",
             node.path
         )),
+    }
+    if let Some(l) = wp.get("list") {
+        let id = l.get("id").and_then(Value::as_str).unwrap_or("");
+        let level = l.get("level").and_then(Value::as_u64).unwrap_or(0).min(8) as u8;
+        match lists.get(id) {
+            Some(&num) => p.props.numbering = Some(NumRef { num, level }),
+            None => report.warnings.push(format!(
+                "{}: list `{id}` isn't defined in the document; exported without numbering",
+                node.path
+            )),
+        }
     }
     push_obj(
         &mut p,
@@ -191,6 +206,40 @@ fn paragraph_block(
     Ok(p)
 }
 
+/// Applies `word::table.merges` (`{row, col, rows, cols}` on the grid) to a table with one cell
+/// per grid column: the first cell spans, the cells it covers go (across) or continue (down).
+fn merge_cells(t: &mut Table, merges: Option<&Value>, path: &str, report: &mut ExportReport) {
+    let mut drop: Vec<Vec<usize>> = vec![Vec::new(); t.rows.len()];
+    for m in merges.and_then(Value::as_array).into_iter().flatten() {
+        let g = |k: &str| m.get(k).and_then(Value::as_u64).unwrap_or(1) as usize;
+        let (r0, c0, rows, cols) = (g("row"), g("col"), g("rows").max(1), g("cols").max(1));
+        if r0 + rows > t.rows.len() || t.rows[r0..r0 + rows].iter().any(|r| c0 + cols > r.cells.len()) {
+            report.warnings.push(format!("{path}: merged cells at row {r0}, column {c0} are outside the table; not merged"));
+            continue;
+        }
+        for r in r0..r0 + rows {
+            let row = &mut t.rows[r].cells;
+            let width: Option<f32> = row[c0..c0 + cols].iter().map(|c| c.props.width).sum();
+            let first = &mut row[c0].props;
+            first.span = cols as u32;
+            first.width = width;
+            first.vmerge = match (rows > 1, r == r0) {
+                (false, _) => VMerge::None,
+                (true, true) => VMerge::Restart,
+                (true, false) => VMerge::Continue,
+            };
+            drop[r].extend(c0 + 1..c0 + cols);
+        }
+    }
+    for (row, d) in t.rows.iter_mut().zip(drop) {
+        let mut i = 0;
+        row.cells.retain(|_| {
+            i += 1;
+            !d.contains(&(i - 1))
+        });
+    }
+}
+
 fn table_block(
     doc: &Document,
     node: &Composed,
@@ -247,8 +296,11 @@ fn table_block(
         c.blocks = vec![para_block(p)];
         c
     };
+    // The first row holds the column names; it is a (bold, repeating) header row unless the
+    // table says otherwise.
+    let is_header = wt.get("header").and_then(Value::as_bool) != Some(false);
     if let Some(header) = t.rows.first_mut() {
-        header.props.header = true;
+        header.props.header = is_header;
         for (i, c) in header.cells.iter_mut().enumerate() {
             let name = cols
                 .get(i)
@@ -256,7 +308,7 @@ fn table_block(
                 .and_then(Value::as_str)
                 .unwrap_or("");
             let w = c.props.width;
-            *c = cell(name, true, numeric(i));
+            *c = cell(name, is_header, numeric(i));
             c.props.width = w;
         }
     }
@@ -276,6 +328,7 @@ fn table_block(
             c.props.width = w;
         }
     }
+    merge_cells(&mut t, wt.get("merges"), &node.path, report);
     let linked = obj(node, "ox::link")
         .and_then(|l| l.get("source"))
         .and_then(Value::as_str);
@@ -337,9 +390,25 @@ pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportRep
     }
     let text_width =
         doc.last_section.page_w - doc.last_section.margin_left - doc.last_section.margin_right;
+    // Lists: each definition becomes a numbering instance, named by its id so an import can
+    // recognise it.
+    let mut lists: HashMap<String, u32> = HashMap::new();
+    for (id, def) in wd.get("lists").and_then(Value::as_object).into_iter().flatten() {
+        let levels: Vec<Level> = def
+            .get("levels")
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        match doc.numbering.try_add_levels(Some(id.clone()), levels) {
+            Ok(num) if def.get("levels").is_some() => {
+                lists.insert(id.clone(), num);
+            }
+            _ => report.warnings.push(format!("list `{id}`: its definition can't be read; its paragraphs export without numbering")),
+        }
+    }
     for child in &node.children {
         if child.attributes.contains_key("word::paragraph") {
-            let p = paragraph_block(&doc, child, &mut report)?;
+            let p = paragraph_block(&doc, child, &lists, &mut report)?;
             doc.body.push(para_block(p));
         } else if child.attributes.contains_key("office::data::table") {
             for b in table_block(&doc, child, text_width, &mut report)? {

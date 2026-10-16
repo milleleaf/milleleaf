@@ -574,6 +574,8 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             // The export applies its own named styles; direct formatting is kept on runs.
             ("styles used", None),
             ("bold text chars", None),
+            ("list paragraphs (numPr)", None),
+            ("merged cells (gridSpan/vMerge)", None),
             ("fields", Some("only Milleleaf's own field codes are carried; other fields keep their shown text")),
         ],
         "xlsx" => &[
