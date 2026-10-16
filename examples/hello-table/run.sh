@@ -197,7 +197,9 @@ $OX validate "$TMP/proj" | tail -1
 #    the store composes exactly like the stack files with the same edits
 $OX compose "$TMP/proj" --out "$TMP/a.json" 2> /dev/null
 $OX compose with-edits.ox.json --out "$TMP/b.json" 2> /dev/null
-node -e 'const r = (f) => JSON.stringify(JSON.parse(require("fs").readFileSync(f)).roots);
+# Object key order carries no meaning (the store keeps layers in RFC 8785 form, keys sorted); arrays keep order.
+node -e 'const sorted = (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v;
+  const r = (f) => JSON.stringify(JSON.parse(require("fs").readFileSync(f)).roots, sorted);
   if (r(process.argv[1]) !== r(process.argv[2])) { console.error("store and stack files compose differently"); process.exit(1); }
   console.log("checked: the store composes exactly like with-edits.ox.json");' "$TMP/a.json" "$TMP/b.json"
 rm -rf "$TMP"; unset OX_KEYS

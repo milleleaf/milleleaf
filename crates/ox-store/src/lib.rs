@@ -76,6 +76,8 @@ pub enum StoreError {
     AlreadyCommitted(String),
     #[error("a stack can't be committed as a layer; use `ox init --from` to import a stack")]
     StackAsLayer,
+    #[error("a layer must be I-JSON so its canonical form is exact: {0}")]
+    NotIJson(String),
     #[error("the head is locked by another commit ({0}, held by `{1}` = pid host); if no commit is running there, delete it")]
     Busy(PathBuf, String),
     #[error("{0}")]
@@ -96,12 +98,30 @@ pub fn hash_of(bytes: &[u8]) -> String {
         .to_string()
 }
 
-/// Bytes a layer is stored as. Its hash is the hash of these bytes; signatures are kept apart,
-/// so signing never changes it.
+/// Bytes a layer is stored as: its RFC 8785 (JCS) canonical JSON. Its name is the SHA-256 of these
+/// bytes, so a byte-for-byte copy keeps the name, and a program that only has the parsed JSON
+/// (a re-saved file, a database, a browser store) gets the same bytes back by canonicalising it.
+/// Signatures are kept apart, so signing never changes it.
 pub fn layer_bytes(layer: &Layer) -> Vec<u8> {
-    let mut v = serde_json::to_vec_pretty(layer).expect("layers serialize");
-    v.push(b'\n');
-    v
+    serde_json_canonicalizer::to_vec(layer).expect("layers serialize")
+}
+
+/// Largest integer every JSON implementation reads exactly (I-JSON, RFC 7493).
+const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
+
+/// A number canonical JSON can't carry exactly (an integer beyond ±2^53), by its path in the layer.
+fn not_ijson(v: &serde_json::Value, at: &str) -> Option<String> {
+    use serde_json::Value;
+    match v {
+        Value::Number(n) => {
+            let too_big = n.as_u64().is_some_and(|u| u > MAX_SAFE_INTEGER)
+                || n.as_i64().is_some_and(|i| i.unsigned_abs() > MAX_SAFE_INTEGER);
+            too_big.then(|| format!("{at}: {n} is beyond ±2^53; store it as a string"))
+        }
+        Value::Array(a) => a.iter().enumerate().find_map(|(i, x)| not_ijson(x, &format!("{at}[{i}]"))),
+        Value::Object(m) => m.iter().find_map(|(k, x)| not_ijson(x, &format!("{at}.{k}"))),
+        _ => None,
+    }
 }
 
 /// What one layer touches, written once when it's stored (`.ox/index/<hash>.json`).
@@ -279,6 +299,9 @@ impl Store {
             return Err(StoreError::StackAsLayer);
         }
         let dropped = std::mem::take(&mut layer.imports).len();
+        if let Some(why) = not_ijson(&serde_json::to_value(&layer).expect("json"), "layer") {
+            return Err(StoreError::NotIJson(why));
+        }
         let bytes = layer_bytes(&layer);
         let hash = hash_of(&bytes);
         let path = self.layer_path(&hash);

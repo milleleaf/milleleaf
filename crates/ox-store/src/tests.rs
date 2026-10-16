@@ -465,3 +465,35 @@ fn a_lock_left_by_a_dead_process_is_cleared_a_live_one_is_not() {
     }
     let _ = fs::remove_file(&lock);
 }
+
+#[test]
+fn layers_are_stored_canonical_so_a_resaved_copy_keeps_its_name() {
+    // RFC 8785 §3.2.2's example: sorted keys, ECMAScript numbers, minimal string escaping.
+    let input = r#"{"numbers":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001],"string":"\u20ac$\u000F\u000aA'\u0042\u0022\u005c\\\"\/","literals":[null,true,false]}"#;
+    let v: Value = serde_json::from_str(input).unwrap();
+    let canon = String::from_utf8(serde_json_canonicalizer::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(canon, r#"{"literals":[null,true,false],"numbers":[333333333.3333333,1e+30,4.5,0.002,1e-27],"string":"€$\u000f\nA'B\"\\\\\"/"}"#);
+
+    let t = TempDir::new("canonical");
+    let s = hello(&t);
+    let head = s.head_layers().unwrap();
+    let name = head.last().unwrap().clone();
+    let stored = fs::read(s.dir.join("layers").join(format!("{name}.json"))).unwrap();
+    assert!(!stored.contains(&b'\n'), "stored canonical, one line");
+    // Someone re-saves it pretty-printed (an editor, a database, a browser store): same name.
+    let pretty = serde_json::to_vec_pretty(&serde_json::from_slice::<Value>(&stored).unwrap()).unwrap();
+    assert_ne!(pretty, stored);
+    let again = crate::layer_bytes(&Layer::from_json(&pretty).unwrap());
+    assert_eq!(crate::hash_of(&again), name);
+}
+
+#[test]
+fn an_integer_beyond_2_53_is_refused() {
+    let t = TempDir::new("ijson");
+    let s = hello(&t);
+    let l = layer("big", vec![("3f1c2a90-0000-4c1e-9a00-000000000023", "test::n", json!(9007199254740993u64))]);
+    let err = s.commit(&l, CommitOptions::default()).unwrap_err();
+    assert!(matches!(err, StoreError::NotIJson(_)), "{err}");
+    let ok = layer("ok", vec![("3f1c2a90-0000-4c1e-9a00-000000000023", "test::n", json!(9007199254740991u64))]);
+    s.commit(&ok, CommitOptions::default()).expect("2^53 - 1 is fine");
+}
