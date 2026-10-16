@@ -8,7 +8,7 @@ use ox_core::render::{field_text, format_value};
 use serde_json::{Map, Value};
 use wordcraft_doc::numbering::Level;
 use wordcraft_doc::para::OBJ;
-use wordcraft_doc::props::{NumRef, ParaProps, VMerge};
+use wordcraft_doc::props::{CellProps, NumRef, ParaProps, TableProps, VMerge};
 use wordcraft_doc::section::SectionProps;
 use wordcraft_doc::styles::StyleSheet;
 use wordcraft_doc::props::Underline;
@@ -240,6 +240,62 @@ fn para_from(
     Ok(p)
 }
 
+/// Applies `word::table`'s `grid`, `props` and `cells` (see the importer's `table_style_look`) to a
+/// table whose merges are done: cells are addressed as they stand, row by row.
+fn table_style_look(t: &mut Table, wt: &Map<String, Value>, path: &str, report: &mut ExportReport) {
+    let mut bad = |what: &str, e: &dyn std::fmt::Display| report.warnings.push(format!("{path}: {what} can't be read ({e}); not applied"));
+    if let Some(g) = wt.get("grid") {
+        match serde_json::from_value::<Vec<f32>>(g.clone()) {
+            Ok(g) if g.len() == t.grid.len() => {
+                t.grid = g;
+                for row in &mut t.rows {
+                    let mut col = 0usize;
+                    for c in &mut row.cells {
+                        let span = c.props.span.max(1) as usize;
+                        c.props.width = Some(t.grid[col.min(t.grid.len())..(col + span).min(t.grid.len())].iter().sum());
+                        col += span;
+                    }
+                }
+            }
+            Ok(g) => bad("column widths", &format!("{} widths for {} columns", g.len(), t.grid.len())),
+            Err(e) => bad("column widths", &e),
+        }
+    }
+    if let Some(p) = wt.get("props") {
+        match serde_json::from_value::<TableProps>(p.clone()) {
+            Ok(p) => t.props = TableProps { style: t.props.style.take(), ..p },
+            Err(e) => bad("table properties", &e),
+        }
+    }
+    let Some(rows) = wt.get("cells").and_then(Value::as_array) else { return };
+    for (row, looks) in t.rows.iter_mut().zip(rows) {
+        for (c, look) in row.cells.iter_mut().zip(looks.as_array().into_iter().flatten()) {
+            if let Some(p) = look.get("props") {
+                match serde_json::from_value::<CellProps>(p.clone()) {
+                    Ok(p) => c.props = CellProps { span: c.props.span, vmerge: c.props.vmerge, width: c.props.width, ..p },
+                    Err(e) => bad("cell properties", &e),
+                }
+            }
+            let para = look.get("para").and_then(|v| serde_json::from_value::<ParaProps>(v.clone()).ok());
+            let chr = look.get("chr").and_then(|v| serde_json::from_value::<CharProps>(v.clone()).ok());
+            for b in &mut c.blocks {
+                let Block::Para(p) = Arc::make_mut(b) else { continue };
+                let props = match &para {
+                    Some(f) => ParaProps { style: p.props.style.take(), numbering: p.props.numbering, ..f.clone() },
+                    None => p.props.clone(),
+                };
+                if let Some(ch) = &chr {
+                    let mut q = Paragraph::with_text(&p.plain_text(), ch.clone());
+                    q.props = props;
+                    *p = q;
+                } else {
+                    p.props = props;
+                }
+            }
+        }
+    }
+}
+
 /// Applies `word::table.merges` (`{row, col, rows, cols}` on the grid) to a table with one cell
 /// per grid column: the first cell spans, the cells it covers go (across) or continue (down).
 fn merge_cells(t: &mut Table, merges: Option<&Value>, path: &str, report: &mut ExportReport) {
@@ -363,6 +419,7 @@ fn table_block(
         }
     }
     merge_cells(&mut t, wt.get("merges"), &node.path, report);
+    table_style_look(&mut t, &wt, &node.path, report);
     let linked = obj(node, "ox::link")
         .and_then(|l| l.get("source"))
         .and_then(Value::as_str);

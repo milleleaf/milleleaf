@@ -10,6 +10,7 @@ use serde_json::{Map, Value, json};
 use wordcraft_doc::para::OBJ;
 use wordcraft_doc::props::{Underline, VMerge};
 use wordcraft_doc::section::HeaderSet;
+use wordcraft_doc::styles::{PartFormat, PartSet};
 use wordcraft_doc::{Block, CharProps, Document, InlineObject, Paragraph, Table, TextColor};
 
 use crate::{CAPTION_SUFFIX, PROP_DOCUMENT, PROP_REVISION, TAG_PREFIX, WordError, revision_of};
@@ -452,6 +453,117 @@ fn table_look(t: &Table) -> Map<String, Value> {
     wt
 }
 
+/// How a table is drawn: its column widths (`grid`, points), its own properties (`props`:
+/// borders, alignment, cell margins, shading… WordCraft's form) and each cell's (`cells`, by row
+/// and cell: the cell's properties, its first paragraph's formatting and character format).
+fn table_style_look(doc: &Document, t: &Table) -> Map<String, Value> {
+    let strip = |v: Option<Value>, keys: &[&str]| -> Option<Value> {
+        let mut v = v?;
+        let o = v.as_object_mut()?;
+        for k in keys {
+            o.remove(*k);
+        }
+        o.retain(|_, x| !x.is_null());
+        (!o.is_empty()).then_some(v)
+    };
+    let mut m = Map::new();
+    m.insert("grid".into(), json!(t.grid));
+    if let Some(p) = strip(serde_json::to_value(&t.props).ok(), &["style", "caption", "description", "fmtChange"]) {
+        m.insert("props".into(), p);
+    }
+    let cells: Vec<Value> = t
+        .rows
+        .iter()
+        .map(|r| {
+            Value::Array(
+                r.cells
+                    .iter()
+                    .map(|c| {
+                        let mut cm = Map::new();
+                        if let Some(p) = strip(serde_json::to_value(&c.props).ok(), &["span", "vmerge", "width", "widthPct", "fmtChange"]) {
+                            cm.insert("props".into(), p);
+                        }
+                        if let Some(p) = c.blocks.iter().find_map(|b| b.as_para()) {
+                            if let Some(f) = para_format(doc, p) {
+                                cm.insert("para".into(), f);
+                            }
+                            if !p.text.is_empty() {
+                                if let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change"]) {
+                                    cm.insert("chr".into(), ch);
+                                }
+                            }
+                        }
+                        Value::Object(cm)
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    m.insert("cells".into(), Value::Array(cells));
+    m
+}
+
+/// What a reader sees of a table: column widths (to the half point), its alignment and indent,
+/// and per cell the effective shading, emphasis, colour, size and alignment (its table style's
+/// parts, then the cell's own formatting). Editors move table-style formatting into the cells on
+/// save (LibreOffice does) without changing this.
+fn table_seen(doc: &Document, t: &Table) -> Value {
+    let style = t.props.style.as_deref().and_then(|id| doc.styles.table_style(id)).unwrap_or_default();
+    let half = |x: f32| (x * 2.0).round() as i64;
+    let nrows = t.rows.len();
+    let ncols = t.grid.len();
+    let mut rows = Vec::new();
+    for (ri, row) in t.rows.iter().enumerate() {
+        let mut cells = Vec::new();
+        let mut g = 0usize;
+        for c in &row.cells {
+            let span = c.props.span.max(1) as usize;
+            let mut pf = PartFormat::default();
+            for part in PartSet::of_cell(&t.props.look, 1, (ri, nrows), (g, span, ncols)).iter() {
+                pf.overlay(&style.parts.part(part));
+            }
+            let p = c.blocks.iter().find_map(|b| b.as_para());
+            let ch = p.filter(|p| !p.text.is_empty()).map(|p| p.props_of_char(0).clone()).unwrap_or_default();
+            // Document defaults, the paragraph's style, the table style, its parts, the run.
+            let mut chr = doc.styles.default_chr.clone();
+            let pstyle = p.and_then(|p| p.props.style.clone()).or_else(|| doc.styles.find("Normal").map(|s| s.id.clone()));
+            for st in pstyle.as_deref().map(|id| doc.styles.chain(id)).unwrap_or_default() {
+                chr.overlay(&st.chr);
+            }
+            chr.overlay(&style.chr);
+            chr.overlay(&pf.chr);
+            chr.overlay(&ch);
+            let align = p.and_then(|p| p.props.align).or(pf.align);
+            cells.push(json!([
+                c.props.shading.or(pf.fill).map(|r| r.hex()),
+                chr.bold == Some(true),
+                chr.italic == Some(true),
+                serde_json::to_value(chr.color.as_ref().filter(|c| !matches!(c, TextColor::Auto))).ok(),
+                chr.size.map(half),
+                serde_json::to_value(align.filter(|a| *a != wordcraft_doc::Align::Left)).ok(),
+                serde_json::to_value(c.props.valign.or(pf.v_align)).ok(),
+            ]));
+            g += span;
+        }
+        rows.push(Value::Array(cells));
+    }
+    json!({
+        "grid": t.grid.iter().map(|w| half(*w)).collect::<Vec<_>>(),
+        "align": serde_json::to_value(t.props.align.filter(|a| *a != wordcraft_doc::Align::Left)).ok(),
+        "indent": t.props.indent.map(half).filter(|i| *i != 0),
+        "rows": rows,
+    })
+}
+
+/// Whether two `table_seen` values look the same, over the rows both have: a linked table can
+/// have gained or lost rows since the file was exported (the data changed, not the look).
+fn same_look(ours: Option<&Value>, now: &Value) -> bool {
+    let Some(ours) = ours else { return false };
+    let row_cells = |v: &Value| v["rows"].as_array().cloned().unwrap_or_default();
+    let (a, b) = (row_cells(ours), row_cells(now));
+    ["grid", "align", "indent"].iter().all(|k| ours[k] == now[k]) && a.iter().zip(&b).all(|(x, y)| x == y)
+}
+
 /// Merged cells on the grid: `{row, col, rows, cols}`, row 0 being the first (header) row.
 fn table_merges(t: &Table) -> Vec<Value> {
     // (row, grid column) → (vmerge, span) for every cell.
@@ -629,6 +741,11 @@ fn import_into(
 
     let by_path: HashMap<&str, &Composed> =
         node.children.iter().map(|c| (c.path.as_str(), c)).collect();
+    // What Milleleaf's own export writes for this node, read back the same way: page setup,
+    // styles and tables' looks are carried when the file's differ from it.
+    let ours_doc = crate::export(node, &[])
+        .ok()
+        .and_then(|(d, _)| crate::from_docx(&crate::to_docx(&d).ok()?).ok());
     let mut used_names: BTreeSet<String> = node
         .children
         .iter()
@@ -655,6 +772,14 @@ fn import_into(
             .is_some_and(|c| c.attributes.contains_key("office::data::table"))
     };
 
+    let ours_tables: HashMap<String, Value> = ours_doc
+        .iter()
+        .flat_map(|d| d.body.iter().map(move |b| (d, b)))
+        .filter_map(|(d, b)| match &**b {
+            Block::Table(t) => Some((table_tag(t, &is_table)?, table_seen(d, t))),
+            _ => None,
+        })
+        .collect();
     let mut nodes: Vec<Node> = Vec::new();
     // Lists the paragraphs use: list id → numbering instance in the edited file.
     let mut lists_used: BTreeMap<String, u32> = BTreeMap::new();
@@ -891,6 +1016,13 @@ fn import_into(
                         wt.remove("header");
                         wt.remove("merges");
                         wt.extend(table_look(t));
+                        // The table's look changed in Word when what a reader sees differs from
+                        // what Milleleaf would export: then the file's look comes back whole.
+                        if !same_look(ours_tables.get(&c.path), &table_seen(edited, t)) {
+                            for (k, v) in table_style_look(edited, t) {
+                                wt.insert(k, v);
+                            }
+                        }
                         if wt != old {
                             nodes.push(Node {
                                 path: c.path.clone(),
@@ -954,7 +1086,8 @@ fn import_into(
                             grid.first()
                         ));
                         let header = grid.first().cloned().unwrap_or_default();
-                        let wt = table_look(t);
+                        let mut wt = table_look(t);
+                        wt.extend(table_style_look(edited, t));
                         let body: Vec<&Vec<String>> = grid.iter().skip(1).collect();
                         let cols: Vec<Value> = header
                             .iter()
@@ -1060,11 +1193,6 @@ fn import_into(
         all.extend(new_lists);
         wd2.insert("lists".into(), Value::Object(all));
     }
-    // What Milleleaf's own export writes for this node, read back the same way: page setup and
-    // styles are carried when the file's differ from it.
-    let ours_doc = crate::export(node, &[])
-        .ok()
-        .and_then(|(d, _)| crate::from_docx(&crate::to_docx(&d).ok()?).ok());
     let ours = ours_doc.as_ref().and_then(page_setup);
     // The style sheet (WordCraft's form), when a style the document uses is defined differently:
     // an adopted file's own Normal (its font, size, alignment), or a style changed in Word.

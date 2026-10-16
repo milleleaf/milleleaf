@@ -105,7 +105,7 @@ fn inventory_counts_real_files_and_lists_losses() {
     assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["merged cells (gridSpan/vMerge)"]), (87, 42, 5));
     assert_eq!((c["body text chars"], c["bold text chars"], c["footnote separator lines"]), (10140, 1066, 1));
     let l = lost(k, &c);
-    assert_eq!(l, ["media files", "table cell paragraphs with alignment, spacing or indents"], "the header logo and cell formatting");
+    assert_eq!(l, ["media files"], "only the header logo");
     assert_eq!((c["page width (value, twips)"], c["default style size (value, half-points)"], c["default style justified (value)"]), (11906, 24, 1), "A4, 12 pt, justified");
     assert!(!l.contains(&"paragraphs (non-empty)") && !l.contains(&"list paragraphs (numPr)"), "{l:?}");
 

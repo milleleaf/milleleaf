@@ -170,11 +170,11 @@ fn edits_become_a_minimal_layer_that_composes() {
         .position(|b| b.as_table().is_some())
         .expect("table");
     if let Block::Table(t) = Arc::make_mut(&mut doc.body[ti]) {
+        // Typed over in Word: the cell's paragraph (and its right alignment) stays.
         let cell = &mut t.rows[1].cells[1];
-        cell.blocks = vec![wordcraft_doc::para_block(Paragraph::with_text(
-            "$999",
-            CharProps::default(),
-        ))];
+        let mut typed = Paragraph::with_text("$999", CharProps::default());
+        typed.props = cell.blocks[0].as_para().expect("cell paragraph").props.clone();
+        cell.blocks = vec![wordcraft_doc::para_block(typed)];
     }
     // Through DOCX again, as if saved by Word.
     let doc = from_docx(&to_docx(&doc).expect("writes")).expect("reads");

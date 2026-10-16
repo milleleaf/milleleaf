@@ -290,6 +290,9 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     // Inside tables: (table depth, is the open cell paragraph formatted yet), and the count.
     let (mut tables, mut cell_formatted, mut cell_paras) = (0usize, false, 0u64);
     let (mut page, mut margins) = ([0u64; 2], [0u64; 4]);
+    // Table column widths (every table's gridCol w, joined) and shaded cells (w:tc/w:tcPr/w:shd).
+    let (mut grids, mut grid_seen, mut shaded) = (String::new(), false, 0u64);
+    let mut tc_at: Vec<usize> = Vec::new();
     let num = |e: &BytesStart, k: &[u8]| attr(e, k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) as u64;
     walk(body, |ev| match ev {
         Ev::Open(n, l, e) if n == W => {
@@ -313,6 +316,27 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             }
             if l == b"tbl" {
                 tables += 1;
+            }
+            if l == b"tc" {
+                tc_at.push(depth);
+            }
+            if l == b"shd"
+                && tc_at.last().map(|d| d + 2) == Some(depth)
+                && !matches!(attr(e, b"fill").as_deref(), None | Some("auto" | "FFFFFF" | "ffffff"))
+            {
+                shaded += 1;
+            }
+            if l == b"tblGrid" {
+                if grid_seen {
+                    grids.push('|');
+                }
+                grid_seen = true;
+            }
+            if l == b"gridCol" {
+                if !grids.is_empty() && !grids.ends_with('|') {
+                    grids.push(',');
+                }
+                grids.push_str(&attr(e, b"w").unwrap_or_default());
             }
             match l {
                 b"pgSz" => page = [num(e, b"w"), num(e, b"h")],
@@ -355,6 +379,9 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             }
             match l {
             b"tbl" => tables -= 1,
+            b"tc" => {
+                tc_at.pop();
+            }
             b"p" => {
                 para_at.pop();
                 if tables > 0 && std::mem::take(&mut cell_formatted) {
@@ -411,6 +438,8 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             _ => {}
         });
     }
+    c.insert("table column widths (value, hash)", if grid_seen { fnv(&grids) } else { fnv("") });
+    c.insert("table cells with shading", shaded);
     c.insert("page width (value, twips)", page[0]);
     c.insert("page height (value, twips)", page[1]);
     c.insert(
@@ -861,6 +890,9 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("default style size (value, half-points)", None),
             ("default style justified (value)", None),
             ("style definitions", None),
+            ("table column widths (value, hash)", None),
+            ("table cells with shading", None),
+            ("table cell paragraphs with alignment, spacing or indents", None),
             ("page height (value, twips)", None),
             ("page margins top/right/bottom/left (value, twips)", None),
             ("paragraphs aligned other than left (outside tables)", None),

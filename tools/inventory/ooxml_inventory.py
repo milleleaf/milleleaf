@@ -96,6 +96,8 @@ def docx(z):
     val = lambda e, k: int(float(e.get(W + k, 0))) if e is not None else 0
     return {
         **default_style(z),
+        "table column widths (value, hash)": fnv("|".join(",".join(g.get(W + "w", "") for g in t.iter(W + "gridCol")) for r in body for t in r.iter(W + "tblGrid"))),
+        "table cells with shading": sum(1 for r in body for tc in r.iter(W + "tc") for sh in tc.findall(f"{W}tcPr/{W}shd") if sh.get(W + "fill") not in (None, "auto", "FFFFFF", "ffffff")),
         "style definitions": count([xml(z, "word/styles.xml")], W + "style") if "word/styles.xml" in z.namelist() else 0,
         "page width (value, twips)": val(pg, "w"),
         "page height (value, twips)": val(pg, "h"),

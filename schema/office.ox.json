@@ -439,6 +439,23 @@
                   }
                 }
               }
+            },
+            "grid": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Real"
+                }
+              }
+            },
+            "props": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "cells": {
+              "dataType": "Array",
+              "optional": true
             }
           }
         }
