@@ -786,6 +786,17 @@ fn import_into(
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut captions_seen: BTreeSet<String> = BTreeSet::new();
     let mut new_order: Vec<String> = Vec::new();
+    // Where the last matched block sits among the original's children.
+    let child_idx: HashMap<&str, usize> = node.children.iter().enumerate().map(|(i, c)| (c.path.as_str(), i)).collect();
+    let mut last_seen: Option<usize> = None;
+    let tags_in_file: BTreeSet<String> = edited
+        .body
+        .iter()
+        .filter_map(|b| match &**b {
+            Block::Para(p) => para_tag(p, &is_field),
+            _ => None,
+        })
+        .collect();
     let mut new_children: BTreeMap<String, Option<String>> = BTreeMap::new();
     let fresh_name = |prefix: &str, path: &str, used: &mut BTreeSet<String>| {
         let base = format!("{prefix}-{}", &path[..8.min(path.len())]);
@@ -850,14 +861,34 @@ fn import_into(
                     }
                     e => e,
                 };
-                if !adopting
-                    && existing.is_none()
-                    && tag.is_none()
-                    && ex.text.trim().is_empty()
-                    && ex.fields.is_empty()
-                {
-                    continue; // an empty paragraph typed between blocks (adopt keeps the file's own)
+                // An untagged empty paragraph is a blank line someone typed, and comes back, unless
+                // it's one Word must have: after a table that ends the body, the only paragraph of
+                // an empty body, or one holding a section break (sections are reported as not
+                // carried).
+                let required = index + 1 == edited.body.len()
+                    && (index == 0 || matches!(&*edited.body[index - 1], Block::Table(_)))
+                    || p.section.is_some();
+                let blank = existing.is_none() && tag.is_none() && ex.text.trim().is_empty() && ex.fields.is_empty();
+                if !adopting && blank && required {
+                    continue;
                 }
+                // Editors drop the tag from an empty paragraph (LibreOffice does): a blank line where
+                // the original had an empty paragraph, right after the last block matched, is that one.
+                let by_position = !adopting && blank;
+                let existing = if by_position {
+                    node.children
+                        .get(last_seen.map_or(0, |i| i + 1))
+                        .filter(|c| !seen.contains(&c.path) && !tags_in_file.contains(c.path.as_str()))
+                        .filter(|c| {
+                            obj(c, "word::paragraph").is_some_and(|w| {
+                                w.get("runs").and_then(Value::as_array).is_none_or(|r| {
+                                    r.iter().all(|r| r.get("text").and_then(Value::as_str).is_some_and(|t| t.trim().is_empty()))
+                                })
+                            })
+                        })
+                } else {
+                    existing
+                };
                 let para_path = match existing {
                     Some(c) => c.path.clone(),
                     None => stable_id(&format!("{}|word-edit|{}|{}", node.path, index, ex.text)),
@@ -924,9 +955,12 @@ fn import_into(
                 match existing {
                     Some(c) => {
                         seen.insert(c.path.clone());
-                        report
-                            .matches
-                            .push(ox_core::Match::certain(&c.path, "content control tag"));
+                        last_seen = child_idx.get(c.path.as_str()).copied();
+                        report.matches.push(if by_position {
+                            ox_core::Match::best_guess(&c.path, "an empty paragraph in the same place")
+                        } else {
+                            ox_core::Match::certain(&c.path, "content control tag")
+                        });
                         new_order.push(c.name.clone().unwrap_or_default());
                         let old = obj(c, "word::paragraph").cloned().unwrap_or_default();
                         let old_runs: Vec<Value> = old
@@ -998,6 +1032,7 @@ fn import_into(
                 match existing {
                     Some(c) => {
                         seen.insert(c.path.clone());
+                        last_seen = child_idx.get(c.path.as_str()).copied();
                         let by = if t
                             .controls
                             .open

@@ -534,3 +534,44 @@ fn a_merge_made_in_word_on_an_existing_table_comes_back() {
     let wt = &layer.data.iter().find(|n| n.path == TABLE).expect("table node").attributes["word::table"];
     assert_eq!(wt["merges"], json!([{ "row": 1, "col": 0, "rows": 2, "cols": 1 }]));
 }
+
+/// The real board report, adopted the way `ox adopt` does it, then imported from files Word 16.114
+/// and LibreOffice 24.2 saved from Milleleaf's export (`examples/real/fixtures`).
+fn board_report_node() -> Composed {
+    let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
+    let bytes = std::fs::read(real.join("board-report.docx")).unwrap();
+    // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
+    let root = "f5bb6935-f60f-5b56-96e8-6ed886cc9246";
+    let (layer, _) = crate::adopt(&from_docx(&bytes).unwrap(), root, "board-report", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    find(&trees, root).expect("document").clone()
+}
+
+fn real_fixture(name: &str) -> Document {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    from_docx(&std::fs::read(p).expect("fixture")).expect("reads")
+}
+
+#[test]
+fn a_blank_line_typed_in_word_comes_back_and_word_resaves_stay_clean() {
+    let node = board_report_node();
+    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
+    assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
+
+    // Word: Enter at the end of paragraph 3. One new, empty paragraph; nothing else changes.
+    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-blank-line.docx"), header()).expect("imports");
+    assert_eq!((report.added.len(), report.changed.len(), report.removed.len()), (1, 0, 0), "{report:?}");
+    let added = layer.data.iter().find(|n| n.path == report.added[0]).expect("new node");
+    let runs = added.attributes["word::paragraph"]["runs"].as_array().cloned().unwrap_or_default();
+    assert!(runs.iter().all(|r| r["text"].as_str().is_none_or(|t| t.trim().is_empty())), "{added:?}");
+
+    // LibreOffice drops the tag of an empty paragraph: it is matched by place, as a best guess,
+    // not reported as one removed and one added. (Its re-save still differs in list numbers,
+    // border colours, tabs and table borders: known, see the plan.)
+    let (_, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
+    assert_eq!((report.added.len(), report.removed.len()), (0, 0), "{report:?}");
+    assert!(report.matches.iter().any(|m| m.by == "an empty paragraph in the same place"), "{:?}", report.matches);
+}
