@@ -72,6 +72,23 @@ def docx(z):
     }
 
 
+def xlsx_text(shared, sheets):
+    """Text of every cell that shows text, however the writer stored it: a shared string actually
+    used by a cell, an inline string, or a formula's text result (t="str", kept in <v>)."""
+    ss = ["".join(t.text or "" for t in si.iter(S + "t")) for r in shared for si in r.iter(S + "si")]
+    out = []
+    for sh in sheets:
+        for c in sh.iter(S + "c"):
+            t, v = c.get("t"), c.find(S + "v")
+            if t == "s" and v is not None and v.text and v.text.isdigit() and int(v.text) < len(ss):
+                out.append(ss[int(v.text)])
+            elif t == "inlineStr":
+                out.append("".join(x.text or "" for x in c.iter(S + "t")))
+            elif t == "str" and v is not None:
+                out.append(v.text or "")
+    return re.sub(r"\s+", " ", " ".join(out)).strip()
+
+
 def xlsx(z):
     sheets = [xml(z, n) for n in parts(z, r"xl/worksheets/sheet\d+\.xml")]
     styles = [xml(z, n) for n in parts(z, r"xl/styles\.xml")]
@@ -102,8 +119,8 @@ def xlsx(z):
         "comments": sum(count([xml(z, n)], S + "comment") for n in parts(z, r"xl/comments\d*\.xml")),
         "tables (ListObjects)": len(parts(z, r"xl/tables/table\d*\.xml")),
         # Text lives in sharedStrings or inline in the cell (<is>), depending on the writer.
-        "cell text chars": len((text_of(shared, S + "t", " ") + " " + text_of(sheets, S + "t", " ")).strip()),
-        "_text": text_of(shared, S + "t", " ") + " " + text_of(sheets, S + "t", " "),
+        "cell text chars": len(xlsx_text(shared, sheets)),
+        "_text": xlsx_text(shared, sheets),
     }
 
 
