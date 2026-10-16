@@ -1,0 +1,16 @@
+{
+  "header": {
+    "id": "milleleaf/examples/hello-table/with-word-edit",
+    "oxVersion": "ox_alpha",
+    "dataVersion": "1.0.0",
+    "author": "sam",
+    "timestamp": "2026-10-15",
+    "kind": "stack"
+  },
+  "imports": [
+    { "uri": "project.ox.json" },
+    { "uri": "word-edit.ox.json" }
+  ],
+  "schemas": {},
+  "data": []
+}

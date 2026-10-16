@@ -1,0 +1,19 @@
+[package]
+name = "ox-gridcraft"
+description = "Milleleaf ↔ GridCraft adapter: composed OX workbooks to GridCraft/XLSX, and edited XLSX back to a recalculated OX layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ox-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+# Pinned: GridCraft moves fast. Bump deliberately and rerun the tests.
+gridcraft-core = { git = "https://github.com/storytold/gridcraft", rev = "e6b6b349708ab4978cb3f061f6bd6ecbc25667cb" }
+gridcraft-model = { git = "https://github.com/storytold/gridcraft", rev = "e6b6b349708ab4978cb3f061f6bd6ecbc25667cb" }
+gridcraft-formula = { git = "https://github.com/storytold/gridcraft", rev = "e6b6b349708ab4978cb3f061f6bd6ecbc25667cb" }
+gridcraft-calc = { git = "https://github.com/storytold/gridcraft", rev = "e6b6b349708ab4978cb3f061f6bd6ecbc25667cb" }
+gridcraft-xlsx = { git = "https://github.com/storytold/gridcraft", rev = "e6b6b349708ab4978cb3f061f6bd6ecbc25667cb" }

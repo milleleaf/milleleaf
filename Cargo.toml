@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["crates/ox-core", "crates/ox-cli", "crates/ox-wordcraft", "crates/ox-gridcraft", "crates/ox-deckcraft", "crates/ox-pack", "crates/ox-odf", "crates/ox-store", "crates/ox-formats"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+ox-core = { path = "crates/ox-core" }
+ox-wordcraft = { path = "crates/ox-wordcraft" }
+ox-gridcraft = { path = "crates/ox-gridcraft" }
+ox-deckcraft = { path = "crates/ox-deckcraft" }
+ox-pack = { path = "crates/ox-pack" }
+ox-odf = { path = "crates/ox-odf" }
+ox-store = { path = "crates/ox-store" }
+ox-formats = { path = "crates/ox-formats" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+thiserror = "2"
+
+# DeckCraft's PDF writer (through craft-pdf) needs the ArtCraft patched krilla, as DeckCraft's own
+# workspace does; WordCraft's PDF writer uses the same krilla 0.8.
+[patch.crates-io]
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "c3487320b2d1de657b860b3c8abb44e1f2b32bd8", version = "=0.8.2" }

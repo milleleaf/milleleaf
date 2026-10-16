@@ -1,0 +1,237 @@
+{
+  "header": {
+    "id": "milleleaf/examples/hello-table/base",
+    "oxVersion": "ox_alpha",
+    "dataVersion": "1.0.0",
+    "author": "sam",
+    "timestamp": "2026-10-15",
+    "kind": "base"
+  },
+  "imports": [
+    {
+      "uri": "../../schema/office.ox.json"
+    }
+  ],
+  "schemas": {},
+  "data": [
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000001",
+      "children": {
+        "finance": "3f1c2a90-0000-4c1e-9a00-000000000010",
+        "report": "3f1c2a90-0000-4c1e-9a00-000000000020",
+        "metrics": "3f1c2a90-0000-4c1e-9a00-000000000030"
+      },
+      "order": [
+        "finance",
+        "report",
+        "metrics"
+      ],
+      "attributes": {
+        "office::project": {
+          "title": "Q3 Board Pack"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000010",
+      "children": {
+        "Q3": "3f1c2a90-0000-4c1e-9a00-000000000011"
+      },
+      "attributes": {
+        "grid::workbook": {
+          "name": "finance.xlsx"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000011",
+      "children": {
+        "revenue": "3f1c2a90-0000-4c1e-9a00-000000000012",
+        "total": "3f1c2a90-0000-4c1e-9a00-000000000013"
+      },
+      "order": [
+        "revenue",
+        "total"
+      ],
+      "attributes": {
+        "grid::sheet": {
+          "name": "Q3"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000012",
+      "attributes": {
+        "office::data::table": {
+          "columns": [
+            {
+              "name": "Region",
+              "type": "text"
+            },
+            {
+              "name": "Revenue",
+              "type": "currency"
+            }
+          ],
+          "rows": [
+            [
+              "Adelaide",
+              412000
+            ],
+            [
+              "Hong Kong",
+              538000
+            ],
+            [
+              "Singapore",
+              297000
+            ]
+          ]
+        },
+        "grid::range": {
+          "sheet": "Q3",
+          "ref": "A1:B4"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000013",
+      "attributes": {
+        "office::data::value": {
+          "value": 1247000,
+          "unit": "AUD",
+          "format": "currency"
+        },
+        "grid::range": {
+          "sheet": "Q3",
+          "ref": "B5"
+        },
+        "grid::formula": {
+          "text": "=SUM(B2:B4)"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000020",
+      "children": {
+        "heading": "3f1c2a90-0000-4c1e-9a00-000000000021",
+        "revenue-table": "3f1c2a90-0000-4c1e-9a00-000000000022",
+        "summary": "3f1c2a90-0000-4c1e-9a00-000000000023"
+      },
+      "order": [
+        "heading",
+        "summary",
+        "revenue-table"
+      ],
+      "attributes": {
+        "word::document": {
+          "title": "Q3 Board Report",
+          "pageSize": "A4"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000021",
+      "attributes": {
+        "word::paragraph": {
+          "style": "Heading 1",
+          "runs": [
+            {
+              "text": "Q3 results"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000023",
+      "children": {
+        "total": "3f1c2a90-0000-4c1e-9a00-000000000024",
+        "regions": "3f1c2a90-0000-4c1e-9a00-000000000025"
+      },
+      "attributes": {
+        "word::paragraph": {
+          "style": "Normal",
+          "runs": [
+            {
+              "text": "Total revenue for the quarter was "
+            },
+            {
+              "field": "total"
+            },
+            {
+              "text": " across "
+            },
+            {
+              "field": "regions"
+            },
+            {
+              "text": " regions."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000024",
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000013"
+      },
+      "attributes": {
+        "ox::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000013",
+          "mode": "live"
+        },
+        "word::field": {
+          "format": "currency"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000022",
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000012"
+      },
+      "attributes": {
+        "ox::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000012",
+          "mode": "live"
+        },
+        "word::table": {
+          "style": "Grid Table 4",
+          "caption": "Revenue by region (AUD)"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000030",
+      "children": {
+        "region-count": "3f1c2a90-0000-4c1e-9a00-000000000031"
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000031",
+      "attributes": {
+        "office::data::derived": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000012",
+          "op": "rowCount"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000025",
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000031"
+      },
+      "attributes": {
+        "ox::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000031",
+          "mode": "live"
+        },
+        "word::field": {
+          "format": "number"
+        }
+      }
+    }
+  ]
+}

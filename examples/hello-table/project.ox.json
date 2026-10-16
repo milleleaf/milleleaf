@@ -1,0 +1,26 @@
+{
+  "header": {
+    "id": "milleleaf/examples/hello-table/project",
+    "oxVersion": "ox_alpha",
+    "dataVersion": "1.0.0",
+    "author": "sam",
+    "timestamp": "2026-10-15",
+    "kind": "stack"
+  },
+  "imports": [
+    {
+      "uri": "base.ox.json"
+    },
+    {
+      "uri": "deck.proposal.ox.json"
+    },
+    {
+      "uri": "finance-review.ox.json"
+    },
+    {
+      "uri": "pack.ox.json"
+    }
+  ],
+  "schemas": {},
+  "data": []
+}

@@ -1,0 +1,65 @@
+{
+  "header": {
+    "id": "edit/report-libreoffice",
+    "oxVersion": "ox_alpha",
+    "dataVersion": "1.0.0",
+    "author": "libreoffice",
+    "timestamp": "2026-10-16",
+    "kind": "edit"
+  },
+  "imports": [],
+  "schemas": {},
+  "data": [
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000020",
+      "children": {
+        "p-d937430e": "d937430e-aaf1-5306-8149-126a3369a536"
+      },
+      "order": [
+        "heading",
+        "summary",
+        "revenue-table",
+        "p-d937430e"
+      ]
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000023",
+      "attributes": {
+        "word::paragraph": {
+          "style": "Normal",
+          "runs": [
+            {
+              "text": "Group revenue for the quarter was "
+            },
+            {
+              "field": "total"
+            },
+            {
+              "text": " across "
+            },
+            {
+              "field": "regions"
+            },
+            {
+              "text": " regions."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "d937430e-aaf1-5306-8149-126a3369a536",
+      "attributes": {
+        "word::paragraph": {
+          "style": "Normal",
+          "runs": [
+            {
+              "italic": true,
+              "text": "Prepared for the October board meeting."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

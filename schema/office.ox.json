@@ -1,0 +1,777 @@
+{
+  "header": {
+    "id": "milleleaf/schema/office",
+    "oxVersion": "ox_alpha",
+    "dataVersion": "0.1.0",
+    "author": "Milleleaf",
+    "timestamp": "2026-10-15",
+    "kind": "schema"
+  },
+  "imports": [],
+  "schemas": {
+    "office::project": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "title": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    },
+    "office::data::table": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "columns": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "name": {
+                        "dataType": "String"
+                      },
+                      "type": {
+                        "dataType": "Enum",
+                        "enumRestrictions": {
+                          "options": [
+                            "text",
+                            "number",
+                            "currency",
+                            "percent",
+                            "date"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "min": 1
+              }
+            },
+            "rows": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Array",
+                  "arrayRestrictions": {
+                    "value": {
+                      "dataType": "Any"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "office::data::value": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "value": {
+              "dataType": "Any"
+            },
+            "unit": {
+              "dataType": "String",
+              "optional": true
+            },
+            "format": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "number",
+                  "currency",
+                  "percent"
+                ]
+              },
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "grid::workbook": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "name": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    },
+    "grid::sheet": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "name": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    },
+    "grid::range": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "sheet": {
+              "dataType": "String"
+            },
+            "ref": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    },
+    "grid::formula": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "text": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    },
+    "word::document": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "title": {
+              "dataType": "String"
+            },
+            "pageSize": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "A4",
+                  "Letter",
+                  "A3"
+                ]
+              },
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "word::paragraph": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "style": {
+              "dataType": "String"
+            },
+            "runs": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "text": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "field": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "bold": {
+                        "dataType": "Boolean",
+                        "optional": true
+                      },
+                      "italic": {
+                        "dataType": "Boolean",
+                        "optional": true
+                      },
+                      "underline": {
+                        "dataType": "Boolean",
+                        "optional": true
+                      },
+                      "color": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "font": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "sizePt": {
+                        "dataType": "Real",
+                        "optional": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "word::table": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "style": {
+              "dataType": "String",
+              "optional": true
+            },
+            "caption": {
+              "dataType": "String",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "word::field": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "format": {
+              "dataType": "String",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::deck": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "width": {
+              "dataType": "Real"
+            },
+            "height": {
+              "dataType": "Real"
+            },
+            "unit": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "px"
+                ]
+              }
+            },
+            "title": {
+              "dataType": "String",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::slide": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "name": {
+              "dataType": "String",
+              "optional": true
+            },
+            "background": {
+              "dataType": "String",
+              "optional": true
+            },
+            "notes": {
+              "dataType": "String",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::frame": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "x": {
+              "dataType": "Real"
+            },
+            "y": {
+              "dataType": "Real"
+            },
+            "w": {
+              "dataType": "Real"
+            },
+            "h": {
+              "dataType": "Real"
+            },
+            "z": {
+              "dataType": "Integer",
+              "optional": true
+            },
+            "rotation": {
+              "dataType": "Real",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::text": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "role": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "title",
+                  "subtitle",
+                  "body",
+                  "caption"
+                ]
+              }
+            },
+            "paragraphs": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "runs": {
+                        "dataType": "Array",
+                        "arrayRestrictions": {
+                          "value": {
+                            "dataType": "Object",
+                            "objectRestrictions": {
+                              "values": {
+                                "text": {
+                                  "dataType": "String",
+                                  "optional": true
+                                },
+                                "field": {
+                                  "dataType": "String",
+                                  "optional": true
+                                },
+                                "bold": {
+                                  "dataType": "Boolean",
+                                  "optional": true
+                                },
+                                "italic": {
+                                  "dataType": "Boolean",
+                                  "optional": true
+                                },
+                                "underline": {
+                                  "dataType": "Boolean",
+                                  "optional": true
+                                },
+                                "color": {
+                                  "dataType": "String",
+                                  "optional": true
+                                },
+                                "font": {
+                                  "dataType": "String",
+                                  "optional": true
+                                },
+                                "sizePt": {
+                                  "dataType": "Real",
+                                  "optional": true
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "align": {
+                        "dataType": "Enum",
+                        "enumRestrictions": {
+                          "options": [
+                            "left",
+                            "center",
+                            "right",
+                            "justify"
+                          ]
+                        },
+                        "optional": true
+                      },
+                      "level": {
+                        "dataType": "Integer",
+                        "optional": true
+                      },
+                      "bullet": {
+                        "dataType": "Boolean",
+                        "optional": true
+                      },
+                      "numbered": {
+                        "dataType": "Boolean",
+                        "optional": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "verticalAlign": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "top",
+                  "middle",
+                  "bottom"
+                ]
+              },
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::table": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "style": {
+              "dataType": "Any",
+              "optional": true
+            },
+            "snapshot": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Array",
+                  "arrayRestrictions": {
+                    "value": {
+                      "dataType": "Any"
+                    }
+                  }
+                }
+              },
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::picture": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "blob": {
+              "dataType": "Blob"
+            },
+            "alt": {
+              "dataType": "String",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::vector": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "blob": {
+              "dataType": "Blob"
+            },
+            "alt": {
+              "dataType": "String",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "deck::shape": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "kind": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "rect",
+                  "roundRect",
+                  "ellipse"
+                ]
+              }
+            },
+            "fill": {
+              "dataType": "String",
+              "optional": true
+            },
+            "stroke": {
+              "dataType": "String",
+              "optional": true
+            },
+            "strokeWidth": {
+              "dataType": "Real",
+              "optional": true
+            },
+            "radius": {
+              "dataType": "Real",
+              "optional": true
+            }
+          }
+        }
+      }
+    },
+    "ox::link": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "source": {
+              "dataType": "Reference"
+            },
+            "mode": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "live",
+                  "pinned",
+                  "detached"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "ox::loss": {
+      "value": {
+        "dataType": "Array",
+        "arrayRestrictions": {
+          "value": {
+            "dataType": "Object",
+            "objectRestrictions": {
+              "values": {
+                "code": {
+                  "dataType": "String"
+                },
+                "severity": {
+                  "dataType": "Enum",
+                  "enumRestrictions": {
+                    "options": [
+                      "info",
+                      "warning",
+                      "error"
+                    ]
+                  }
+                },
+                "message": {
+                  "dataType": "String"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ox::source": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "format": {
+              "dataType": "String"
+            },
+            "file": {
+              "dataType": "String"
+            },
+            "sha256": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    },
+    "ox::review": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "author": {
+              "dataType": "String"
+            },
+            "note": {
+              "dataType": "String"
+            },
+            "status": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "proposed",
+                  "approved",
+                  "rejected"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "office::data::derived": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "source": {
+              "dataType": "Reference"
+            },
+            "op": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "rowCount",
+                  "sum",
+                  "average",
+                  "min",
+                  "max"
+                ]
+              }
+            },
+            "column": {
+              "dataType": "String",
+              "optional": true
+            },
+            "format": {
+              "dataType": "Enum",
+              "optional": true,
+              "enumRestrictions": {
+                "options": [
+                  "number",
+                  "currency",
+                  "percent"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "deck::chart": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "kind": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "column",
+                  "bar",
+                  "line",
+                  "pie"
+                ]
+              }
+            },
+            "category": {
+              "dataType": "String"
+            },
+            "values": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "min": 1,
+                "value": {
+                  "dataType": "String"
+                }
+              }
+            },
+            "title": {
+              "dataType": "String",
+              "optional": true
+            },
+            "colors": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "String"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "office::pack": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "title": {
+              "dataType": "String"
+            },
+            "parts": {
+              "dataType": "Array",
+              "arrayRestrictions": {
+                "min": 1,
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "source": {
+                        "dataType": "Reference"
+                      },
+                      "title": {
+                        "dataType": "String",
+                        "optional": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ox::match": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "confidence": {
+              "dataType": "Enum",
+              "enumRestrictions": {
+                "options": [
+                  "certain",
+                  "best-guess"
+                ]
+              }
+            },
+            "by": {
+              "dataType": "String"
+            }
+          }
+        }
+      }
+    }
+  },
+  "data": []
+}

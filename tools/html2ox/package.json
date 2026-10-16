@@ -1,0 +1,12 @@
+{
+  "name": "html2ox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Measure an HTML deck (OX HTML deck profile) into an OX proposal layer",
+  "type": "module",
+  "bin": { "html2ox": "./html2ox.mjs" },
+  "license": "MIT OR Apache-2.0",
+  "dependencies": {
+    "playwright": "1.56.0"
+  }
+}

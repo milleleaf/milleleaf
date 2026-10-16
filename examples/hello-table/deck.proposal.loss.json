@@ -1,0 +1,70 @@
+{
+  "source": "deck.html",
+  "layer": "deck.proposal.ox.json",
+  "counts": {
+    "info": 7,
+    "warning": 1,
+    "error": 0
+  },
+  "fonts": [
+    "Inter"
+  ],
+  "items": [
+    {
+      "path": "b73a0317-a900-5035-8af5-41d456a76424",
+      "name": "text-2",
+      "code": "opacity",
+      "severity": "info",
+      "message": "opacity 0.9 dropped"
+    },
+    {
+      "path": "b9f29acd-4be0-5345-b388-cb314338fa55",
+      "name": "title",
+      "code": "gradient",
+      "severity": "warning",
+      "message": "slide background gradient/image not carried; used its first colour"
+    },
+    {
+      "path": "987b7602-b694-53d2-b390-57f9d8ca3870",
+      "name": "revenue-table",
+      "code": "shadow",
+      "severity": "info",
+      "message": "box-shadow dropped"
+    },
+    {
+      "path": "987b7602-b694-53d2-b390-57f9d8ca3870",
+      "name": "revenue-table",
+      "code": "linked-table",
+      "severity": "info",
+      "message": "table content comes from 3f1c2a90-0000-4c1e-9a00-000000000012; the HTML's copy (4 rows) was not imported"
+    },
+    {
+      "path": "23ddaa1c-1c51-5324-8860-64ed833aa77f",
+      "name": "bar-chart",
+      "code": "linked-chart",
+      "severity": "info",
+      "message": "chart is drawn from 3f1c2a90-0000-4c1e-9a00-000000000012; the HTML's picture was not imported"
+    },
+    {
+      "path": "1f3d316c-9724-5069-b314-93f167a63dbb",
+      "name": "text-2",
+      "code": "linked-field",
+      "severity": "info",
+      "message": "field \"field-1\" shows 3f1c2a90-0000-4c1e-9a00-000000000013; the HTML's \"$1,247,000\" was not imported"
+    },
+    {
+      "path": "1f3d316c-9724-5069-b314-93f167a63dbb",
+      "name": "text-2",
+      "code": "linked-field",
+      "severity": "info",
+      "message": "field \"field-2\" shows 3f1c2a90-0000-4c1e-9a00-000000000031; the HTML's \"three\" was not imported"
+    },
+    {
+      "path": "3dd13f43-6346-534e-a04d-fb73fa6e8967",
+      "name": "trend",
+      "code": "canvas",
+      "severity": "info",
+      "message": "canvas has no structure; captured as a picture"
+    }
+  ]
+}

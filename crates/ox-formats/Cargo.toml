@@ -1,0 +1,15 @@
+[package]
+name = "ox-formats"
+description = "Milleleaf format registry: every way in and out of the model, what each keeps, and which one to use on this machine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ox-odf = { workspace = true }
+ox-wordcraft = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }

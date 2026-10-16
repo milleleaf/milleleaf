@@ -1,0 +1,17 @@
+[package]
+name = "ox-wordcraft"
+description = "Milleleaf ↔ WordCraft adapter: composed OX documents to WordCraft/DOCX, and edited DOCX back to an OX layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ox-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+# Pinned: WordCraft moves fast. Bump deliberately and rerun the tests.
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
+wordcraft-formats = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
+wordcraft-docx = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
