@@ -38,6 +38,12 @@ def text_of(roots, tag, sep=""):
     return re.sub(r"\s+", " ", t).strip()
 
 
+def bold(run):
+    rpr = run.find(W + "rPr")
+    b = rpr.find(W + "b") if rpr is not None else None
+    return b is not None and b.get(W + "val") not in ("0", "false", "off")
+
+
 def docx(z):
     body = [xml(z, "word/document.xml")]
     hf = [xml(z, n) for n in parts(z, r"word/(header|footer)\d*\.xml")]
@@ -66,7 +72,9 @@ def docx(z):
         "hyperlinks": count(body, W + "hyperlink"),
         "fields": count(body, W + "fldSimple") + count(body, W + "instrText"),
         "text boxes": count(body, W + "txbxContent"),
-        "bold runs": count(body, W + "b"),
+        # Bold text, not bold elements: <w:b> also sits on paragraph marks and as w:val="0", and
+        # a re-export may merge adjacent runs, so counting elements isn't a measure of loss.
+        "bold text chars": len(re.sub(r"\s+", " ", "".join(t.text or "" for r in body for run in r.iter(W + "r") if bold(run) for t in run.iter(W + "t"))).strip()),
         "body text chars": len(text_of(body, W + "t")),
         "_text": text_of(body, W + "t"),
     }
@@ -124,6 +132,13 @@ def xlsx(z):
     }
 
 
+MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+
+
+def fallback_copies(root):
+    return {e for fb in root.iter(MC + "Fallback") for e in fb.iter()}
+
+
 def pptx(z):
     slides = [xml(z, n) for n in parts(z, r"ppt/slides/slide\d+\.xml")]
     notes = [xml(z, n) for n in parts(z, r"ppt/notesSlides/notesSlide\d+\.xml")]
@@ -131,6 +146,7 @@ def pptx(z):
         "slides": len(slides),
         "shapes (sp)": count(slides, P + "sp"),
         "pictures (pic)": count(slides, P + "pic"),
+        "shapes without text": sum(1 for r in slides for sp in r.iter(P + "sp") if not "".join(t.text or "" for t in sp.iter(A + "t")).strip()),
         "groups": count(slides, P + "grpSp"),
         "connectors": count(slides, P + "cxnSp"),
         "tables": count(slides, A + "tbl"),
@@ -139,15 +155,19 @@ def pptx(z):
         "media files": len(parts(z, r"ppt/media/.+")),
         "notes slides": len(notes),
         "notes text chars": len(text_of(notes, A + "t")),
+        "notes slide-number fields": sum(1 for r in notes for f in r.iter(A + "fld") if f.get("type") == "slidenum"),
         "layouts": len(parts(z, r"ppt/slideLayouts/slideLayout\d+\.xml")),
         "masters": len(parts(z, r"ppt/slideMasters/slideMaster\d+\.xml")),
         "animations (timing)": count(slides, P + "timing"),
-        "transitions": count(slides, P + "transition"),
+        # Only transitions that do something (an effect or sound child, or auto-advance), and not
+        # the mc:Fallback copy of one in mc:Choice: LibreOffice writes an empty one on every slide.
+        "transitions": sum(1 for r in slides for t in r.iter(P + "transition") if t not in fallback_copies(r) and (len(t) or t.get("advTm") is not None)),
         # Sounds: on a transition (p:sndAc/p:stSnd/p:snd) or on an animation (p:audio, p:sndTgt).
         "transition sounds": count(slides, P + "stSnd"),
         "animation sounds": count(slides, P + "audio") + count(slides, P + "sndTgt"),
         "audio or video files": len([n for n in parts(z, r"ppt/media/.+") if re.search(r"\.(wav|mp3|m4a|aac|wma|mid|mp4|mov|m4v|wmv|avi)$", n, re.I)]),
         "hyperlinks": count(slides, A + "hlinkClick"),
+        "table text chars": len(text_of([t for r in slides for t in r.iter(A + "tbl")], A + "t")),
         "slide text chars": len(text_of(slides, A + "t")),
         "_text": text_of(slides, A + "t"),
     }

@@ -723,6 +723,12 @@ fn import_into(
                             grid.first()
                         ));
                         let header = grid.first().cloned().unwrap_or_default();
+                        if !t.rows.first().is_some_and(|r| r.props.header) {
+                            report.warnings.push(format!(
+                                "table starting `{}`: its first row becomes the column names, which export as a bold header row",
+                                header.join(" | ").chars().take(40).collect::<String>()
+                            ));
+                        }
                         let body: Vec<&Vec<String>> = grid.iter().skip(1).collect();
                         let cols: Vec<Value> = header
                             .iter()

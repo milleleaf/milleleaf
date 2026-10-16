@@ -205,15 +205,23 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             }
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
+            let warnings = collapse(&warnings);
             for w in &warnings {
                 eprintln!("not carried: {w}");
             }
+            let losses = file_losses(&bytes, None);
             if let Some(r) = opt(args, "--report") {
-                let rep = serde_json::json!({ "root": root, "summary": summary, "not_carried": warnings });
+                let counts = ox_formats::inventory::inventory(&bytes).map(|(_, c)| c).unwrap_or_default();
+                let rep = serde_json::json!({ "root": root, "summary": summary, "not_carried": warnings, "losses": losses, "inventory": counts });
                 fs::write(&r, serde_json::to_string_pretty(&rep).unwrap_or_default() + "\n")
                     .map_err(|e| format!("{}: {e}", r.display()))?;
             }
-            println!("adopted {} as {root}: {summary}; {} not carried", file.display(), warnings.len());
+            println!(
+                "adopted {} as {root}: {summary}; {} kinds of thing not carried, {} warnings",
+                file.display(),
+                losses.len(),
+                warnings.len()
+            );
             Ok(ExitCode::SUCCESS)
         }
         "layers" => {
@@ -330,7 +338,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let bytes = ox_wordcraft::to_docx(&doc).map_err(|e| e.to_string())?;
             let bytes = to_target(ox_formats::Kind::Document, bytes, &out)?;
             fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
-            for w in &report.warnings {
+            for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
             eprintln!(
@@ -383,10 +391,11 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ox_wordcraft::import(&node, &doc, header).map_err(|e| e.to_string())?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
-            for w in &report.warnings {
+            for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
-            show_matches(&report.matches, &report, args)?;
+            let base = ox_wordcraft::export(&node, &[]).ok().and_then(|(d, _)| ox_wordcraft::to_docx(&d).ok());
+            show_matches(&report.matches, &report, &file_losses(&bytes, base), args)?;
             for c in &report.conflicts {
                 eprintln!("conflict: {}: {}", c.path, c.message);
             }
@@ -415,7 +424,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let bytes = ox_gridcraft::to_xlsx(&wb).map_err(|e| e.to_string())?;
             let bytes = to_target(ox_formats::Kind::Workbook, bytes, &out)?;
             fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
-            for w in &report.warnings {
+            for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
             for (p, stored, computed) in &report.stale_values {
@@ -474,13 +483,14 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ox_gridcraft::import(&node, &mut wb, header).map_err(|e| e.to_string())?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
-            for w in &report.warnings {
+            for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
             for p in &report.missing {
                 eprintln!("warning: {p}: its named range is gone from the file; left unchanged");
             }
-            show_matches(&report.matches, &report, args)?;
+            let base = ox_gridcraft::export(&node).ok().and_then(|(w, _)| ox_gridcraft::to_xlsx(&w).ok());
+            show_matches(&report.matches, &report, &file_losses(&bytes, base), args)?;
             for p in &report.conflicts {
                 eprintln!("conflict: {p}: linked data edited in the workbook; not written back");
             }
@@ -509,7 +519,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let bytes = ox_deckcraft::to_pptx(&p).map_err(|e| e.to_string())?;
             let bytes = to_target(ox_formats::Kind::Deck, bytes, &out)?;
             fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
-            for w in &report.warnings {
+            for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
             eprintln!(
@@ -559,10 +569,11 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ox_deckcraft::import(&node, &p, header).map_err(|e| e.to_string())?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
-            for w in &report.warnings {
+            for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
-            show_matches(&report.matches, &report, args)?;
+            let base = ox_deckcraft::export(&node, &asset_root(&file)).ok().and_then(|(d, _)| ox_deckcraft::to_pptx(&d).ok());
+            show_matches(&report.matches, &report, &file_losses(&bytes, base), args)?;
             for c in &report.conflicts {
                 eprintln!("conflict: {}: {}", c.path, c.message);
             }
@@ -646,9 +657,54 @@ fn today() -> String {
 
 /// Prints how sure the import was about each match, and writes the whole report with
 /// `--report FILE`.
+/// What the file holds that the adapter doesn't carry (`ox_formats::inventory`), printed as
+/// `not carried:` lines so no loss is silent.
+/// For an import, `baseline` is what Milleleaf would export for the node, so only what the file
+/// holds beyond it is reported.
+fn file_losses(bytes: &[u8], baseline: Option<Vec<u8>>) -> Vec<ox_formats::inventory::Loss> {
+    let base = baseline.and_then(|b| ox_formats::inventory::inventory(&b).ok()).map(|(_, c)| c);
+    let losses = match ox_formats::inventory::inventory(bytes) {
+        Ok((kind, counts)) => ox_formats::inventory::losses(kind, &counts, base.as_ref()),
+        Err(e) => {
+            eprintln!("warning: couldn't count what the file holds ({e}), so losses aren't listed");
+            return Vec::new();
+        }
+    };
+    for l in &losses {
+        let note = if l.note.is_empty() { String::new() } else { format!(": {}", l.note) };
+        eprintln!("not carried: {} {}{} ({})", l.count, l.feature, note, l.carried);
+    }
+    losses
+}
+
+/// Warnings that differ only in where they happened (`A1: error value Div0` in 1,314 cells)
+/// become one line with the count and the first places.
+fn collapse(warnings: &[String]) -> Vec<String> {
+    let what = |w: &String| w.split_once(": ").map(|(_, r)| r.to_string()).unwrap_or_else(|| w.clone());
+    let mut seen: Vec<(String, Vec<&str>)> = Vec::new();
+    for w in warnings {
+        let k = what(w);
+        let at = w.split_once(": ").map(|(a, _)| a).unwrap_or("");
+        match seen.iter_mut().find(|(x, _)| *x == k) {
+            Some((_, v)) => v.push(at),
+            None => seen.push((k, vec![at])),
+        }
+    }
+    let mut out = Vec::new();
+    for (k, at) in seen {
+        if at.len() < 3 {
+            out.extend(at.iter().map(|a| if a.is_empty() { k.clone() } else { format!("{a}: {k}") }));
+        } else {
+            out.push(format!("{k}, in {} places (first: {}, …)", at.len(), at[..2].join(", ")));
+        }
+    }
+    out
+}
+
 fn show_matches(
     matches: &[ox_core::Match],
     report: &impl serde::Serialize,
+    losses: &[ox_formats::inventory::Loss],
     args: &[String],
 ) -> Result<(), String> {
     let guesses = ox_core::matching::best_guesses(matches);
@@ -667,7 +723,11 @@ fn show_matches(
         eprintln!("best guess: {}: {}", g.path, g.by);
     }
     if let Some(p) = opt(args, "--report") {
-        let text = serde_json::to_string_pretty(report).unwrap_or_default();
+        let mut v = serde_json::to_value(report).unwrap_or_default();
+        if let Some(o) = v.as_object_mut() {
+            o.insert("losses".into(), serde_json::to_value(losses).unwrap_or_default());
+        }
+        let text = serde_json::to_string_pretty(&v).unwrap_or_default();
         fs::write(&p, text + "\n").map_err(|e| format!("{}: {e}", p.display()))?;
     }
     Ok(())

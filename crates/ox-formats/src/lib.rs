@@ -9,6 +9,8 @@
 //! identity; without it an import would see every paragraph as new and every old one as
 //! deleted. `ox formats` prints the table, with why a route is or isn't available.
 
+pub mod inventory;
+
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;

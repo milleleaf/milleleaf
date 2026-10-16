@@ -771,15 +771,14 @@ fn import_into(
                     // New on this slide: text boxes are carried; other new objects are reported.
                     let Some(text) = sh.text.as_ref().filter(|t| !t.text().trim().is_empty())
                     else {
-                        if !matches!(sh.kind, ShapeKind::Shape) || sh.name.starts_with(NAME_PREFIX)
-                        {
-                            report.warnings.push(format!(
-                                "slide {}: new `{}` ({}) isn't carried yet",
-                                si + 1,
-                                sh.name,
-                                kind_name(&sh.kind)
-                            ));
-                        }
+                        // Shapes without text too: an empty placeholder, but also a filled box.
+                        report.warnings.push(format!(
+                            "slide {}: new `{}` ({}{}) isn't carried yet",
+                            si + 1,
+                            sh.name,
+                            kind_name(&sh.kind),
+                            if matches!(sh.kind, ShapeKind::Shape) { ", no text" } else { "" }
+                        ));
                         continue;
                     };
                     let path = stable_id(&format!("{slide_path}|pptx-frame|{zi}|{}", text.text()));

@@ -247,3 +247,12 @@ cat "$TMP/err"
 $OX pptx-import project.ox.json "$DECK" fixtures/deck.libreoffice-edited.pptx --out "$TMP/d.ox.json" 2>&1 | grep -E "matched|best guess"
 $OX pptx-import project.ox.json "$DECK" fixtures/deck.msoffice-edited.pptx --out "$TMP/d.ox.json" 2>&1 | grep -E "matched|best guess"
 rm -rf "$TMP"
+
+echo; echo "== 17. No silent loss (M2.5): adopt real files, export them again, and fail on any loss the report doesn't list"
+#    tools/inventory counts the original and the re-export from their XML, independently of Milleleaf
+TMP=$(mktemp -d)
+for f in ../real/*.docx ../real/*.xlsx ../real/*.pptx; do
+  OX="$PWD/../../target/debug/ox" ../../tools/inventory/roundtrip.sh "$f" "$TMP" > "$TMP/out.txt" 2>&1 || { cat "$TMP/out.txt"; echo "unlisted loss in $f"; exit 1; }
+  echo "$(basename "$f"): $(tail -1 "$TMP/out.txt")"
+done
+rm -rf "$TMP"

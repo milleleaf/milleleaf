@@ -10,6 +10,9 @@ ox-odf = { workspace = true }
 ox-wordcraft = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+# Already in the build through the office crates (same versions); used to count what a file holds.
+quick-xml = "=0.41.0"
+zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }

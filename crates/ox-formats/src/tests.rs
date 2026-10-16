@@ -89,3 +89,39 @@ fn routes_fall_back_and_say_why() {
     }
     unsafe { std::env::remove_var("OX_SOFFICE") };
 }
+
+/// The counts match `tools/inventory/ooxml_inventory.py` on the real files, and what the adapters
+/// don't carry is listed (M2.5: no silent loss).
+#[test]
+fn inventory_counts_real_files_and_lists_losses() {
+    use crate::inventory::{inventory, losses};
+    let real = |f: &str| std::fs::read(format!("{}/../../examples/real/{f}", env!("CARGO_MANIFEST_DIR"))).unwrap();
+    let lost = |kind: &str, c: &crate::inventory::Counts| -> Vec<&'static str> {
+        losses(kind, c, None).iter().map(|l| l.feature).collect()
+    };
+
+    let (k, c) = inventory(&real("board-report.docx")).unwrap();
+    assert_eq!(k, "docx");
+    assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["merged cells (gridSpan/vMerge)"]), (87, 42, 5));
+    assert_eq!((c["body text chars"], c["bold text chars"], c["footnote separator lines"]), (10140, 1066, 1));
+    let l = lost(k, &c);
+    assert!(l.contains(&"list paragraphs (numPr)") && l.contains(&"headers and footers (parts)"), "{l:?}");
+    assert!(!l.contains(&"paragraphs (non-empty)"));
+
+    let (k, c) = inventory(&real("finance.xlsx")).unwrap();
+    assert_eq!((c["formulas"], c["comments"], c["defined names (not Milleleaf's)"], c["merged ranges"]), (25932, 219, 20, 444));
+    let l = lost(k, &c);
+    assert!(l.contains(&"comments") && l.contains(&"data validations") && !l.contains(&"formulas"), "{l:?}");
+
+    let (k, c) = inventory(&real("briefing.pptx")).unwrap();
+    assert_eq!((c["slides"], c["shapes (sp)"], c["shapes without text"], c["notes slide-number fields"]), (28, 59, 1, 28));
+    assert_eq!(c["table text chars"], 2152);
+    let l = lost(k, &c);
+    assert!(l.contains(&"shapes without text") && l.contains(&"tables") && !l.contains(&"slides"), "{l:?}");
+
+    // On import, only what the file holds beyond Milleleaf's own export is reported; an empty
+    // shape that isn't Milleleaf's (named ox:…) was added by someone, so it still is.
+    let base = c.clone();
+    let l: Vec<_> = losses(k, &c, Some(&base)).iter().map(|l| l.feature).collect();
+    assert_eq!(l, ["shapes without text"]);
+}

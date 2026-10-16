@@ -23,3 +23,5 @@ python3 -I "$ROOT/tools/inventory/ooxml_inventory.py" "$f" "$out/$name.reexport.
 echo "== $name.$ext: $(tail -1 "$out/$name.validate.txt")"
 sed -n '1,200p' "$out/$name.inventory.md" | grep -E "\| (lost|fewer|more) \||words kept"
 echo "-- Milleleaf said it didn't carry:"; sed 's/^/   /' "$out/$name.not-carried.txt"
+echo "-- every loss reported?"
+python3 -I "$ROOT/tools/inventory/check_losses.py" "$out/$name.inventory.json" "$out/$name.adopt-report.json"
