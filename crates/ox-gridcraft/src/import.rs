@@ -76,6 +76,30 @@ fn locate(wb: &Workbook, path: &str) -> Option<(usize, String, RangeRef)> {
     Some((si, sheet, range))
 }
 
+/// The composed workbook with an import's edits applied to its sheets and ranges (attribute by
+/// attribute; `null` removes one): what the next export would be built from.
+fn with_edits(node: &Composed, edits: &[Node]) -> Composed {
+    let mut n = node.clone();
+    let apply = |c: &mut Composed| {
+        for e in edits.iter().filter(|e| e.path == c.path) {
+            for (k, v) in &e.attributes {
+                if v.is_null() {
+                    c.attributes.remove(k);
+                } else {
+                    c.attributes.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    };
+    for sheet in &mut n.children {
+        apply(sheet);
+        for item in &mut sheet.children {
+            apply(item);
+        }
+    }
+    n
+}
+
 /// The value at the start of a node's named range.
 /// How many defined names carry a node's identity (more than one after a sheet is copied).
 fn name_count(wb: &Workbook, path: &str) -> usize {
@@ -404,11 +428,58 @@ pub fn import(
         }
     }
 
+    // Cell styles changed in Excel (bold, fills, borders, number formats…): compared, cell by
+    // cell, with what Milleleaf would export for the edited data (so a row added in Excel, which
+    // Milleleaf formats itself, isn't a style edit). The workbook's styles and every sheet's map
+    // then come back from the file.
+    let expected = crate::export(&with_edits(node, &nodes))
+        .ok()
+        .and_then(|(b, _)| crate::to_xlsx(&b).ok())
+        .and_then(|x| crate::from_xlsx(&x).ok());
+    if let Some(exp) = &expected {
+        let changed = node.children.iter().any(|sn| {
+            let Some((si, sheet, _)) = locate(wb, &sn.path) else { return false };
+            let now = crate::look::cell_looks(wb, si);
+            let was = exp.sheets.iter().position(|s| s.name == sheet).map(|i| crate::look::cell_looks(exp, i)).unwrap_or_default();
+            now != was
+        });
+        if changed {
+            let (table, maps) = crate::look::cell_styles(wb);
+            let mut gw = obj(node, "grid::workbook").cloned().unwrap_or_default();
+            gw.insert("styles".into(), table);
+            match crate::look::normal_style(wb) {
+                Some(n) => gw.insert("normalStyle".into(), n),
+                None => gw.remove("normalStyle"),
+            };
+            nodes.push(attr_node(&node.path, "grid::workbook", Value::Object(gw)));
+            for sn in &node.children {
+                let Some((si, ..)) = locate(wb, &sn.path) else { continue };
+                let mut gs = nodes
+                    .iter()
+                    .find(|n| n.path == sn.path)
+                    .and_then(|n| n.attributes.get("grid::sheet"))
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_else(|| obj(sn, "grid::sheet").cloned().unwrap_or_default());
+                gs.insert("cellStyles".into(), Value::Object(maps.get(si).cloned().unwrap_or_default()));
+                nodes.push(attr_node(&sn.path, "grid::sheet", Value::Object(gs)));
+                report.changed.push(sn.path.clone());
+            }
+        }
+    }
+
     // The workbook's own defined names, added or changed in Excel.
     if let Some(base) = &base {
         let (now, was) = (crate::look::names(wb), crate::look::names(base));
         if now != was {
-            let mut gw = obj(node, "grid::workbook").cloned().unwrap_or_default();
+            // On top of a workbook statement already made above (its styles).
+            let mut gw = nodes
+                .iter()
+                .find(|n| n.path == node.path)
+                .and_then(|n| n.attributes.get("grid::workbook"))
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_else(|| obj(node, "grid::workbook").cloned().unwrap_or_default());
             if now.is_empty() {
                 gw.remove("names");
             } else {

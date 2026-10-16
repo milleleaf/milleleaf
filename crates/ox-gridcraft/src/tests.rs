@@ -307,6 +307,17 @@ fn comments_merges_panes_and_names_added_in_excel_come_back() {
         sh.merges.push(RangeRef::parse("A12:B12").unwrap());
         sh.freeze = Some((1, 0));
     }
+    // A cell made bold with a yellow fill.
+    let mut st = wb.styles.get(wb.sheets[0].cell(CellRef::parse("A2").unwrap()).unwrap().style).clone();
+    st.font.bold = true;
+    st.fill = gridcraft_model::Fill::solid(gridcraft_model::Color::Rgb(0xFFFF00));
+    let sid = wb.styles.intern(st);
+    {
+        let sh = std::sync::Arc::make_mut(&mut wb.sheets[0]);
+        let mut c = sh.cell(CellRef::parse("A2").unwrap()).cloned().unwrap();
+        c.style = sid;
+        sh.set_cell(CellRef::parse("A2").unwrap(), c);
+    }
     wb.names.push(gridcraft_model::DefinedName {
         name: "Regions".into(),
         scope: None,
@@ -332,4 +343,6 @@ fn comments_merges_panes_and_names_added_in_excel_come_back() {
     assert_eq!(sh.comments[&CellRef::parse("B2").unwrap()].text, "Check this");
     assert_eq!(sh.freeze, Some((1, 0)));
     assert!(out.names.iter().any(|n| n.name == "Regions"));
+    let a2 = out.styles.get(sh.cell(CellRef::parse("A2").unwrap()).unwrap().style);
+    assert!(a2.font.bold && a2.fill.pattern != gridcraft_model::PatternType::None, "the bold, filled cell exports as it was");
 }

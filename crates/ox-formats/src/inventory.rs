@@ -436,8 +436,81 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     c
 }
 
+/// Per cell style (`cellXfs` index): (bold, filled, bordered, a number format other than General).
+fn xf_looks(styles: &[u8]) -> Vec<[bool; 4]> {
+    let (mut bold, mut fill, mut border) = (Vec::new(), Vec::new(), Vec::new());
+    let mut xfs: Vec<(usize, usize, usize, bool)> = Vec::new();
+    // Which list we're in and the depth of its items.
+    let (mut list, mut depth): (&[u8], usize) = (b"", 0);
+    let mut list_depth = 0usize;
+    walk(styles, |ev| match ev {
+        Ev::Open(n, l, e) => {
+            depth += 1;
+            if n != S {
+                return;
+            }
+            match l {
+                b"fonts" | b"fills" | b"borders" | b"cellXfs" if list.is_empty() => {
+                    list = match l {
+                        b"fonts" => b"fonts",
+                        b"fills" => b"fills",
+                        b"borders" => b"borders",
+                        _ => b"cellXfs",
+                    };
+                    list_depth = depth;
+                }
+                _ if list.is_empty() => {}
+                _ if depth == list_depth + 1 => match list {
+                    b"fonts" => bold.push(false),
+                    b"fills" => fill.push(false),
+                    b"borders" => border.push(false),
+                    _ => {
+                        let id = |k: &[u8]| attr(e, k).and_then(|v| v.parse().ok()).unwrap_or(0usize);
+                        xfs.push((id(b"fontId"), id(b"fillId"), id(b"borderId"), id(b"numFmtId") != 0));
+                    }
+                },
+                b"b" if list == b"fonts" && depth == list_depth + 2 => {
+                    if let Some(x) = bold.last_mut() {
+                        *x = !matches!(attr(e, b"val").as_deref(), Some("0" | "false"));
+                    }
+                }
+                b"gradientFill" if list == b"fills" => {
+                    if let Some(x) = fill.last_mut() {
+                        *x = true;
+                    }
+                }
+                b"patternFill" if list == b"fills" => {
+                    if let Some(x) = fill.last_mut() {
+                        *x = !matches!(attr(e, b"patternType").as_deref(), None | Some("none" | "gray125"));
+                    }
+                }
+                _ if list == b"borders" && depth == list_depth + 2 => {
+                    if let Some(x) = border.last_mut() {
+                        *x |= !matches!(attr(e, b"style").as_deref(), None | Some("none"));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ev::Close(..) => {
+            if depth == list_depth && !list.is_empty() {
+                list = b"";
+            }
+            depth -= 1;
+        }
+        _ => {}
+    });
+    let at = |v: &[bool], i: usize| v.get(i).copied().unwrap_or(false);
+    xfs.iter().map(|&(fo, fi, bo, nf)| [at(&bold, fo), at(&fill, fi), at(&border, bo), nf]).collect()
+}
+
 fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], names: &[String]) -> Counts {
     let mut t: BTreeMap<&'static str, u64> = BTreeMap::new();
+    let looks = xf_looks(styles);
+    const LOOKS: [&str; 4] = ["cells in bold", "cells with a fill", "cells with borders", "cells with a number format"];
+    for k in LOOKS {
+        t.insert(k, 0);
+    }
     for s in sheets {
         let (mut in_c, mut has_value) = (false, false);
         walk(s, |ev| match ev {
@@ -449,6 +522,12 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
                     b"c" => {
                         in_c = true;
                         has_value = false;
+                        let i = attr(e, b"s").and_then(|v| v.parse().ok()).unwrap_or(0usize);
+                        if let Some(look) = looks.get(i) {
+                            for (k, on) in LOOKS.iter().zip(look) {
+                                *t.entry(k).or_default() += u64::from(*on);
+                            }
+                        }
                         return;
                     }
                     b"v" | b"is" => {
@@ -523,6 +602,7 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     let mut c = Counts::new();
     c.insert("sheets", sheets.len() as u64);
     for k in [
+        "cells in bold", "cells with a fill", "cells with borders", "cells with a number format",
         "cells with a value", "formulas", "merged ranges", "custom number formats", "cell styles (xf)", "fonts",
         "fills", "borders", "column width settings", "custom row heights", "frozen panes", "conditional formats",
         "data validations", "hyperlinks",
@@ -706,11 +786,17 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("comments", None),
             ("data validations", None),
             ("defined names (not Milleleaf's)", None),
-            ("custom number formats", Some("number, currency and percent are kept; the exact format codes are not")),
-            ("cell styles (xf)", Some("only the styles Milleleaf's own formats need")),
-            ("fonts", Some("only the styles Milleleaf's own formats need")),
-            ("fills", Some("only the styles Milleleaf's own formats need")),
-            ("borders", Some("only the styles Milleleaf's own formats need")),
+            // Styles: the ones cells use are carried (the "cells in bold"… rows), so these lists
+            // can get shorter.
+            ("custom number formats", Some("the formats cells use are kept; unused ones are dropped")),
+            ("cell styles (xf)", Some("the styles cells use are kept; unused ones are dropped")),
+            ("fonts", Some("the fonts cells use are kept; unused ones are dropped")),
+            ("fills", Some("the fills cells use are kept; unused ones are dropped")),
+            ("borders", Some("the borders cells use are kept; unused ones are dropped")),
+            ("cells in bold", None),
+            ("cells with a fill", None),
+            ("cells with borders", None),
+            ("cells with a number format", None),
         ],
         "pptx" => &[
             ("slides", None),

@@ -204,6 +204,14 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
     wb.sheets.clear();
     wb.props.title = s(&gw, "name").unwrap_or("").to_string();
     let mut report = ExportReport::default();
+    // An adopted workbook's own default style (its Normal font) and cell styles.
+    if let Some(n) = gw.get("normalStyle") {
+        match serde_json::from_value(n.clone()) {
+            Ok(n) => wb.styles = gridcraft_model::StyleTable::with_default(n),
+            Err(e) => report.warnings.push(format!("the workbook's default style can't be read ({e}); GridCraft's is used")),
+        }
+    }
+    let cell_styles = crate::look::read_styles(gw.get("styles"), &mut report.warnings);
     let header = style_with(&mut wb, None, true);
     let styles = Styles { header };
     let mut sized: Vec<usize> = Vec::new();
@@ -256,6 +264,7 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
         if let Some(sh) = wb.sheet_mut(si) {
             crate::look::apply_look(sh, gs, &sheet_node.path, &mut report.warnings);
         }
+        crate::look::apply_cell_styles(&mut wb, si, gs.get("cellStyles"), &cell_styles, &sheet_node.path, &mut report.warnings);
         // A sheet whose sizes the model gives (an adopted workbook) keeps them: no auto-fit.
         if gs.contains_key("cols") || gs.contains_key("defaults") {
             sized.push(si);

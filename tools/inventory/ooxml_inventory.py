@@ -150,6 +150,36 @@ def xlsx_text(shared, sheets):
     return re.sub(r"\s+", " ", " ".join(out)).strip()
 
 
+def cell_looks(styles, sheets):
+    """Per cell, what its style shows: bold, a fill, borders, a number format other than General.
+    Counts cells, not style entries: a writer may drop styles no cell uses."""
+    if not styles:
+        return {}
+    st = styles[0]
+    lists = {k: next(iter(st.iter(S + k)), None) for k in ("fonts", "fills", "borders", "cellXfs")}
+    items = {k: list(v) if v is not None else [] for k, v in lists.items()}
+    bold = [f.find(S + "b") is not None and f.find(S + "b").get("val") not in ("0", "false") for f in items["fonts"]]
+    def filled(f):
+        p = f.find(S + "patternFill")
+        return f.find(S + "gradientFill") is not None or (p is not None and p.get("patternType") not in (None, "none", "gray125"))
+    fill = [filled(f) for f in items["fills"]]
+    border = [any(e.get("style") not in (None, "none") for e in b) for b in items["borders"]]
+    xfs = [(int(x.get("fontId", 0)), int(x.get("fillId", 0)), int(x.get("borderId", 0)), int(x.get("numFmtId", 0))) for x in items["cellXfs"]]
+    n = {"cells in bold": 0, "cells with a fill": 0, "cells with borders": 0, "cells with a number format": 0}
+    at = lambda lst, i: lst[i] if 0 <= i < len(lst) else False
+    for sh in sheets:
+        for c in sh.iter(S + "c"):
+            i = int(c.get("s", 0))
+            if not 0 <= i < len(xfs):
+                continue
+            fo, fi, bo, nf = xfs[i]
+            n["cells in bold"] += at(bold, fo)
+            n["cells with a fill"] += at(fill, fi)
+            n["cells with borders"] += at(border, bo)
+            n["cells with a number format"] += nf != 0
+    return n
+
+
 def xlsx(z):
     sheets = [xml(z, n) for n in parts(z, r"xl/worksheets/sheet\d+\.xml")]
     styles = [xml(z, n) for n in parts(z, r"xl/styles\.xml")]
@@ -162,6 +192,7 @@ def xlsx(z):
         "formulas": count(sheets, S + "f"),
         "merged ranges": count(sheets, S + "mergeCell"),
         "custom number formats": count(styles, S + "numFmt"),
+        **cell_looks(styles, sheets),
         "cell styles (xf)": sum(len(list(x)) for st in styles for x in st.iter(S + "cellXfs")),
         "fonts": sum(len(list(x)) for st in styles for x in st.iter(S + "fonts")),
         "fills": sum(len(list(x)) for st in styles for x in st.iter(S + "fills")),

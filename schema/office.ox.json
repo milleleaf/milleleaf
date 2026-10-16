@@ -136,6 +136,14 @@
                   }
                 }
               }
+            },
+            "styles": {
+              "dataType": "Array",
+              "optional": true
+            },
+            "normalStyle": {
+              "dataType": "Object",
+              "optional": true
             }
           }
         }
@@ -205,6 +213,10 @@
                   }
                 }
               }
+            },
+            "cellStyles": {
+              "dataType": "Object",
+              "optional": true
             }
           }
         }

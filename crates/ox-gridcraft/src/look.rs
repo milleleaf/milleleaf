@@ -14,7 +14,7 @@
 //! GridCraft's own types are kept as data (its serde form) where they carry many options.
 
 use gridcraft_core::{CellRef, RangeRef};
-use gridcraft_model::{Comment, DefinedName, LineInfo, PrintSettings, Sheet, Validation, Workbook};
+use gridcraft_model::{Comment, DefinedName, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Workbook};
 use serde_json::{Map, Value, json};
 
 use crate::NAME_PREFIX;
@@ -191,4 +191,122 @@ pub(crate) fn apply_names(wb: &mut Workbook, names: Option<&Value>, warnings: &m
             hidden: n.get("hidden").and_then(Value::as_bool) == Some(true),
         });
     }
+}
+
+/// The cell styles of a workbook as data: the styles cells use (GridCraft's form) and, per sheet,
+/// which cells use each, as `{"<index>": ["A1:D1", "F5", …]}` runs along rows. Cells in the
+/// default style aren't listed; the default style itself is `normal`.
+pub(crate) fn cell_styles(wb: &Workbook) -> (Value, Vec<Map<String, Value>>) {
+    let mut table: Vec<Value> = Vec::new();
+    let mut index: std::collections::HashMap<StyleId, usize> = std::collections::HashMap::new();
+    let mut maps = Vec::new();
+    for sh in &wb.sheets {
+        let mut cells: Vec<(CellRef, StyleId)> = sh
+            .cells
+            .iter()
+            .filter(|(_, c)| c.style != StyleId::DEFAULT)
+            .map(|(at, c)| (at, c.style))
+            .collect();
+        cells.sort_by_key(|(at, _)| (at.row, at.col));
+        let mut by: std::collections::BTreeMap<usize, Vec<Value>> = std::collections::BTreeMap::new();
+        let mut i = 0;
+        while i < cells.len() {
+            let (start, sid) = cells[i];
+            let mut end = start;
+            let mut j = i + 1;
+            while j < cells.len() && cells[j].0.row == start.row && cells[j].0.col == end.col + 1 && cells[j].1 == sid {
+                end = cells[j].0;
+                j += 1;
+            }
+            let idx = *index.entry(sid).or_insert_with(|| {
+                table.push(serde_json::to_value(wb.styles.get(sid)).unwrap_or_default());
+                table.len() - 1
+            });
+            let a1 = if start == end { start.a1() } else { RangeRef::new(start, end).a1() };
+            by.entry(idx).or_default().push(json!(a1));
+            i = j;
+        }
+        maps.push(by.into_iter().map(|(k, v)| (k.to_string(), Value::Array(v))).collect());
+    }
+    (Value::Array(table), maps)
+}
+
+/// The workbook's default (Normal) cell style, when it isn't GridCraft's.
+pub(crate) fn normal_style(wb: &Workbook) -> Option<Value> {
+    let normal = wb.styles.get(StyleId::DEFAULT);
+    (*normal != *Workbook::new().styles.get(StyleId::DEFAULT)).then(|| serde_json::to_value(normal).ok()).flatten()
+}
+
+/// The styles of `grid::workbook.styles`, read once for every sheet.
+pub(crate) fn read_styles(v: Option<&Value>, warnings: &mut Vec<String>) -> Vec<Option<Style>> {
+    v.and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, s)| match serde_json::from_value(s.clone()) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                warnings.push(format!("cell style {i} can't be read ({e}); its cells keep Milleleaf's"));
+                None
+            }
+        })
+        .collect()
+}
+
+/// Applies a sheet's `cellStyles` map: each listed cell takes its style (cells with no value yet
+/// are created, so a filled or bordered empty cell keeps its look).
+///
+/// When the workbook carries its own styles (`styles` not empty) the map is the whole story: a
+/// cell it doesn't list is in the default style, not in the one Milleleaf would give its value.
+pub(crate) fn apply_cell_styles(wb: &mut Workbook, si: usize, map: Option<&Value>, styles: &[Option<Style>], at: &str, warnings: &mut Vec<String>) {
+    if !styles.is_empty() {
+        if let Some(sh) = wb.sheet_mut(si) {
+            let styled: Vec<CellRef> = sh.cells.iter().filter(|(_, c)| c.style != StyleId::DEFAULT).map(|(at, _)| at).collect();
+            for c in styled {
+                let mut cell = sh.cell(c).cloned().unwrap_or_default();
+                cell.style = StyleId::DEFAULT;
+                sh.set_cell(c, cell);
+            }
+        }
+    }
+    for (idx, ranges) in map.and_then(Value::as_object).into_iter().flatten() {
+        let Some(style) = idx.parse::<usize>().ok().and_then(|i| styles.get(i)).and_then(Option::clone) else {
+            warnings.push(format!("{at}: cell style `{idx}` isn't in the workbook's styles; skipped"));
+            continue;
+        };
+        let sid = wb.styles.intern(style);
+        let Some(sh) = wb.sheet_mut(si) else { return };
+        for r in ranges.as_array().into_iter().flatten() {
+            let Some(r) = r.as_str().and_then(|r| RangeRef::parse(r).or_else(|| CellRef::parse(r).map(RangeRef::cell))) else {
+                warnings.push(format!("{at}: styled range `{r}` can't be read; skipped"));
+                continue;
+            };
+            for row in r.start.row..=r.end.row {
+                for col in r.start.col..=r.end.col {
+                    let c = CellRef::new(row, col);
+                    let mut cell = sh.cell(c).cloned().unwrap_or_default();
+                    cell.style = sid;
+                    sh.set_cell(c, cell);
+                }
+            }
+        }
+    }
+}
+
+/// What each styled cell of a sheet looks like (its style as data), for comparing two workbooks.
+pub(crate) fn cell_looks(wb: &Workbook, si: usize) -> std::collections::BTreeMap<String, Value> {
+    let Some(sh) = wb.sheets.get(si) else { return Default::default() };
+    let normal = wb.styles.get(StyleId::DEFAULT);
+    sh.cells
+        .iter()
+        .filter(|(_, c)| wb.styles.get(c.style) != normal)
+        .map(|(at, c)| {
+            let mut v = serde_json::to_value(wb.styles.get(c.style)).unwrap_or_default();
+            // `"$"#,##0` and `\$#,##0` are the same format: editors pick either spelling.
+            if let Some(Value::String(f)) = v.get_mut("num_fmt") {
+                f.retain(|ch| ch != '"' && ch != '\\');
+            }
+            (at.a1(), v)
+        })
+        .collect()
 }

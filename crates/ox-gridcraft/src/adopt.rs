@@ -1,8 +1,8 @@
 //! Bringing a workbook Milleleaf didn't make into a project ([`adopt`]): each sheet becomes a
 //! `grid::sheet` node and each non-empty cell an `office::data::value` at its `grid::range`, with
 //! its `grid::formula`. Number formats become `currency` / `percent` / `number`. Merged cells,
-//! frozen panes, comments, validation, row and column sizes and the file's own names are carried
-//! (`crate::look`); styles and charts aren't yet, and the report lists what the file had.
+//! frozen panes, comments, validation, row and column sizes, cell styles and the file's own names
+//! are carried (`crate::look`); charts and pictures aren't yet, and the report lists what the file had.
 
 use std::collections::BTreeMap;
 
@@ -42,7 +42,8 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
     let mut wb_children = BTreeMap::new();
     let mut wb_order = Vec::new();
     let mut charts = 0;
-    for sh in &wb.sheets {
+    let (style_table, style_maps) = crate::look::cell_styles(wb);
+    for (si, sh) in wb.sheets.iter().enumerate() {
         report.sheets += 1;
         let sheet_path = stable_id(&format!("{path}|xlsx-sheet|{}", sh.name));
         let sheet_name = format!("sheet-{}", &sheet_path[..8]);
@@ -85,6 +86,9 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
         }
         let mut gs = Map::from_iter([("name".to_string(), json!(sh.name))]);
         gs.extend(crate::look::sheet_look(sh));
+        if let Some(m) = style_maps.get(si).filter(|m| !m.is_empty()) {
+            gs.insert("cellStyles".into(), Value::Object(m.clone()));
+        }
         nodes.push(Node {
             path: sheet_path,
             attributes: Map::from_iter([("grid::sheet".to_string(), Value::Object(gs))]),
@@ -99,8 +103,18 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
         Node {
             path: path.to_string(),
             attributes: Map::from_iter([("grid::workbook".to_string(), {
+                let mut gw = Map::from_iter([("name".to_string(), json!(name))]);
                 let names = crate::look::names(wb);
-                if names.is_empty() { json!({ "name": name }) } else { json!({ "name": name, "names": names }) }
+                if !names.is_empty() {
+                    gw.insert("names".into(), Value::Array(names));
+                }
+                if style_table.as_array().is_some_and(|t| !t.is_empty()) {
+                    gw.insert("styles".into(), style_table);
+                }
+                if let Some(n) = crate::look::normal_style(wb) {
+                    gw.insert("normalStyle".into(), n);
+                }
+                Value::Object(gw)
             })]),
             children: wb_children,
             order: Some(wb_order),
@@ -110,7 +124,6 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
     if charts > 0 {
         report.warnings.push(format!("{charts} chart(s) aren't carried yet"));
     }
-    report.warnings.push("cell styles (fonts, fills, borders, alignment) aren't carried yet".into());
     let mut header = header;
     if header.ox_version.is_empty() {
         header.ox_version = OX_VERSION.into();
