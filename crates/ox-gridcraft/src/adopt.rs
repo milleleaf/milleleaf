@@ -114,6 +114,7 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
                 if let Some(n) = crate::look::normal_style(wb) {
                     gw.insert("normalStyle".into(), n);
                 }
+                gw.extend(crate::look::workbook_look(wb));
                 Value::Object(gw)
             })]),
             children: wb_children,

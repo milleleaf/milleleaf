@@ -468,10 +468,13 @@ pub fn import(
         }
     }
 
-    // The workbook's own defined names, added or changed in Excel.
+    // The workbook's own defined names and its structure lock, changed in Excel. (Which sheet is
+    // active changes with every save: adopt carries it, imports don't.)
     if let Some(base) = &base {
+        let lock = |w: &Workbook| crate::look::workbook_look(w).remove("protection");
         let (now, was) = (crate::look::names(wb), crate::look::names(base));
-        if now != was {
+        let (lock_now, lock_was) = (lock(wb), lock(base));
+        if now != was || lock_now != lock_was {
             // On top of a workbook statement already made above (its styles).
             let mut gw = nodes
                 .iter()
@@ -485,6 +488,10 @@ pub fn import(
             } else {
                 gw.insert("names".into(), Value::Array(now));
             }
+            match lock_now {
+                Some(l) => gw.insert("protection".into(), l),
+                None => gw.remove("protection"),
+            };
             nodes.push(attr_node(&node.path, "grid::workbook", Value::Object(gw)));
             report.changed.push(node.path.clone());
         }

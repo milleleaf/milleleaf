@@ -271,6 +271,7 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
         }
     }
     crate::look::apply_names(&mut wb, gw.get("names"), &mut report.warnings);
+    crate::look::apply_workbook_look(&mut wb, &gw, &mut report.warnings);
     if wb.sheets.is_empty() {
         wb.sheets.push(Arc::new(Sheet::new("Sheet1")));
     }

@@ -552,6 +552,8 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
                     b"conditionalFormatting" => "conditional formats",
                     b"dataValidation" => "data validations",
                     b"hyperlink" => "hyperlinks",
+                    b"sheetProtection" => "protected sheets",
+                    b"sheetView" if matches!(attr(e, b"showGridLines").as_deref(), Some("0" | "false")) => "sheets with gridlines off",
                     _ => return,
                 };
                 *t.entry(k).or_default() += 1;
@@ -600,13 +602,12 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
         }
         _ => {}
     });
-    let mut own_names = 0u64;
-    walk(wb, |ev| {
-        if let Ev::Open(n, b"definedName", e) = ev {
-            if n == S && !attr(e, b"name").unwrap_or_default().starts_with("ox_") {
-                own_names += 1;
-            }
-        }
+    let (mut own_names, mut hidden, mut locked) = (0u64, 0u64, 0u64);
+    walk(wb, |ev| match ev {
+        Ev::Open(S, b"definedName", e) if !attr(e, b"name").unwrap_or_default().starts_with("ox_") => own_names += 1,
+        Ev::Open(S, b"sheet", e) if matches!(attr(e, b"state").as_deref(), Some("hidden" | "veryHidden")) => hidden += 1,
+        Ev::Open(S, b"workbookProtection", e) if matches!(attr(e, b"lockStructure").as_deref(), Some("1" | "true")) => locked += 1,
+        _ => {}
     });
     let g = |k: &str| t.get(k).copied().unwrap_or(0);
     let mut c = Counts::new();
@@ -620,6 +621,10 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
         c.insert(k, g(k));
     }
     c.insert("defined names (not Milleleaf's)", own_names);
+    c.insert("hidden sheets", hidden);
+    c.insert("workbook structure locked", locked);
+    c.insert("protected sheets", g("protected sheets"));
+    c.insert("sheets with gridlines off", g("sheets with gridlines off"));
     c.insert("charts", count_parts(names, |n| numbered(n, "xl/charts/chart")));
     c.insert("drawings", count_parts(names, |n| numbered(n, "xl/drawings/drawing")));
     c.insert("media files", count_parts(names, |n| n.starts_with("xl/media/") && n.len() > 9));
@@ -886,6 +891,10 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("fills", Some("the fills cells use are kept; unused ones are dropped")),
             ("borders", Some("the borders cells use are kept; unused ones are dropped")),
             ("cells in bold", None),
+            ("hidden sheets", None),
+            ("protected sheets", None),
+            ("workbook structure locked", None),
+            ("sheets with gridlines off", None),
             ("cells with a fill", None),
             ("cells with borders", None),
             ("cells with a number format", None),

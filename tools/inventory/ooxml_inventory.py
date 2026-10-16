@@ -205,6 +205,10 @@ def xlsx(z):
         "data validations": count(sheets, S + "dataValidation") + count(sheets, X14 + "dataValidation"),
         "hyperlinks": count(sheets, S + "hyperlink"),
         # Milleleaf's own identity names (ox_…) would hide the loss of the file's own names.
+        "hidden sheets": sum(1 for w in wbx for e in w.iter(S + "sheet") if e.get("state") in ("hidden", "veryHidden")),
+        "protected sheets": count(sheets, S + "sheetProtection"),
+        "workbook structure locked": sum(1 for w in wbx for e in w.iter(S + "workbookProtection") if e.get("lockStructure") in ("1", "true")),
+        "sheets with gridlines off": sum(1 for sh in sheets for v in sh.iter(S + "sheetView") if v.get("showGridLines") in ("0", "false")),
         "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_")),
         "charts": len(parts(z, r"xl/charts/chart\d*\.xml")),
         "drawings": len(parts(z, r"xl/drawings/drawing\d*\.xml")),

@@ -144,6 +144,14 @@
             "normalStyle": {
               "dataType": "Object",
               "optional": true
+            },
+            "protection": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "activeSheet": {
+              "dataType": "Integer",
+              "optional": true
             }
           }
         }
@@ -215,6 +223,14 @@
               }
             },
             "cellStyles": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "view": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "protection": {
               "dataType": "Object",
               "optional": true
             }

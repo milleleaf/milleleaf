@@ -8,13 +8,16 @@
 //! - `rows`: `{"6": <LineInfo>}` (1-based row numbers) and `cols`: `{"B": <LineInfo>}`: sizes,
 //!   hidden lines, outline levels. Rows only when their height is custom.
 //! - `defaults`: `{colWidth, rowHeight}`, the sheet's default sizes, when not GridCraft's
+//! - `view`: what differs from a plain visible sheet: `hidden` (`"hidden"` / `"veryHidden"`),
+//!   `gridlines`, `headings`, `zeros` (false when off), `zoom`, `rightToLeft`, `tabColor`
+//! - `protection`: `<GridCraft SheetProtection>` (a password's hash, never the password)
 //! - `print`: `<GridCraft PrintSettings>` (page setup, print area, print titles, the sheet's
 //!   printed header and footer), when not the default
 //!
 //! GridCraft's own types are kept as data (its serde form) where they carry many options.
 
 use gridcraft_core::{CellRef, RangeRef};
-use gridcraft_model::{Comment, DefinedName, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Workbook};
+use gridcraft_model::{Comment, DefinedName, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Visibility, Workbook};
 use serde_json::{Map, Value, json};
 
 use crate::NAME_PREFIX;
@@ -28,7 +31,8 @@ fn line(l: &LineInfo) -> Option<Value> {
     serde_json::to_value(l).ok()
 }
 
-pub(crate) const KEYS: [&str; 8] = ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print"];
+pub(crate) const KEYS: [&str; 10] =
+    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection"];
 
 /// The sheet's look as `grid::sheet` attributes (only the ones it has).
 pub(crate) fn sheet_look(sh: &Sheet) -> Map<String, Value> {
@@ -71,6 +75,38 @@ pub(crate) fn sheet_look(sh: &Sheet) -> Map<String, Value> {
         m.insert("cols".into(), Value::Object(cols));
     }
     let blank = Sheet::new("");
+    let mut view = Map::new();
+    match sh.visibility {
+        Visibility::Hidden => {
+            view.insert("hidden".into(), json!("hidden"));
+        }
+        Visibility::VeryHidden => {
+            view.insert("hidden".into(), json!("veryHidden"));
+        }
+        Visibility::Visible => {}
+    }
+    for (k, on, was) in [
+        ("gridlines", sh.show_gridlines, blank.show_gridlines),
+        ("headings", sh.show_headings, blank.show_headings),
+        ("zeros", sh.show_zeros, blank.show_zeros),
+        ("rightToLeft", sh.right_to_left, blank.right_to_left),
+    ] {
+        if on != was {
+            view.insert(k.into(), json!(on));
+        }
+    }
+    if sh.zoom != blank.zoom {
+        view.insert("zoom".into(), json!(sh.zoom));
+    }
+    if let Some(c) = sh.tab_color.as_ref().and_then(|c| serde_json::to_value(c).ok()) {
+        view.insert("tabColor".into(), c);
+    }
+    if !view.is_empty() {
+        m.insert("view".into(), Value::Object(view));
+    }
+    if let Some(p) = sh.protection.as_ref().and_then(|p| serde_json::to_value(p).ok()) {
+        m.insert("protection".into(), p);
+    }
     if (sh.default_col_width, sh.default_row_height) != (blank.default_col_width, blank.default_row_height) {
         m.insert("defaults".into(), json!({ "colWidth": sh.default_col_width, "rowHeight": sh.default_row_height }));
     }
@@ -115,6 +151,36 @@ pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warn
                 sh.rows.insert(r - 1, l);
             }
             _ => bad("row", r),
+        }
+    }
+    if let Some(v) = gs.get("view").and_then(Value::as_object) {
+        sh.visibility = match v.get("hidden").and_then(Value::as_str) {
+            Some("veryHidden") => Visibility::VeryHidden,
+            Some(_) => Visibility::Hidden,
+            None => Visibility::Visible,
+        };
+        let flag = |k: &str| v.get(k).and_then(Value::as_bool);
+        if let Some(b) = flag("gridlines") {
+            sh.show_gridlines = b;
+        }
+        if let Some(b) = flag("headings") {
+            sh.show_headings = b;
+        }
+        if let Some(b) = flag("zeros") {
+            sh.show_zeros = b;
+        }
+        if let Some(b) = flag("rightToLeft") {
+            sh.right_to_left = b;
+        }
+        if let Some(z) = v.get("zoom").and_then(Value::as_u64) {
+            sh.zoom = z as u16;
+        }
+        sh.tab_color = v.get("tabColor").and_then(|c| serde_json::from_value(c.clone()).ok());
+    }
+    if let Some(p) = gs.get("protection") {
+        match serde_json::from_value(p.clone()) {
+            Ok(p) => sh.protection = Some(p),
+            Err(e) => bad("sheet protection", &e),
         }
     }
     if let Some(d) = gs.get("defaults") {
@@ -309,4 +375,36 @@ pub(crate) fn cell_looks(wb: &Workbook, si: usize) -> std::collections::BTreeMap
             (at.a1(), v)
         })
         .collect()
+}
+
+/// The workbook's structure lock (sheets can't be added, moved or unhidden) and which sheet is
+/// active, as `grid::workbook` attributes.
+pub(crate) fn workbook_look(wb: &Workbook) -> Map<String, Value> {
+    let mut m = Map::new();
+    if wb.protected_structure {
+        let mut p = Map::from_iter([("structure".to_string(), json!(true))]);
+        if let Some(h) = wb.structure_password.as_ref().and_then(|h| serde_json::to_value(h).ok()) {
+            p.insert("password".into(), h);
+        }
+        m.insert("protection".into(), Value::Object(p));
+    }
+    if wb.active_sheet != 0 {
+        m.insert("activeSheet".into(), json!(wb.active_sheet));
+    }
+    m
+}
+
+pub(crate) fn apply_workbook_look(wb: &mut Workbook, gw: &Map<String, Value>, warnings: &mut Vec<String>) {
+    if let Some(p) = gw.get("protection") {
+        wb.protected_structure = p.get("structure").and_then(Value::as_bool) == Some(true);
+        if let Some(h) = p.get("password") {
+            match serde_json::from_value(h.clone()) {
+                Ok(h) => wb.structure_password = Some(h),
+                Err(e) => warnings.push(format!("the workbook's protection password hash can't be read ({e}); protected without one")),
+            }
+        }
+    }
+    if let Some(a) = gw.get("activeSheet").and_then(Value::as_u64) {
+        wb.active_sheet = (a as usize).min(wb.sheets.len().saturating_sub(1));
+    }
 }
