@@ -385,8 +385,8 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
 fn purge(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String> {
     let s = Store::open(dir).map_err(e)?;
     let h = s.resolve(pos.get(2).ok_or("`purge` needs a layer hash")?).map_err(e)?;
-    let by = opt(args, "--author").unwrap_or("ox");
-    let c = s.purge(&h, by, opt(args, "--reason")).map_err(e)?;
+    let k = key_for(args)?;
+    let c = s.purge(&h, &k, opt(args, "--reason")).map_err(e)?;
     println!("ox: purged {} (record {}); head {}", short(&h), short(&c.layer), short(&c.stack));
     Ok(ExitCode::SUCCESS)
 }
@@ -426,6 +426,15 @@ fn key(pos: &[&String]) -> Result<ExitCode, String> {
             println!("ox: the project knows {name} ({})", p.display());
             Ok(ExitCode::SUCCESS)
         }
-        _ => Err("usage: ox key new <name> [<dir>] | ox key add <dir> <name> <ed25519:…>".into()),
+        Some("role") => {
+            let (Some(dir), Some(name), Some(role)) = (pos.get(2), pos.get(3), pos.get(4)) else {
+                return Err("usage: ox key role <dir> <name> <owner|approver|editor|viewer>".into());
+            };
+            let s = Store::open(Path::new(dir.as_str())).map_err(e)?;
+            s.set_role(name, role).map_err(e)?;
+            println!("ox: {name} is {role} in this project");
+            Ok(ExitCode::SUCCESS)
+        }
+        _ => Err("usage: ox key new <name> [<dir>] | ox key add <dir> <name> <ed25519:…> | ox key role <dir> <name> <role>".into()),
     }
 }

@@ -556,7 +556,16 @@ fn a_purged_layer_loses_its_bytes_keeps_its_hash_and_composes_empty() {
     let composed_with = serde_json::to_string(&composed(&s.flat(&s.head().unwrap().unwrap()).unwrap())).unwrap();
     assert!(composed_with.contains("private phone number"));
 
-    let rec = s.purge(&c.layer, "owner", Some("personal data")).unwrap();
+    // Only an owner or approver may purge: an editor's signature is refused.
+    let owner = KeyPair::generate("owner").unwrap();
+    let editor = KeyPair::generate("editor").unwrap();
+    s.add_key("owner", &owner.public()).unwrap();
+    s.add_key("editor", &editor.public()).unwrap();
+    s.set_role("owner", "owner").unwrap();
+    let refused = s.purge(&c.layer, &editor, Some("personal data")).unwrap_err();
+    assert!(matches!(refused, StoreError::NotAllowed(_)), "{refused}");
+    assert!(s.dir.join("layers").join(format!("{}.json", c.layer)).exists(), "an editor can't purge");
+    let rec = s.purge(&c.layer, &owner, Some("personal data")).unwrap();
     // Bytes gone, hash and index kept, the head's composition no longer has it.
     assert!(!s.dir.join("layers").join(format!("{}.json", c.layer)).exists());
     assert!(s.index(&c.layer).is_ok());
@@ -576,6 +585,17 @@ fn a_purged_layer_loses_its_bytes_keeps_its_hash_and_composes_empty() {
     s2.commit(&secret, CommitOptions::default()).unwrap();
     let record = s.layer(&rec.layer).unwrap();
     assert_eq!(record.header.purges.len(), 1);
+    // Without the owner's signature (or with an owner this copy doesn't know) it's refused …
+    assert!(matches!(s2.commit(&record, CommitOptions::default()), Err(StoreError::NotAllowed(_))));
+    // … with the signature file and the owner known here, it's carried out.
+    s2.add_key("owner", &owner.public()).unwrap();
+    s2.set_role("owner", "owner").unwrap();
+    let sigs = s.dir.join("sigs").join(&rec.layer);
+    let dst = s2.dir.join("sigs").join(&rec.layer);
+    fs::create_dir_all(&dst).unwrap();
+    for f in fs::read_dir(&sigs).unwrap().flatten() {
+        fs::copy(f.path(), dst.join(f.file_name())).unwrap();
+    }
     s2.commit(&record, CommitOptions::default()).unwrap();
     assert!(!s2.dir.join("layers").join(format!("{}.json", c.layer)).exists());
     assert!(matches!(s2.verify(&c.layer).unwrap(), LayerStatus::Purged { .. }));

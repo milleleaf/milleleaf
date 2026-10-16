@@ -18,6 +18,11 @@ use crate::{Result, Store, StoreError, hash_of, io, time};
 
 const CONTEXT: &[u8] = b"Milleleaf layer signature v1\n";
 
+/// Roles a key can have in a project: owner, approver, editor, viewer.
+pub const ROLES: [&str; 4] = ["owner", "approver", "editor", "viewer"];
+/// Who may purge (plan M1.5 item 7).
+pub const MAY_PURGE: [&str; 2] = ["owner", "approver"];
+
 /// A person's signing key. Stored at `<keys dir>/<name>.key` (mode 600), never in the project.
 #[derive(Debug, Clone)]
 pub struct KeyPair {
@@ -197,6 +202,35 @@ impl Store {
         let p = d.join(format!("{name}.pub"));
         io(&p, fs::write(&p, format!("{}\n", public.trim())))?;
         Ok(p)
+    }
+
+    /// Sets a known key's role: `owner`, `approver`, `editor` or `viewer` (plan M4 item 5).
+    pub fn set_role(&self, name: &str, role: &str) -> Result<()> {
+        if !ROLES.contains(&role) {
+            return Err(StoreError::Key(format!("role must be one of {}, not `{role}`", ROLES.join(", "))));
+        }
+        if !self.known_keys().iter().any(|(n, _)| n == name) {
+            return Err(StoreError::Key(format!("no key named `{name}` in this project (`ox key add` first)")));
+        }
+        let p = self.dir.join("keys").join(format!("{name}.role"));
+        io(&p, fs::write(&p, format!("{role}\n")))
+    }
+
+    /// A known key's role; `editor` when none is set.
+    pub fn role(&self, name: &str) -> String {
+        fs::read_to_string(self.dir.join("keys").join(format!("{name}.role")))
+            .map(|r| r.trim().to_string())
+            .unwrap_or_else(|_| "editor".into())
+    }
+
+    /// Whether a layer carries a valid signature by a key this project lists with one of `roles`.
+    pub fn signed_by_role(&self, layer_hash: &str, roles: &[&str]) -> Result<bool> {
+        Ok(match self.verify(layer_hash)? {
+            LayerStatus::Signed { signatures } => signatures
+                .iter()
+                .any(|g| g.valid && g.known_as.as_ref().is_some_and(|n| roles.contains(&self.role(n).as_str()))),
+            _ => false,
+        })
     }
 
     /// Public keys the project knows: (name, `ed25519:…`).

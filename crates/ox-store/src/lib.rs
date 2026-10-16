@@ -78,6 +78,8 @@ pub enum StoreError {
     StackAsLayer,
     #[error("asset {hash} is damaged: its bytes hash to {actual} (the picture was changed or replaced)")]
     BlobTampered { hash: String, actual: String },
+    #[error("not allowed: {0}")]
+    NotAllowed(String),
     #[error("asset not found: {0}")]
     MissingAsset(String),
     #[error("blob {0} isn't in this project's .ox/blobs")]
@@ -508,6 +510,18 @@ impl Store {
         self.intern_blobs(&mut layer, opts.assets.unwrap_or(&self.root))?;
         let layer = &layer;
         let (hash, dropped, new) = self.put_layer_new(layer)?;
+        // A purge record only counts when an owner or approver signed it, here or where it came from.
+        if !layer.header.purges.is_empty() {
+            if let Some(k) = opts.sign {
+                self.sign(&hash, k)?;
+            }
+            if !self.signed_by_role(&hash, &keys::MAY_PURGE)? {
+                return Err(StoreError::NotAllowed(format!(
+                    "a purge must be signed by a key this project lists as owner or approver; {} isn't",
+                    &hash[..12]
+                )));
+            }
+        }
         let expect = opts.expect.clone().or(layer.header.base.clone());
         let _lock = HeadLock::acquire(&self.dir)?;
         let head = self.head()?;
@@ -670,10 +684,11 @@ impl Store {
         serde_json::from_slice(&bytes).ok()
     }
 
-    /// Purges a layer's content (mode A, `bytes`): commits a signed-able purge record, then deletes
-    /// the layer's bytes here, keeping its hash and index entry. Every store the record reaches does
-    /// the same. Who may purge (owner or approver) is checked once roles exist (plan M4 item 5).
-    pub fn purge(&self, hash: &str, by: &str, reason: Option<&str>) -> Result<Commit> {
+    /// Purges a layer's content (mode A, `bytes`): commits a purge record signed with `key`, which
+    /// must be a project owner or approver, then deletes the layer's bytes here, keeping its hash and
+    /// index entry. Every store the record (and its signature) reaches does the same.
+    pub fn purge(&self, hash: &str, key: &KeyPair, reason: Option<&str>) -> Result<Commit> {
+        let by = key.name.as_str();
         let hash = self.resolve(hash)?;
         if self.stack_path(&hash).exists() {
             return Err(StoreError::Key(format!("{hash} is a commit, not a layer; purge the layer")));
@@ -699,7 +714,7 @@ impl Store {
             schemas: Default::default(),
             data: vec![],
         };
-        self.commit(&record, CommitOptions::default())
+        self.commit(&record, CommitOptions { sign: Some(key), ..CommitOptions::default() })
     }
 
     /// Carries out the purges a committed layer lists: bytes deleted, a marker kept, caches dropped
