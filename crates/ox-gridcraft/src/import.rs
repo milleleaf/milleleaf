@@ -160,6 +160,14 @@ pub fn import(
         report.warnings.push("the workbook changed in the stack since this file was exported; review the edit layer before stacking it".into());
     }
 
+    // What Milleleaf's own export writes for this node, read back the same way: a sheet's look
+    // or a defined name that differs from it was changed in Excel (column widths Milleleaf fitted
+    // itself don't come back as edits).
+    let base = crate::export(node)
+        .ok()
+        .and_then(|(b, _)| crate::to_xlsx(&b).ok())
+        .and_then(|x| crate::from_xlsx(&x).ok());
+
     // Values the file cached, then GridCraft's own results.
     let mut cached: BTreeMap<String, GValue> = BTreeMap::new();
     for sheet_node in &node.children {
@@ -184,22 +192,88 @@ pub fn import(
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
-        let sheet_now = locate(wb, &sheet_node.path).map(|(_, s, _)| s);
+        let located = locate(wb, &sheet_node.path);
+        let sheet_now = located.as_ref().map(|(_, s, _)| s.clone());
         if sheet_now.is_some() {
             let m = name_match(wb, &sheet_node.path, &mut report.warnings);
             report.matches.push(m);
         }
+        let old_gs = obj(sheet_node, "grid::sheet").cloned().unwrap_or_default();
+        let mut gs = old_gs.clone();
         if let Some(now) = &sheet_now
             && *now != old_sheet
         {
-            let mut gs = obj(sheet_node, "grid::sheet").cloned().unwrap_or_default();
             gs.insert("name".into(), json!(now));
-            nodes.push(attr_node(
-                &sheet_node.path,
-                "grid::sheet",
-                Value::Object(gs),
-            ));
             report.renamed.push(format!("{old_sheet} → {now}"));
+        }
+        if let (Some((si, ..)), Some(base)) = (&located, &base) {
+            let now = wb.sheet(*si).map(crate::look::sheet_look).unwrap_or_default();
+            let was = base
+                .sheets
+                .iter()
+                .find(|s| s.name == old_sheet)
+                .map(|s| crate::look::sheet_look(s))
+                .unwrap_or_default();
+            let mut looked = false;
+            for k in crate::look::KEYS {
+                if k == "cols" {
+                    // A width set or changed in the editor comes back; one that's gone doesn't
+                    // (LibreOffice drops the widths Milleleaf fitted, and the next export fits
+                    // them again).
+                    let empty = Map::new();
+                    let was_c = was.get(k).and_then(Value::as_object).unwrap_or(&empty);
+                    let mut cols = gs.get(k).and_then(Value::as_object).cloned().unwrap_or_default();
+                    for (c, l) in now.get(k).and_then(Value::as_object).into_iter().flatten() {
+                        if was_c.get(c) != Some(l) {
+                            cols.insert(c.clone(), l.clone());
+                            looked = true;
+                        }
+                    }
+                    if !cols.is_empty() {
+                        gs.insert(k.into(), Value::Object(cols));
+                    }
+                } else if k == "defaults" {
+                    // Excel and LibreOffice write their own default sizes on every save: not an
+                    // edit. ponytail: adopt carries them, imports don't.
+                } else if k == "print" {
+                    // Their own page margins too: margins aren't brought back (said in a warning);
+                    // the rest of the page setup is.
+                    let strip = |v: Option<&Value>| {
+                        let mut v = v.cloned().unwrap_or_else(|| {
+                            serde_json::to_value(gridcraft_model::PrintSettings::default()).unwrap_or_default()
+                        });
+                        let m = v.as_object_mut().and_then(|o| o.remove("margins"));
+                        (v, m)
+                    };
+                    let ((n, nm), (w, wm)) = (strip(now.get(k)), strip(was.get(k)));
+                    if nm != wm {
+                        report.warnings.push(format!(
+                            "{}: page margins differ from the export (editors write their own); not brought back",
+                            sheet_node.path
+                        ));
+                    }
+                    if n != w {
+                        looked = true;
+                        let mut p = n;
+                        if let (Some(o), Some(m)) = (p.as_object_mut(), gs.get(k).and_then(|o| o.get("margins")).or(wm.as_ref())) {
+                            o.insert("margins".into(), m.clone());
+                        }
+                        gs.insert(k.into(), p);
+                    }
+                } else if now.get(k) != was.get(k) {
+                    looked = true;
+                    match now.get(k) {
+                        Some(v) => gs.insert(k.into(), v.clone()),
+                        None => gs.remove(k),
+                    };
+                }
+            }
+            if looked {
+                report.changed.push(sheet_node.path.clone());
+            }
+        }
+        if gs != old_gs {
+            nodes.push(attr_node(&sheet_node.path, "grid::sheet", Value::Object(gs)));
         }
         for item in &sheet_node.children {
             let Some((si, sheet, range)) = locate(wb, &item.path) else {
@@ -327,6 +401,21 @@ pub fn import(
                     }
                 }
             }
+        }
+    }
+
+    // The workbook's own defined names, added or changed in Excel.
+    if let Some(base) = &base {
+        let (now, was) = (crate::look::names(wb), crate::look::names(base));
+        if now != was {
+            let mut gw = obj(node, "grid::workbook").cloned().unwrap_or_default();
+            if now.is_empty() {
+                gw.remove("names");
+            } else {
+                gw.insert("names".into(), Value::Array(now));
+            }
+            nodes.push(attr_node(&node.path, "grid::workbook", Value::Object(gw)));
+            report.changed.push(node.path.clone());
         }
     }
 

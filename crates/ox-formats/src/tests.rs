@@ -111,7 +111,11 @@ fn inventory_counts_real_files_and_lists_losses() {
     let (k, c) = inventory(&real("finance.xlsx")).unwrap();
     assert_eq!((c["formulas"], c["comments"], c["defined names (not Milleleaf's)"], c["merged ranges"]), (25932, 219, 20, 444));
     let l = lost(k, &c);
-    assert!(l.contains(&"comments") && l.contains(&"data validations") && !l.contains(&"formulas"), "{l:?}");
+    assert_eq!(c["data validations"], 7, "4 in the sheets, 3 in Excel 2010's x14 extension");
+    for carried in ["formulas", "comments", "data validations", "merged ranges", "frozen panes", "defined names (not Milleleaf's)"] {
+        assert!(!l.contains(&carried), "{carried}: {l:?}");
+    }
+    assert!(l.contains(&"charts") && l.contains(&"conditional formats"), "{l:?}");
 
     let (k, c) = inventory(&real("briefing.pptx")).unwrap();
     assert_eq!((c["slides"], c["shapes (sp)"], c["shapes without text"], c["notes slide-number fields"]), (28, 59, 1, 28));

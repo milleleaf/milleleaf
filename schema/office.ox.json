@@ -105,6 +105,37 @@
           "values": {
             "name": {
               "dataType": "String"
+            },
+            "names": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "name": {
+                        "dataType": "String"
+                      },
+                      "formula": {
+                        "dataType": "String"
+                      },
+                      "scope": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "comment": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "hidden": {
+                        "dataType": "Boolean",
+                        "optional": true
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -117,6 +148,63 @@
           "values": {
             "name": {
               "dataType": "String"
+            },
+            "merges": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "String"
+                }
+              }
+            },
+            "freeze": {
+              "dataType": "Object",
+              "optional": true,
+              "objectRestrictions": {
+                "values": {
+                  "rows": {
+                    "dataType": "Integer"
+                  },
+                  "cols": {
+                    "dataType": "Integer"
+                  }
+                }
+              }
+            },
+            "comments": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "rows": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "cols": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "validations": {
+              "dataType": "Array",
+              "optional": true
+            },
+            "print": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "defaults": {
+              "dataType": "Object",
+              "optional": true,
+              "objectRestrictions": {
+                "values": {
+                  "colWidth": {
+                    "dataType": "Real"
+                  },
+                  "rowHeight": {
+                    "dataType": "Real"
+                  }
+                }
+              }
             }
           }
         }

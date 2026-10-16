@@ -16,6 +16,7 @@
 mod adopt;
 mod export;
 mod import;
+mod look;
 
 pub use adopt::{AdoptReport, adopt};
 pub use export::{ExportReport, export};

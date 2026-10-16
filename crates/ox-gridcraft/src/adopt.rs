@@ -1,8 +1,8 @@
 //! Bringing a workbook Milleleaf didn't make into a project ([`adopt`]): each sheet becomes a
 //! `grid::sheet` node and each non-empty cell an `office::data::value` at its `grid::range`, with
-//! its `grid::formula`. Number formats become `currency` / `percent` / `number`. Everything else
-//! (merged cells, styles, charts, column widths, comments, validation, names) isn't carried yet;
-//! the report lists what the file had.
+//! its `grid::formula`. Number formats become `currency` / `percent` / `number`. Merged cells,
+//! frozen panes, comments, validation, row and column sizes and the file's own names are carried
+//! (`crate::look`); styles and charts aren't yet, and the report lists what the file had.
 
 use std::collections::BTreeMap;
 
@@ -41,14 +41,13 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
     let mut nodes = Vec::new();
     let mut wb_children = BTreeMap::new();
     let mut wb_order = Vec::new();
-    let (mut merges, mut charts) = (0, 0);
+    let mut charts = 0;
     for sh in &wb.sheets {
         report.sheets += 1;
         let sheet_path = stable_id(&format!("{path}|xlsx-sheet|{}", sh.name));
         let sheet_name = format!("sheet-{}", &sheet_path[..8]);
         wb_children.insert(sheet_name.clone(), Some(sheet_path.clone()));
         wb_order.push(sheet_name);
-        merges += sh.merges.len();
         let mut cells: Vec<(CellRef, Value, Option<String>, Option<&str>)> = Vec::new();
         for (at, cell) in sh.cells.iter() {
             let formula = cell.formula.as_ref().map(|f| f.text.clone());
@@ -84,9 +83,11 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
             report.cells += 1;
             nodes.push(Node { path: cell_path, attributes, ..Node::default() });
         }
+        let mut gs = Map::from_iter([("name".to_string(), json!(sh.name))]);
+        gs.extend(crate::look::sheet_look(sh));
         nodes.push(Node {
             path: sheet_path,
-            attributes: Map::from_iter([("grid::sheet".to_string(), json!({ "name": sh.name }))]),
+            attributes: Map::from_iter([("grid::sheet".to_string(), Value::Object(gs))]),
             children: sheet_children,
             order: Some(sheet_order),
             ..Node::default()
@@ -97,19 +98,19 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
         0,
         Node {
             path: path.to_string(),
-            attributes: Map::from_iter([("grid::workbook".to_string(), json!({ "name": name }))]),
+            attributes: Map::from_iter([("grid::workbook".to_string(), {
+                let names = crate::look::names(wb);
+                if names.is_empty() { json!({ "name": name }) } else { json!({ "name": name, "names": names }) }
+            })]),
             children: wb_children,
             order: Some(wb_order),
             ..Node::default()
         },
     );
-    if merges > 0 {
-        report.warnings.push(format!("{merges} merged cell range(s) aren't carried yet"));
-    }
     if charts > 0 {
         report.warnings.push(format!("{charts} chart(s) aren't carried yet"));
     }
-    report.warnings.push("cell styles (fonts, fills, borders, alignment), column widths and row heights aren't carried yet".into());
+    report.warnings.push("cell styles (fonts, fills, borders, alignment) aren't carried yet".into());
     let mut header = header;
     if header.ox_version.is_empty() {
         header.ox_version = OX_VERSION.into();

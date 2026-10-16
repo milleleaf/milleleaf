@@ -19,6 +19,7 @@ const S: &[u8] = b"http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const P: &[u8] = b"http://schemas.openxmlformats.org/presentationml/2006/main";
 const A: &[u8] = b"http://schemas.openxmlformats.org/drawingml/2006/main";
 const V: &[u8] = b"urn:schemas-microsoft-com:vml";
+const X14: &[u8] = b"http://schemas.microsoft.com/office/spreadsheetml/2009/9/main";
 const MC: &[u8] = b"http://schemas.openxmlformats.org/markup-compatibility/2006";
 /// Refuse zip bombs (the same limit as the Python tool).
 const MAX_PART: u64 = 200 * 1024 * 1024;
@@ -340,6 +341,9 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     for s in sheets {
         let (mut in_c, mut has_value) = (false, false);
         walk(s, |ev| match ev {
+            // Excel 2010 keeps some (cross-sheet lists, newer rule types) in an x14 extension.
+            Ev::Open(X14, b"conditionalFormatting", _) => *t.entry("conditional formats").or_default() += 1,
+            Ev::Open(X14, b"dataValidation", _) => *t.entry("data validations").or_default() += 1,
             Ev::Open(n, l, e) if n == S => {
                 let k = match l {
                     b"c" => {
@@ -585,7 +589,13 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("sheets", None),
             ("cells with a value", None),
             ("formulas", None),
-            ("column width settings", Some("widths are re-fitted to the content, not kept")),
+            ("column width settings", Some("widths are kept; entries that only give columns a style are not (styles aren't carried yet)")),
+            ("custom row heights", None),
+            ("merged ranges", None),
+            ("frozen panes", None),
+            ("comments", None),
+            ("data validations", None),
+            ("defined names (not Milleleaf's)", None),
             ("custom number formats", Some("number, currency and percent are kept; the exact format codes are not")),
             ("cell styles (xf)", Some("only the styles Milleleaf's own formats need")),
             ("fonts", Some("only the styles Milleleaf's own formats need")),

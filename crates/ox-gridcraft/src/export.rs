@@ -206,6 +206,7 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
     let mut report = ExportReport::default();
     let header = style_with(&mut wb, None, true);
     let styles = Styles { header };
+    let mut sized: Vec<usize> = Vec::new();
     for sheet_node in &node.children {
         let Some(gs) = obj(sheet_node, "grid::sheet") else {
             report
@@ -252,7 +253,15 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
                 ));
             }
         }
+        if let Some(sh) = wb.sheet_mut(si) {
+            crate::look::apply_look(sh, gs, &sheet_node.path, &mut report.warnings);
+        }
+        // A sheet whose sizes the model gives (an adopted workbook) keeps them: no auto-fit.
+        if gs.contains_key("cols") || gs.contains_key("defaults") {
+            sized.push(si);
+        }
     }
+    crate::look::apply_names(&mut wb, gw.get("names"), &mut report.warnings);
     if wb.sheets.is_empty() {
         wb.sheets.push(Arc::new(Sheet::new("Sheet1")));
     }
@@ -262,7 +271,7 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
 
     // Recalculate and compare with what the model stores.
     recalc(&mut wb);
-    fit_columns(&mut wb);
+    fit_columns(&mut wb, &sized);
     for sheet_node in &node.children {
         for item in sheet_node
             .children
@@ -285,8 +294,8 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
 
 /// Widens columns to their content, roughly as Excel's AutoFit does, so numbers don't print as
 /// `#######` in a column too narrow for them.
-fn fit_columns(wb: &mut Workbook) {
-    for si in 0..wb.sheets.len() {
+fn fit_columns(wb: &mut Workbook, skip: &[usize]) {
+    for si in (0..wb.sheets.len()).filter(|i| !skip.contains(i)) {
         let Some(sh) = wb.sheet(si) else { continue };
         let Some(used) = sh.used_range() else {
             continue;
@@ -319,8 +328,9 @@ fn fit_columns(wb: &mut Workbook) {
             }
         }
         if let Some(sh) = wb.sheet_mut(si) {
+            // Columns with a width of their own (from the model) keep it.
             for (c, w) in widths {
-                if w > gridcraft_model::DEFAULT_COL_WIDTH {
+                if w > gridcraft_model::DEFAULT_COL_WIDTH && !sh.cols.contains_key(&c) {
                     sh.cols.insert(
                         c,
                         gridcraft_model::LineInfo {

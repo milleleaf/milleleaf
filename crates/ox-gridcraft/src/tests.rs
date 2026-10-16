@@ -284,3 +284,52 @@ fn unicode_survives_an_xlsx_round_trip_code_point_for_code_point() {
         assert_eq!(got, GValue::text(*s), "case {i}");
     }
 }
+
+#[test]
+fn comments_merges_panes_and_names_added_in_excel_come_back() {
+    use gridcraft_core::RangeRef;
+    let (wb_node, wb) = exported();
+    let mut wb = from_xlsx(&to_xlsx(&wb).unwrap()).unwrap();
+    {
+        let sh = std::sync::Arc::make_mut(&mut wb.sheets[0]);
+        sh.comments.insert(
+            CellRef::parse("B2").unwrap(),
+            gridcraft_model::Comment {
+                author: "Reviewer".into(),
+                text: "Check this".into(),
+                replies: vec![],
+                threaded: false,
+                resolved: false,
+                visible: false,
+                dates: vec![],
+            },
+        );
+        sh.merges.push(RangeRef::parse("A12:B12").unwrap());
+        sh.freeze = Some((1, 0));
+    }
+    wb.names.push(gridcraft_model::DefinedName {
+        name: "Regions".into(),
+        scope: None,
+        formula: "Q3!$A$2:$A$5".into(),
+        comment: String::new(),
+        hidden: false,
+    });
+    let mut wb = from_xlsx(&to_xlsx(&wb).unwrap()).unwrap();
+    let (layer, report) = import(&wb_node, &mut wb, header()).expect("imports");
+    assert!(report.changed.contains(&SHEET.to_string()), "{report:?}");
+    let gs = &layer.data.iter().find(|n| n.path == SHEET).expect("sheet").attributes["grid::sheet"];
+    assert_eq!(gs["comments"]["B2"]["text"], json!("Check this"));
+    assert_eq!(gs["merges"], json!(["A12:B12"]));
+    assert_eq!(gs["freeze"], json!({ "rows": 1, "cols": 0 }));
+    let gw = &layer.data.iter().find(|n| n.path == WORKBOOK).expect("workbook").attributes["grid::workbook"];
+    assert_eq!(gw["names"], json!([{ "name": "Regions", "formula": "'Q3'!$A$2:$A$5" }]), "GridCraft quotes the sheet name");
+
+    // And they export again.
+    let trees = compose(&[layer]);
+    let (out, report) = export(&node(&trees, WORKBOOK)).expect("exports");
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let sh = &out.sheets[0];
+    assert_eq!(sh.comments[&CellRef::parse("B2").unwrap()].text, "Check this");
+    assert_eq!(sh.freeze, Some((1, 0)));
+    assert!(out.names.iter().any(|n| n.name == "Regions"));
+}

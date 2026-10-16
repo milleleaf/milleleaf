@@ -14,6 +14,7 @@ W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 S = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+X14 = "{http://schemas.microsoft.com/office/spreadsheetml/2009/9/main}"
 MAX_PART = 200 * 1024 * 1024  # refuse zip bombs
 
 
@@ -116,8 +117,9 @@ def xlsx(z):
         "column width settings": count(sheets, S + "col"),
         "custom row heights": sum(1 for s in sheets for r in s.iter(S + "row") if r.get("customHeight") in ("1", "true")),
         "frozen panes": count(sheets, S + "pane"),
-        "conditional formats": count(sheets, S + "conditionalFormatting"),
-        "data validations": count(sheets, S + "dataValidation"),
+        # Excel 2010 keeps some (cross-sheet lists, newer rule types) in an x14 extension.
+        "conditional formats": count(sheets, S + "conditionalFormatting") + count(sheets, X14 + "conditionalFormatting"),
+        "data validations": count(sheets, S + "dataValidation") + count(sheets, X14 + "dataValidation"),
         "hyperlinks": count(sheets, S + "hyperlink"),
         # Milleleaf's own identity names (ox_…) would hide the loss of the file's own names.
         "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_")),
