@@ -348,6 +348,20 @@ fn table_grid(t: &Table) -> Vec<Vec<String>> {
         .collect()
 }
 
+/// How a table looks beyond its data: merged cells, and `header: false` when its first row isn't
+/// a header row (its text becomes the column names either way).
+fn table_look(t: &Table) -> Map<String, Value> {
+    let mut wt = Map::new();
+    if !t.rows.first().is_some_and(|r| r.props.header) {
+        wt.insert("header".into(), json!(false));
+    }
+    let merges = table_merges(t);
+    if !merges.is_empty() {
+        wt.insert("merges".into(), json!(merges));
+    }
+    wt
+}
+
 /// Merged cells on the grid: `{row, col, rows, cols}`, row 0 being the first (header) row.
 fn table_merges(t: &Table) -> Vec<Value> {
     // (row, grid column) → (vmerge, span) for every cell.
@@ -776,6 +790,20 @@ fn import_into(
                         };
                         report.matches.push(ox_core::Match::certain(&c.path, by));
                         new_order.push(c.name.clone().unwrap_or_default());
+                        // Merges or the header row changed in Word.
+                        let old = obj(c, "word::table").cloned().unwrap_or_default();
+                        let mut wt = old.clone();
+                        wt.remove("header");
+                        wt.remove("merges");
+                        wt.extend(table_look(t));
+                        if wt != old {
+                            nodes.push(Node {
+                                path: c.path.clone(),
+                                attributes: Map::from_iter([("word::table".into(), Value::Object(wt))]),
+                                ..Node::default()
+                            });
+                            report.changed.push(c.path.clone());
+                        }
                         let (cols, expected) = expected_grid(c);
                         if grid != expected {
                             if is_linked(c, "office::data::table") {
@@ -831,16 +859,7 @@ fn import_into(
                             grid.first()
                         ));
                         let header = grid.first().cloned().unwrap_or_default();
-                        // How the table looks: merged cells, and whether its first row is a
-                        // header (its text becomes the column names either way).
-                        let mut wt = Map::new();
-                        if !t.rows.first().is_some_and(|r| r.props.header) {
-                            wt.insert("header".into(), json!(false));
-                        }
-                        let merges = table_merges(t);
-                        if !merges.is_empty() {
-                            wt.insert("merges".into(), json!(merges));
-                        }
+                        let wt = table_look(t);
                         let body: Vec<&Vec<String>> = grid.iter().skip(1).collect();
                         let cols: Vec<Value> = header
                             .iter()

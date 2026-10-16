@@ -511,3 +511,26 @@ fn adopt_carries_lists_merged_cells_and_a_plain_first_row() {
     assert_eq!(t.rows[1].cells[1].props.vmerge, VMerge::Restart);
     assert_eq!(t.rows[2].cells[2].props.vmerge, VMerge::Continue);
 }
+
+#[test]
+fn a_merge_made_in_word_on_an_existing_table_comes_back() {
+    use wordcraft_doc::props::VMerge;
+    let (trees, layers) = compose(&[]);
+    let node = report_node(&trees);
+    let mut doc = round_trip_docx(&node, &layers);
+    let t = doc
+        .body
+        .iter_mut()
+        .find_map(|b| match Arc::make_mut(b) {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("table");
+    t.rows[1].cells[0].props.vmerge = VMerge::Restart;
+    t.rows[2].cells[0].props.vmerge = VMerge::Continue;
+    let doc = from_docx(&to_docx(&doc).unwrap()).unwrap();
+    let (layer, report) = import(&node, &doc, header()).expect("imports");
+    assert!(report.changed.contains(&TABLE.to_string()), "{report:?}");
+    let wt = &layer.data.iter().find(|n| n.path == TABLE).expect("table node").attributes["word::table"];
+    assert_eq!(wt["merges"], json!([{ "row": 1, "col": 0, "rows": 2, "cols": 1 }]));
+}
