@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use wordcraft_doc::para::OBJ;
 use wordcraft_doc::props::{Underline, VMerge};
+use wordcraft_doc::section::HeaderSet;
 use wordcraft_doc::{Block, CharProps, Document, InlineObject, Paragraph, Table, TextColor};
 
 use crate::{CAPTION_SUFFIX, PROP_DOCUMENT, PROP_REVISION, TAG_PREFIX, WordError, revision_of};
@@ -96,7 +97,7 @@ fn canonical(runs: &[Value]) -> Vec<Value> {
     let mut out: Vec<Map<String, Value>> = Vec::new();
     for r in runs {
         let Some(r) = r.as_object() else { continue };
-        if r.contains_key("fieldPath") {
+        if r.contains_key("fieldPath") || r.contains_key("docField") {
             out.push(r.clone());
             continue;
         }
@@ -138,8 +139,6 @@ fn canonical(runs: &[Value]) -> Vec<Value> {
     out.into_iter().map(Value::Object).collect()
 }
 
-/// A second block with the same tag (pasted copy): the original's match becomes a best guess, and
-/// the copy is imported as new content.
 /// A list's id in the model: the name Milleleaf gave its definition on export, else `list-<num>`.
 fn list_id(doc: &Document, num: u32) -> String {
     doc.numbering
@@ -167,6 +166,39 @@ fn list_def(doc: &Document, num: u32) -> Option<Value> {
     Some(json!({ "levels": serde_json::to_value(levels).ok()? }))
 }
 
+/// A paragraph's named style ("Normal" when it has none).
+fn style_name(doc: &Document, p: &Paragraph) -> String {
+    p.props
+        .style
+        .as_deref()
+        .map(|id| doc.styles.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.to_string()))
+        .unwrap_or_else(|| "Normal".into())
+}
+
+/// A header's or footer's paragraphs as `{style, runs}` (what isn't carried is counted in
+/// `dropped`), by which page they're for: `default`, `first`, `even`.
+fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut usize) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (which, id) in [("default", set.default), ("first", set.first), ("even", set.even)] {
+        let Some(part) = id.and_then(|id| doc.parts.get(&id)) else { continue };
+        let mut paras = Vec::new();
+        for b in &part.blocks {
+            match b.as_para() {
+                Some(p) => {
+                    let ex = extract(p, &|_| false);
+                    *dropped += ex.dropped_objects;
+                    paras.push(json!({ "style": style_name(doc, p), "runs": ex.runs }));
+                }
+                None => *dropped += 1,
+            }
+        }
+        out.insert(which.into(), Value::Array(paras));
+    }
+    out
+}
+
+/// A second block with the same tag (pasted copy): the original's match becomes a best guess, and
+/// the copy is imported as new content.
 fn duplicate(report: &mut ImportReport, path: &str, what: &str) {
     let already = report
         .matches
@@ -252,6 +284,14 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool) -> Extracted {
                     if let Some(Some(path)) = open.pop() {
                         fields.push((path, field_text.trim().to_string()));
                     }
+                }
+                // A Word field (PAGE, DATE…): its code, with the result it showed.
+                Some(InlineObject::Field { instr, result, .. }) if !in_field => {
+                    let mut fmt = run_format(p.props_of_char(off));
+                    fmt.insert("docField".into(), json!(instr.trim()));
+                    fmt.insert("text".into(), json!(result));
+                    text.push_str(result);
+                    runs.push(Value::Object(fmt));
                 }
                 Some(o) if o.is_marker() => {}
                 Some(_) => dropped_objects += 1,
@@ -568,18 +608,7 @@ fn import_into(
                     // A caption for a table this document doesn't have: keep it as a paragraph
                     // rather than dropping its text.
                 }
-                let style = p
-                    .props
-                    .style
-                    .as_deref()
-                    .map(|id| {
-                        edited
-                            .styles
-                            .get(id)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| id.to_string())
-                    })
-                    .unwrap_or_else(|| "Normal".into());
+                let style = style_name(edited, p);
                 let existing = tag
                     .as_deref()
                     .and_then(|t| by_path.get(t).copied())
@@ -911,14 +940,57 @@ fn import_into(
         .filter(|(id, _)| !known.contains_key(*id))
         .filter_map(|(id, num)| Some((id.clone(), list_def(edited, *num)?)))
         .collect();
+    let mut wd2 = wd.clone();
     if !new_lists.is_empty() {
-        let mut wd = wd.clone();
         let mut all = known.clone();
         all.extend(new_lists);
-        wd.insert("lists".into(), Value::Object(all));
+        wd2.insert("lists".into(), Value::Object(all));
+    }
+    // Headers and footers, and which pages they're for.
+    let sect = &edited.last_section;
+    let mut dropped = 0;
+    for (key, set) in [("headers", &sect.headers), ("footers", &sect.footers)] {
+        let v = header_set(edited, set, &mut dropped);
+        if v.is_empty() {
+            wd2.remove(key);
+        } else {
+            wd2.insert(key.into(), Value::Object(v));
+        }
+    }
+    for (key, on) in [("titlePage", sect.title_page), ("evenOddHeaders", edited.settings.even_odd_headers)] {
+        if on {
+            wd2.insert(key.into(), json!(true));
+        } else {
+            wd2.remove(key);
+        }
+    }
+    // The document's own footnote and endnote separator lines (WordCraft's form, as data): a
+    // template that removes the line would otherwise get it back.
+    let mut seps = Map::new();
+    for (k, ns) in [("footnote", &edited.footnote_separators), ("endnote", &edited.endnote_separators)] {
+        if !ns.is_empty() {
+            if let Ok(v) = serde_json::to_value(ns) {
+                seps.insert(k.into(), v);
+            }
+        }
+    }
+    if seps.is_empty() {
+        wd2.remove("noteSeparators");
+    } else {
+        wd2.insert("noteSeparators".into(), Value::Object(seps));
+    }
+    if dropped > 0 {
+        report.warnings.push(format!(
+            "headers and footers: {dropped} picture(s), shape(s) or table(s) are not carried yet"
+        ));
+    }
+    if wd2 != wd {
+        if !adopting {
+            report.changed.push(node.path.clone());
+        }
         nodes.push(Node {
             path: node.path.clone(),
-            attributes: Map::from_iter([("word::document".into(), Value::Object(wd))]),
+            attributes: Map::from_iter([("word::document".into(), Value::Object(wd2))]),
             ..Node::default()
         });
     }

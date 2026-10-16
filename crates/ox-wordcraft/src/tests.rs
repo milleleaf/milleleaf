@@ -416,6 +416,45 @@ fn unicode_survives_a_docx_round_trip_code_point_for_code_point() {
     assert_eq!(got, cases.iter().map(|s| s.to_string()).collect::<Vec<_>>());
 }
 
+/// Adopts `doc` into an empty project and exports it again, through DOCX both ways.
+fn adopt_and_export(doc: &Document) -> Document {
+    let doc = from_docx(&to_docx(doc).unwrap()).unwrap();
+    let (layer, _) = crate::adopt(&doc, "adopted", "adopted", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    let (out, report) = export(find(&trees, "adopted").expect("document"), &[]).expect("exports");
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    from_docx(&to_docx(&out).unwrap()).unwrap()
+}
+
+#[test]
+fn adopt_carries_headers_footers_page_fields_and_note_separators() {
+    use wordcraft_doc::PartKind;
+    let mut doc = Document::new();
+    let header = doc.add_part(PartKind::Header, vec![wordcraft_doc::para_block(Paragraph::with_text("[FOR PUBLICATION]", CharProps::default()))]);
+    let mut page = Paragraph::with_text("Page ", CharProps::default());
+    let off = page.len();
+    page.insert_object(off, InlineObject::Field { instr: " PAGE ".into(), result: "1".into(), locked: false, dirty: false, code: false, form: String::new() }, &CharProps::default()).unwrap();
+    let footer = doc.add_part(PartKind::Footer, vec![wordcraft_doc::para_block(page)]);
+    doc.last_section.headers.first = Some(header);
+    doc.last_section.footers.default = Some(footer);
+    doc.last_section.title_page = true;
+    // A template with no footnote separator line (Ask LibreOffice, 16 Oct 2026).
+    doc.footnote_separators.separator = Some(vec![wordcraft_doc::para_block(Paragraph::new())]);
+
+    let out = adopt_and_export(&doc);
+    let text = |id: Option<u32>| out.parts[&id.expect("part")].blocks.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).collect::<String>();
+    assert_eq!(text(out.last_section.headers.first), "[FOR PUBLICATION]");
+    assert!(out.last_section.title_page);
+    let f = &out.parts[&out.last_section.footers.default.unwrap()].blocks[0];
+    let p = f.as_para().unwrap();
+    assert!(p.objects.iter().any(|o| matches!(o, InlineObject::Field { instr, .. } if instr.trim() == "PAGE")), "PAGE stays a field");
+    assert!(!out.footnote_separators.is_empty(), "the template's own (empty) separator survives");
+    assert_eq!(out.footnote_separators, from_docx(&to_docx(&doc).unwrap()).unwrap().footnote_separators);
+}
+
 #[test]
 fn adopt_carries_lists_merged_cells_and_a_plain_first_row() {
     use wordcraft_doc::numbering::ListKind;

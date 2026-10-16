@@ -105,7 +105,7 @@ fn inventory_counts_real_files_and_lists_losses() {
     assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["merged cells (gridSpan/vMerge)"]), (87, 42, 5));
     assert_eq!((c["body text chars"], c["bold text chars"], c["footnote separator lines"]), (10140, 1066, 1));
     let l = lost(k, &c);
-    assert!(l.contains(&"headers and footers (parts)"), "{l:?}");
+    assert_eq!(l, ["media files"], "only the header logo is lost");
     assert!(!l.contains(&"paragraphs (non-empty)") && !l.contains(&"list paragraphs (numPr)"), "{l:?}");
 
     let (k, c) = inventory(&real("finance.xlsx")).unwrap();

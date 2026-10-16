@@ -171,6 +171,26 @@
             "lists": {
               "dataType": "Object",
               "optional": true
+            },
+            "headers": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "footers": {
+              "dataType": "Object",
+              "optional": true
+            },
+            "titlePage": {
+              "dataType": "Boolean",
+              "optional": true
+            },
+            "evenOddHeaders": {
+              "dataType": "Boolean",
+              "optional": true
+            },
+            "noteSeparators": {
+              "dataType": "Object",
+              "optional": true
             }
           }
         }
@@ -221,6 +241,10 @@
                       },
                       "sizePt": {
                         "dataType": "Real",
+                        "optional": true
+                      },
+                      "docField": {
+                        "dataType": "String",
                         "optional": true
                       }
                     }

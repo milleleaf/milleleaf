@@ -12,7 +12,7 @@ use wordcraft_doc::props::{NumRef, VMerge};
 use wordcraft_doc::props::Underline;
 use wordcraft_doc::{
     Align, Block, Cell, CharProps, ContentControl, ControlKind, ControlLock, CustomProp, Document,
-    InlineObject, Paragraph, Rgb, Table, TextColor, para_block,
+    InlineObject, Paragraph, PartKind, Rgb, Table, TextColor, para_block,
 };
 
 use crate::{
@@ -128,13 +128,27 @@ fn paragraph_block(
     report: &mut ExportReport,
 ) -> Result<Paragraph, WordError> {
     let wp = obj(node, "word::paragraph").cloned().unwrap_or_default();
+    let p = para_from(doc, &wp, Some(node), &node.path, lists, report)?;
+    report.paragraphs += 1;
+    Ok(p)
+}
+
+/// A paragraph from `{style, list, runs}`. With `node` (a body paragraph) it carries the node's
+/// identity control and its linked fields; without (a header or footer) it is plain content.
+fn para_from(
+    doc: &Document,
+    wp: &Map<String, Value>,
+    node: Option<&Composed>,
+    at: &str,
+    lists: &HashMap<String, u32>,
+    report: &mut ExportReport,
+) -> Result<Paragraph, WordError> {
     let style_name = wp.get("style").and_then(Value::as_str).unwrap_or("Normal");
     let mut p = Paragraph::new();
     match style_id(doc, style_name) {
         Some(id) => p = p.styled(&id),
         None => report.warnings.push(format!(
-            "{}: style `{style_name}` not in the document; used Normal",
-            node.path
+            "{at}: style `{style_name}` not in the document; used Normal"
         )),
     }
     if let Some(l) = wp.get("list") {
@@ -143,21 +157,22 @@ fn paragraph_block(
         match lists.get(id) {
             Some(&num) => p.props.numbering = Some(NumRef { num, level }),
             None => report.warnings.push(format!(
-                "{}: list `{id}` isn't defined in the document; exported without numbering",
-                node.path
+                "{at}: list `{id}` isn't defined in the document; exported without numbering"
             )),
         }
     }
-    push_obj(
-        &mut p,
-        InlineObject::ControlStart {
-            control: Box::new(tag_control(
-                format!("{TAG_PREFIX}{}", node.path),
-                "",
-                ControlLock::Unlocked,
-            )),
-        },
-    )?;
+    if let Some(node) = node {
+        push_obj(
+            &mut p,
+            InlineObject::ControlStart {
+                control: Box::new(tag_control(
+                    format!("{TAG_PREFIX}{}", node.path),
+                    "",
+                    ControlLock::Unlocked,
+                )),
+            },
+        )?;
+    }
     for run in wp
         .get("runs")
         .and_then(Value::as_array)
@@ -166,7 +181,20 @@ fn paragraph_block(
     {
         let Some(r) = run.as_object() else { continue };
         let props = char_props(r);
-        if let Some(field) = r.get("field").and_then(Value::as_str) {
+        let text = r.get("text").and_then(Value::as_str).unwrap_or("");
+        if let Some(instr) = r.get("docField").and_then(Value::as_str) {
+            // A Word field: Word updates its result (the page number…) when it lays the page out.
+            let f = InlineObject::Field {
+                instr: format!(" {instr} "),
+                result: text.to_string(),
+                locked: false,
+                dirty: false,
+                code: false,
+                form: String::new(),
+            };
+            let off = p.len();
+            p.insert_object(off, f, &props).map_err(err)?;
+        } else if let (Some(field), Some(node)) = (r.get("field").and_then(Value::as_str), node) {
             let child = node
                 .children
                 .iter()
@@ -194,15 +222,12 @@ fn paragraph_block(
             push_obj(&mut p, InlineObject::ControlEnd)?;
             report.fields += 1;
         } else {
-            push_text(
-                &mut p,
-                r.get("text").and_then(Value::as_str).unwrap_or(""),
-                &props,
-            )?;
+            push_text(&mut p, text, &props)?;
         }
     }
-    push_obj(&mut p, InlineObject::ControlEnd)?;
-    report.paragraphs += 1;
+    if node.is_some() {
+        push_obj(&mut p, InlineObject::ControlEnd)?;
+    }
     Ok(p)
 }
 
@@ -406,6 +431,38 @@ pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportRep
             _ => report.warnings.push(format!("list `{id}`: its definition can't be read; its paragraphs export without numbering")),
         }
     }
+    // Headers and footers, by which pages they're for.
+    for (key, kind) in [("headers", PartKind::Header), ("footers", PartKind::Footer)] {
+        let Some(set) = wd.get(key).and_then(Value::as_object) else { continue };
+        for (which, paras) in set {
+            let mut blocks = Vec::new();
+            for wp in paras.as_array().into_iter().flatten().filter_map(Value::as_object) {
+                blocks.push(para_block(para_from(&doc, wp, None, &format!("{key}.{which}"), &lists, &mut report)?));
+            }
+            let id = doc.add_part(kind, blocks);
+            let hs = match kind {
+                PartKind::Header => &mut doc.last_section.headers,
+                _ => &mut doc.last_section.footers,
+            };
+            match which.as_str() {
+                "default" => hs.default = Some(id),
+                "first" => hs.first = Some(id),
+                "even" => hs.even = Some(id),
+                other => report.warnings.push(format!("{key}: `{other}` isn't a page kind (default, first, even); skipped")),
+            }
+        }
+    }
+    let seps = wd.get("noteSeparators");
+    for (k, target) in [("footnote", &mut doc.footnote_separators), ("endnote", &mut doc.endnote_separators)] {
+        if let Some(v) = seps.and_then(|s| s.get(k)) {
+            match serde_json::from_value(v.clone()) {
+                Ok(ns) => *target = ns,
+                Err(e) => report.warnings.push(format!("{k} separators can't be read ({e}); the default line is used")),
+            }
+        }
+    }
+    doc.last_section.title_page = wd.get("titlePage").and_then(Value::as_bool) == Some(true);
+    doc.settings.even_odd_headers = wd.get("evenOddHeaders").and_then(Value::as_bool) == Some(true);
     for child in &node.children {
         if child.attributes.contains_key("word::paragraph") {
             let p = paragraph_block(&doc, child, &lists, &mut report)?;
