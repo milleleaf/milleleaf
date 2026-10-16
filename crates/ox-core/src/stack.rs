@@ -82,3 +82,34 @@ fn visit(
     });
     Ok(())
 }
+
+/// Where a project keeps content-addressed blobs, relative to its root.
+pub const BLOB_DIR: &str = ".ox/blobs";
+
+/// The bytes a blob value names: `sha256-<hex>`, stored in the project's [`BLOB_DIR`] and checked
+/// against its hash, or (older layers, stack files) a path relative to the project or stack folder.
+pub fn read_blob(root: &Path, blob: &str) -> std::io::Result<Vec<u8>> {
+    let Some(hex) = blob.strip_prefix("sha256-") else {
+        return std::fs::read(root.join(blob));
+    };
+    let p = root.join(BLOB_DIR).join(hex);
+    let bytes = std::fs::read(&p)?;
+    if integrity_of(&bytes) != blob {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("{} doesn't match its hash", p.display()),
+        ));
+    }
+    Ok(bytes)
+}
+
+/// A media type from a file name's extension (pictures and vectors).
+pub fn media_type_for(name: &str) -> &'static str {
+    match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
+        "svg" => "image/svg+xml",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/png",
+    }
+}

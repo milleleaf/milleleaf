@@ -86,10 +86,34 @@ fn store_composes_like_the_stack_files() {
         "schema, base, proposal, review, pack"
     );
     let from_files = ox_core::open(&example("project.ox.json")).unwrap();
-    assert_eq!(composed(&s.flat(&head).unwrap()), composed(&from_files));
+    // The stack files name pictures by path; the store by the hash of their bytes (M1.5 item 1).
+    // Swap each path for its digest, then the two must compose identically.
+    let digests_of = |mut v: Value| {
+        fn walk(v: &mut Value) {
+            match v {
+                Value::Object(m) => {
+                    if let Some(Value::String(b)) = m.get("blob").cloned()
+                        && !b.starts_with("sha256-")
+                    {
+                        let bytes = fs::read(example(&b)).unwrap();
+                        m.insert("blob".into(), json!(ox_core::stack::integrity_of(&bytes)));
+                        m.insert("mediaType".into(), json!(ox_core::media_type_for(&b)));
+                    }
+                    m.values_mut().for_each(walk);
+                }
+                Value::Array(a) => a.iter_mut().for_each(walk),
+                _ => {}
+            }
+        }
+        walk(&mut v);
+        v
+    };
+    let expected = digests_of(composed(&from_files));
+    assert_ne!(expected, composed(&from_files), "the example has a picture");
+    assert_eq!(composed(&s.flat(&head).unwrap()), expected);
     // Without the cache, from the layers themselves.
     fs::remove_dir_all(s.dir.join("cache")).unwrap();
-    assert_eq!(composed(&s.flat(&head).unwrap()), composed(&from_files));
+    assert_eq!(composed(&s.flat(&head).unwrap()), expected);
     // Five commits, each pointing at the one before.
     assert_eq!(s.log(None).unwrap().len(), 5);
 }
@@ -496,4 +520,28 @@ fn an_integer_beyond_2_53_is_refused() {
     assert!(matches!(err, StoreError::NotIJson(_)), "{err}");
     let ok = layer("ok", vec![("3f1c2a90-0000-4c1e-9a00-000000000023", "test::n", json!(9007199254740991u64))]);
     s.commit(&ok, CommitOptions::default()).expect("2^53 - 1 is fine");
+}
+
+#[test]
+fn pictures_are_stored_by_hash_and_a_swapped_one_fails_verify() {
+    let t = TempDir::new("blobs");
+    let s = hello(&t);
+    assert!(s.verify_blobs().unwrap().is_empty());
+    // The deck's picture is in .ox/blobs under the hash of its bytes, and the layer names that hash.
+    let blobs: Vec<_> = fs::read_dir(s.dir.join("blobs")).unwrap().map(|e| e.unwrap().path()).collect();
+    assert_eq!(blobs.len(), 1, "{blobs:?}");
+    // Swap the picture's bytes: the signed layer still verifies, but the blob it names doesn't.
+    fs::write(&blobs[0], b"not the picture").unwrap();
+    let problems = s.verify_blobs().unwrap();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("is damaged"), "{problems:?}");
+    // And a layer naming an asset that isn't there is refused.
+    let mut l = layer("missing-pic", vec![]);
+    l.data.push(Node {
+        path: "pic-x".into(),
+        attributes: [("deck::picture".to_string(), json!({ "blob": "assets/nowhere.png" }))].into_iter().collect(),
+        ..Node::default()
+    });
+    let err = s.commit(&l, CommitOptions::default()).unwrap_err();
+    assert!(matches!(err, StoreError::MissingAsset(_)), "{err}");
 }

@@ -348,7 +348,17 @@ fn frame_html(fr: &Composed) -> String {
     }
     for (key, kind) in [("deck::picture", "picture"), ("deck::vector", "vector")] {
         if let Some(p) = attr(fr, key) {
-            let src = p.get("blob").and_then(Value::as_str).unwrap_or("");
+            let blob = p.get("blob").and_then(Value::as_str).unwrap_or("");
+            // ponytail: the path is right for a view saved at the project root; elsewhere the image
+            // breaks. Embed it as a data: URI if views are moved around.
+            let digest_path;
+            let src = match blob.strip_prefix("sha256-") {
+                Some(hex) => {
+                    digest_path = format!("{}/{hex}", crate::BLOB_DIR);
+                    digest_path.as_str()
+                }
+                None => blob,
+            };
             let alt = s(p, "alt").unwrap_or("");
             return format!(
                 "<img data-ox-frame=\"{kind}\"{common} src=\"{}\" alt=\"{}\" style=\"{style}\">",

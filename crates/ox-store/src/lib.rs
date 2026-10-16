@@ -76,6 +76,12 @@ pub enum StoreError {
     AlreadyCommitted(String),
     #[error("a stack can't be committed as a layer; use `ox init --from` to import a stack")]
     StackAsLayer,
+    #[error("asset {hash} is damaged: its bytes hash to {actual} (the picture was changed or replaced)")]
+    BlobTampered { hash: String, actual: String },
+    #[error("asset not found: {0}")]
+    MissingAsset(String),
+    #[error("blob {0} isn't in this project's .ox/blobs")]
+    MissingBlob(String),
     #[error("a layer must be I-JSON so its canonical form is exact: {0}")]
     NotIJson(String),
     #[error("the head is locked by another commit ({0}, held by `{1}` = pid host); if no commit is running there, delete it")]
@@ -172,6 +178,9 @@ pub struct CommitOptions<'a> {
     /// Author of the commit (the stack); defaults to the layer's author.
     pub author: Option<String>,
     pub sign: Option<&'a KeyPair>,
+    /// Where `{"blob": path}` values are read from before they're stored by hash; defaults to the
+    /// project root (a stack file's folder for `import_stack`).
+    pub assets: Option<&'a Path>,
 }
 
 #[derive(Debug, Clone)]
@@ -487,6 +496,9 @@ impl Store {
 
     /// Commits `layer` on top of the head by compare-and-swap.
     pub fn commit(&self, layer: &Layer, opts: CommitOptions) -> Result<Commit> {
+        let mut layer = layer.clone();
+        self.intern_blobs(&mut layer, opts.assets.unwrap_or(&self.root))?;
+        let layer = &layer;
         let (hash, dropped, new) = self.put_layer_new(layer)?;
         let expect = opts.expect.clone().or(layer.header.base.clone());
         let _lock = HeadLock::acquire(&self.dir)?;
@@ -626,7 +638,8 @@ impl Store {
         io(&p, fs::rename(&tmp, &p))
     }
 
-    /// Commits every layer of a stack file (imports first), as `ox init --from` does.
+    /// Commits every layer of a stack file (imports first), as `ox init --from` does. Assets the
+    /// layers name by path are read from beside the layer file and stored by hash.
     pub fn import_stack(&self, file: &Path) -> Result<Vec<Commit>> {
         let loaded = ox_core::load_stack(file).map_err(|e| StoreError::Key(e.to_string()))?;
         let mut out = Vec::new();
@@ -634,9 +647,117 @@ impl Store {
             if l.layer.header.kind.as_deref() == Some("stack") && l.layer.data.is_empty() {
                 continue;
             }
-            out.push(self.commit(&l.layer, CommitOptions::default())?);
+            let from = l.source.parent().map(Path::to_path_buf).unwrap_or_default();
+            let opts = CommitOptions { assets: Some(&from), ..CommitOptions::default() };
+            out.push(self.commit(&l.layer, opts)?);
         }
         Ok(out)
+    }
+
+    fn blob_path(&self, hex: &str) -> PathBuf {
+        self.dir.join("blobs").join(hex)
+    }
+
+    /// Stores `bytes` under their hash (once) and returns the blob value, `sha256-<hex>`.
+    pub fn put_blob(&self, bytes: &[u8]) -> Result<String> {
+        let hex = hash_of(bytes);
+        let p = self.blob_path(&hex);
+        if !p.exists() {
+            let d = self.dir.join("blobs");
+            io(&d, fs::create_dir_all(&d))?;
+            write_new(&p, bytes)?;
+        }
+        Ok(format!("sha256-{hex}"))
+    }
+
+    /// The bytes of a stored blob, checked against its hash.
+    pub fn blob(&self, value: &str) -> Result<Vec<u8>> {
+        let hex = value.strip_prefix("sha256-").unwrap_or(value);
+        let p = self.blob_path(hex);
+        let bytes = fs::read(&p).map_err(|_| StoreError::MissingBlob(value.to_string()))?;
+        let actual = hash_of(&bytes);
+        if actual != hex {
+            return Err(StoreError::BlobTampered { hash: hex.into(), actual });
+        }
+        Ok(bytes)
+    }
+
+    /// Every `{"blob": …}` value in the layer, stored by hash: a path is read from `from`, stored,
+    /// and replaced by its digest (with a `mediaType`); a digest must already be in the store.
+    /// So the layer's own hash covers the bytes it shows.
+    fn intern_blobs(&self, layer: &mut Layer, from: &Path) -> Result<()> {
+        fn walk(store: &Store, v: &mut serde_json::Value, from: &Path) -> Result<()> {
+            use serde_json::Value;
+            match v {
+                Value::Object(m) => {
+                    if let Some(Value::String(b)) = m.get("blob").cloned() {
+                        if b.starts_with("sha256-") {
+                            store.blob(&b)?;
+                        } else {
+                            let rel = Path::new(&b);
+                            if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                                return Err(StoreError::MissingAsset(format!("{b}: outside the project folder")));
+                            }
+                            let bytes = fs::read(from.join(rel))
+                                .or_else(|_| fs::read(store.root.join(rel)))
+                                .map_err(|e| StoreError::MissingAsset(format!("{b} (looked in {} and {}): {e}", from.display(), store.root.display())))?;
+                            let digest = store.put_blob(&bytes)?;
+                            m.insert("blob".into(), Value::String(digest));
+                            m.entry("mediaType").or_insert_with(|| Value::String(ox_core::media_type_for(&b).into()));
+                        }
+                    }
+                    for x in m.values_mut() {
+                        walk(store, x, from)?;
+                    }
+                }
+                Value::Array(a) => {
+                    for x in a.iter_mut() {
+                        walk(store, x, from)?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        for n in &mut layer.data {
+            for v in n.attributes.values_mut() {
+                walk(self, v, from)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Blobs the head's layers name that are missing or don't match their hash.
+    pub fn verify_blobs(&self) -> Result<Vec<String>> {
+        fn digests(v: &serde_json::Value, out: &mut Vec<String>) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    if let Some(serde_json::Value::String(b)) = m.get("blob")
+                        && b.starts_with("sha256-")
+                    {
+                        out.push(b.clone());
+                    }
+                    m.values().for_each(|x| digests(x, out));
+                }
+                serde_json::Value::Array(a) => a.iter().for_each(|x| digests(x, out)),
+                _ => {}
+            }
+        }
+        let mut all = Vec::new();
+        for h in self.head_layers()? {
+            for n in self.layer(&h)?.data {
+                n.attributes.values().for_each(|v| digests(v, &mut all));
+            }
+        }
+        all.sort();
+        all.dedup();
+        Ok(all
+            .into_iter()
+            .filter_map(|b| match self.blob(&b) {
+                Ok(_) => None,
+                Err(e) => Some(format!("{b}: {e}")),
+            })
+            .collect())
     }
 
     /// Commits, newest first, following `header.parent` from `from` (default: the head).

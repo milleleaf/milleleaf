@@ -198,7 +198,13 @@ $OX validate "$TMP/proj" | tail -1
 $OX compose "$TMP/proj" --out "$TMP/a.json" 2> /dev/null
 $OX compose with-edits.ox.json --out "$TMP/b.json" 2> /dev/null
 # Object key order carries no meaning (the store keeps layers in RFC 8785 form, keys sorted); arrays keep order.
-node -e 'const sorted = (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v;
+# The stack files name pictures by path, the store by the hash of their bytes: compare as hashes.
+node -e 'const fs = require("fs"), crypto = require("crypto");
+  const types = { svg: "image/svg+xml", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+  const asDigest = (v) => typeof v.blob === "string" && !v.blob.startsWith("sha256-")
+    ? { ...v, blob: "sha256-" + crypto.createHash("sha256").update(fs.readFileSync(v.blob)).digest("hex"),
+        mediaType: v.mediaType || types[v.blob.split(".").pop().toLowerCase()] || "image/png" } : v;
+  const sorted = (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(asDigest(v)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v;
   const r = (f) => JSON.stringify(JSON.parse(require("fs").readFileSync(f)).roots, sorted);
   if (r(process.argv[1]) !== r(process.argv[2])) { console.error("store and stack files compose differently"); process.exit(1); }
   console.log("checked: the store composes exactly like with-edits.ox.json");' "$TMP/a.json" "$TMP/b.json"

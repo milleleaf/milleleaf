@@ -94,45 +94,6 @@ pub fn asset_root(file: &Path) -> PathBuf {
     }
 }
 
-/// Copies the assets a stack file's layers name into a project, at the same relative paths.
-fn copy_assets(from: &Path, root: &Path) -> Result<usize, String> {
-    fn blobs(v: &serde_json::Value, out: &mut Vec<String>) {
-        match v {
-            serde_json::Value::Object(m) => {
-                if let Some(serde_json::Value::String(p)) = m.get("blob") {
-                    out.push(p.clone());
-                }
-                m.values().for_each(|x| blobs(x, out));
-            }
-            serde_json::Value::Array(a) => a.iter().for_each(|x| blobs(x, out)),
-            _ => {}
-        }
-    }
-    let src_dir = from.parent().unwrap_or(Path::new("."));
-    let mut paths = Vec::new();
-    for l in ox_core::load_stack(from).map_err(e)? {
-        blobs(&serde_json::to_value(&l.layer.data).map_err(e)?, &mut paths);
-    }
-    paths.sort();
-    paths.dedup();
-    let mut copied = 0;
-    for p in &paths {
-        let rel = Path::new(p);
-        if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-            return Err(format!("asset `{p}` is outside the stack's folder; not copied"));
-        }
-        let (src, dst) = (src_dir.join(rel), root.join(rel));
-        if dst.exists() {
-            continue;
-        }
-        if let Some(d) = dst.parent() {
-            std::fs::create_dir_all(d).map_err(|err| format!("{}: {err}", d.display()))?;
-        }
-        std::fs::copy(&src, &dst).map_err(|err| format!("asset {}: {err}", src.display()))?;
-        copied += 1;
-    }
-    Ok(copied)
-}
 
 fn e(x: impl std::fmt::Display) -> String {
     x.to_string()
@@ -196,12 +157,12 @@ fn init(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
             let h = s.index(&c.layer).map_err(e)?.header;
             println!("  {}  {}", short(&c.layer), h.id);
         }
-        let assets = copy_assets(Path::new(from), &s.root)?;
+        let blobs = std::fs::read_dir(s.dir.join("blobs")).map(|d| d.count()).unwrap_or(0);
         println!(
             "ox: {} layers committed from {from}; head {}{}",
             commits.len(),
             short(&s.head().map_err(e)?.unwrap_or_default()),
-            if assets > 0 { format!("; {assets} asset(s) copied") } else { String::new() }
+            if blobs > 0 { format!("; {blobs} asset(s) stored by hash") } else { String::new() }
         );
     }
     Ok(ExitCode::SUCCESS)
@@ -212,6 +173,7 @@ fn commit(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Stri
     let file = pos.get(2).ok_or("`commit` needs a layer file")?;
     let bytes = std::fs::read(file.as_str()).map_err(|err| format!("{file}: {err}"))?;
     let layer = Layer::from_json(&bytes).map_err(|err| format!("{file}: {err}"))?;
+    let layer_dir = Path::new(file.as_str()).parent().map(Path::to_path_buf);
     let key = if has(args, "--sign") {
         Some(key_for(args)?)
     } else {
@@ -225,6 +187,8 @@ fn commit(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Stri
         rebase: has(args, "--rebase"),
         author: opt(args, "--author").map(String::from),
         sign: key.as_ref(),
+        // A layer's pictures are found beside the layer file, then at the project root.
+        assets: layer_dir.as_deref(),
     };
     match s.commit(&layer, opts) {
         Ok(c) => {
@@ -394,6 +358,10 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
             }
         };
         println!("{}  {:<44} {text}", short(&h), id);
+    }
+    for problem in s.verify_blobs().map_err(e)? {
+        bad += 1;
+        println!("BLOB  {problem}");
     }
     if untrusted > 0 {
         eprintln!(

@@ -484,6 +484,10 @@
             "alt": {
               "dataType": "String",
               "optional": true
+            },
+            "mediaType": {
+              "dataType": "String",
+              "optional": true
             }
           }
         }
@@ -498,6 +502,10 @@
               "dataType": "Blob"
             },
             "alt": {
+              "dataType": "String",
+              "optional": true
+            },
+            "mediaType": {
               "dataType": "String",
               "optional": true
             }

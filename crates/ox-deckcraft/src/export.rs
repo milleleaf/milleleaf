@@ -372,18 +372,24 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                 });
             } else if let Some(pic) = obj(fr, "deck::picture").or_else(|| obj(fr, "deck::vector")) {
                 let blob = s(pic, "blob").unwrap_or("");
-                let file = assets.join(blob);
                 // A missing asset stops the export: a deck with a hole in it is worse than no deck.
-                let bytes = std::fs::read(&file).map_err(|e| {
-                    DeckError::MissingAsset(format!("{}: can't read {}: {e}", fr.path, file.display()))
+                let bytes = ox_core::read_blob(assets, blob).map_err(|e| {
+                    DeckError::MissingAsset(format!("{}: can't read {blob}: {e}", fr.path))
                 })?;
-                let ct = match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
-                    "svg" => "image/svg+xml",
-                    "jpg" | "jpeg" => "image/jpeg",
-                    "gif" => "image/gif",
-                    _ => "image/png",
+                let ct = s(pic, "mediaType").unwrap_or_else(|| ox_core::media_type_for(blob));
+                let ext = match ct {
+                    "image/svg+xml" => "svg",
+                    "image/jpeg" => "jpg",
+                    "image/gif" => "gif",
+                    "image/webp" => "webp",
+                    _ => "png",
                 };
-                let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("image");
+                let named = format!("image.{ext}");
+                let name = if blob.starts_with("sha256-") {
+                    named.as_str()
+                } else {
+                    Path::new(blob).file_name().and_then(|n| n.to_str()).unwrap_or("image")
+                };
                 let media = p
                     .add_media(name, ct, bytes)
                     .ok_or_else(|| DeckError::Invalid("the deck ran out of media ids".into()))?;
