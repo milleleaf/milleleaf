@@ -166,6 +166,92 @@ fn list_def(doc: &Document, num: u32) -> Option<Value> {
     Some(json!({ "levels": serde_json::to_value(levels).ok()? }))
 }
 
+/// A paragraph's direct formatting (alignment, spacing, indents, tabs, borders, keep with next…)
+/// as data: WordCraft's paragraph properties, without what the model holds elsewhere (style,
+/// list) and without tracked changes. `None` when it has none.
+/// Settings that only repeat what the paragraph's style already gives are left out: editors write
+/// them out on save (Word puts Heading 1's spacing on every heading), and they aren't an edit.
+fn para_format(doc: &Document, p: &Paragraph) -> Option<Value> {
+    let mut v = serde_json::to_value(&p.props).ok()?;
+    let o = v.as_object_mut()?;
+    for k in ["style", "numbering", "numChange", "fmtChange"] {
+        o.remove(k);
+    }
+    let from_style = style_para(doc, p);
+    o.retain(|k, v| from_style.get(k) != Some(v));
+    (!o.is_empty()).then_some(v)
+}
+
+/// What a paragraph's style gives it: the document defaults, then each style it is based on.
+fn style_para(doc: &Document, p: &Paragraph) -> Map<String, Value> {
+    let mut m: Map<String, Value> = serde_json::to_value(&doc.styles.default_para)
+        .ok()
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    let id = p.props.style.clone().or_else(|| doc.styles.find("Normal").map(|s| s.id.clone()));
+    for st in id.as_deref().map(|id| doc.styles.chain(id)).unwrap_or_default() {
+        if let Ok(Value::Object(sp)) = serde_json::to_value(&st.para) {
+            m.extend(sp);
+        }
+    }
+    m
+}
+
+/// The section's page setup as data (WordCraft's section properties: size, orientation,
+/// margins, columns, page numbering, borders…), without the headers and footers, which the
+/// model holds as `headers` / `footers` / `titlePage`.
+fn page_setup(doc: &Document) -> Option<Value> {
+    let mut v = serde_json::to_value(&doc.last_section).ok()?;
+    let o = v.as_object_mut()?;
+    for k in ["headers", "footers", "titlePage", "fmtChange"] {
+        o.remove(k);
+    }
+    Some(v)
+}
+
+/// The names of the styles the document's paragraphs use, and Normal.
+fn used_style_names(doc: &Document) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::from(["Normal".to_string()]);
+    let parts = doc.parts.values().flat_map(|p| p.blocks.iter());
+    for b in doc.body.iter().chain(parts) {
+        if let Some(id) = b.as_para().and_then(|p| p.props.style.as_deref()) {
+            out.insert(doc.styles.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.to_string()));
+        }
+    }
+    out
+}
+
+/// How each style named in `names` looks, as a reader sees it: its effective font,
+/// size, emphasis, colour, alignment, spacing and indents (document defaults, then the styles it
+/// is based on). Editors rewrite style definitions on save (LibreOffice moves the defaults into
+/// Normal, adds complex-script fonts) without changing this.
+fn used_styles(doc: &Document, names: &BTreeSet<String>) -> BTreeMap<String, Value> {
+    const SEEN: [&str; 15] = [
+        "align", "spaceBefore", "spaceAfter", "lineSpacing", "indentLeft", "indentRight", "indentFirst",
+        "font", "size", "bold", "italic", "underline", "color", "caps", "strike",
+    ];
+    let ids: Vec<String> = names.iter().filter_map(|n| doc.styles.find(n).map(|s| s.id.clone())).collect();
+    let obj = |v: Option<Value>| v.and_then(|v| v.as_object().cloned()).unwrap_or_default();
+    let mut out = BTreeMap::new();
+    for id in &ids {
+        let mut m = obj(serde_json::to_value(&doc.styles.default_para).ok());
+        m.extend(obj(serde_json::to_value(&doc.styles.default_chr).ok()));
+        for st in doc.styles.chain(id) {
+            m.extend(obj(serde_json::to_value(&st.para).ok()));
+            m.extend(obj(serde_json::to_value(&st.chr).ok()));
+        }
+        m.retain(|k, v| {
+            SEEN.contains(&k.as_str())
+                && !matches!((k.as_str(), &*v), ("align", Value::String(a)) if a == "left")
+                && !matches!((k.as_str(), &*v), ("color", Value::String(c)) if c == "Auto")
+                && *v != Value::Bool(false)
+                && v.as_f64() != Some(0.0)
+        });
+        out.insert(doc.styles.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.clone()), Value::Object(m));
+    }
+    out
+}
+
 /// A paragraph's named style ("Normal" when it has none).
 fn style_name(doc: &Document, p: &Paragraph) -> String {
     p.props
@@ -187,7 +273,11 @@ fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut usize) -> Map<Strin
                 Some(p) => {
                     let ex = extract(p, &|_| false);
                     *dropped += ex.dropped_objects;
-                    paras.push(json!({ "style": style_name(doc, p), "runs": ex.runs }));
+                    let mut wp = json!({ "style": style_name(doc, p), "runs": ex.runs });
+                    if let Some(f) = para_format(doc, p) {
+                        wp["format"] = f;
+                    }
+                    paras.push(wp);
                 }
                 None => *dropped += 1,
             }
@@ -635,12 +725,13 @@ fn import_into(
                     }
                     e => e,
                 };
-                if existing.is_none()
+                if !adopting
+                    && existing.is_none()
                     && tag.is_none()
                     && ex.text.trim().is_empty()
                     && ex.fields.is_empty()
                 {
-                    continue; // an empty paragraph typed between blocks
+                    continue; // an empty paragraph typed between blocks (adopt keeps the file's own)
                 }
                 let para_path = match existing {
                     Some(c) => c.path.clone(),
@@ -697,6 +788,9 @@ fn import_into(
                     }
                 }
                 let mut new_para = json!({ "style": style, "runs": runs });
+                if let Some(f) = para_format(edited, p) {
+                    new_para["format"] = f;
+                }
                 if let Some(n) = p.props.numbering.filter(|n| n.num != 0) {
                     let id = list_id(edited, n.num);
                     lists_used.entry(id.clone()).or_insert(n.num);
@@ -724,7 +818,8 @@ fn import_into(
                             );
                         let same_style =
                             old.get("style").and_then(Value::as_str).unwrap_or("Normal") == style
-                                && old.get("list") == new_para.get("list");
+                                && old.get("list") == new_para.get("list")
+                                && old.get("format") == new_para.get("format");
                         if !(same_runs && same_style) || !children.is_empty() {
                             // Keep the original field runs' formatting where the field is unchanged.
                             let mut merged = new_para.clone();
@@ -964,6 +1059,37 @@ fn import_into(
         let mut all = known.clone();
         all.extend(new_lists);
         wd2.insert("lists".into(), Value::Object(all));
+    }
+    // What Milleleaf's own export writes for this node, read back the same way: page setup and
+    // styles are carried when the file's differ from it.
+    let ours_doc = crate::export(node, &[])
+        .ok()
+        .and_then(|(d, _)| crate::from_docx(&crate::to_docx(&d).ok()?).ok());
+    let ours = ours_doc.as_ref().and_then(page_setup);
+    // The style sheet (WordCraft's form), when a style the document uses is defined differently:
+    // an adopted file's own Normal (its font, size, alignment), or a style changed in Word.
+    if let Some(od) = &ours_doc {
+        let ids = used_style_names(edited);
+        if used_styles(edited, &ids) != used_styles(od, &ids) {
+            if let Ok(v) = serde_json::to_value(&edited.styles) {
+                wd2.insert("styles".into(), v);
+            }
+        }
+    }
+    // Compared on what a reader sees (size, orientation, margins, columns): editors rewrite the
+    // rest (grid, header distance) on every save.
+    let seen = |v: &Option<Value>| {
+        v.as_ref().map(|v| {
+            let n = |k: &str| (v.get(k).and_then(Value::as_f64).unwrap_or(0.0) * 2.0).round() as i64;
+            let cols = v.pointer("/columns/count").and_then(Value::as_u64);
+            (n("pageW"), n("pageH"), v.get("landscape") == Some(&json!(true)), [n("marginTop"), n("marginBottom"), n("marginLeft"), n("marginRight")], cols)
+        })
+    };
+    let page = page_setup(edited);
+    if seen(&page) != seen(&ours) {
+        if let Some(p) = page {
+            wd2.insert("page".into(), p);
+        }
     }
     // Headers and footers, and which pages they're for.
     let sect = &edited.last_section;

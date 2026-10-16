@@ -38,6 +38,10 @@ for row in inv.get("comparison", []):
         if b < a and not text_loss_listed:
             problems.append(f"unlisted loss: {f}: {b} of {a}")
         continue
+    if "(value" in f:
+        if a != b and f not in listed:
+            problems.append(f"unlisted change: {f}: {a} → {b}")
+        continue
     if verdict not in ("lost", "fewer") or f in listed:
         continue
     by, each = covered_by.get(f, (None, 0))

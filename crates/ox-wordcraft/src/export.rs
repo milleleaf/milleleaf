@@ -8,7 +8,9 @@ use ox_core::render::{field_text, format_value};
 use serde_json::{Map, Value};
 use wordcraft_doc::numbering::Level;
 use wordcraft_doc::para::OBJ;
-use wordcraft_doc::props::{NumRef, VMerge};
+use wordcraft_doc::props::{NumRef, ParaProps, VMerge};
+use wordcraft_doc::section::SectionProps;
+use wordcraft_doc::styles::StyleSheet;
 use wordcraft_doc::props::Underline;
 use wordcraft_doc::{
     Align, Block, Cell, CharProps, ContentControl, ControlKind, ControlLock, CustomProp, Document,
@@ -150,6 +152,13 @@ fn para_from(
         None => report.warnings.push(format!(
             "{at}: style `{style_name}` not in the document; used Normal"
         )),
+    }
+    if let Some(f) = wp.get("format") {
+        // Direct formatting (WordCraft's paragraph properties); the style and list set above win.
+        match serde_json::from_value::<ParaProps>(f.clone()) {
+            Ok(fp) => p.props = ParaProps { style: p.props.style.take(), numbering: p.props.numbering, ..fp },
+            Err(e) => report.warnings.push(format!("{at}: paragraph formatting can't be read ({e}); not applied")),
+        }
     }
     if let Some(l) = wp.get("list") {
         let id = l.get("id").and_then(Value::as_str).unwrap_or("");
@@ -409,6 +418,20 @@ pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportRep
     {
         doc.last_section.page_w = w;
         doc.last_section.page_h = h;
+    }
+    if let Some(st) = wd.get("styles") {
+        // The document's own style sheet (an adopted file's, or one edited in Word).
+        match serde_json::from_value::<StyleSheet>(st.clone()) {
+            Ok(st) => doc.styles = st,
+            Err(e) => report.warnings.push(format!("styles can't be read ({e}); Milleleaf's own are used")),
+        }
+    }
+    if let Some(page) = wd.get("page") {
+        // The page setup (WordCraft's section properties); pageSize above is the simple form.
+        match serde_json::from_value::<SectionProps>(page.clone()) {
+            Ok(sp) => doc.last_section = sp,
+            Err(e) => report.warnings.push(format!("page setup can't be read ({e}); the default is used")),
+        }
     }
     if let Some(title) = wd.get("title").and_then(Value::as_str) {
         doc.core.title = title.to_string();

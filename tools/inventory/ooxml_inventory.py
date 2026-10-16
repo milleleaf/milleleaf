@@ -45,13 +45,65 @@ def bold(run):
     return b is not None and b.get(W + "val") not in ("0", "false", "off")
 
 
+def fnv(s):
+    """FNV-1a 32-bit of a string's UTF-8 (the same in the Rust counter): compares names as values."""
+    h = 0x811C9DC5
+    for byte in s.encode():
+        h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def default_style(z):
+    """The default paragraph style's font, size and justification (falling back to the document
+    defaults), as numbers that can be compared exactly."""
+    if "word/styles.xml" not in z.namelist():
+        return {}
+    st = xml(z, "word/styles.xml")
+    dd = st.find(f"{W}docDefaults/{W}rPrDefault/{W}rPr")
+    normal = next((e for e in st.iter(W + "style") if e.get(W + "type") == "paragraph" and e.get(W + "default") in ("1", "true")), None)
+    def pick(path, attr):
+        for root in (normal, dd if path.startswith("rPr") else None):
+            if root is None:
+                continue
+            e = root.find(f"{W}{path.replace('/', '/' + W)}") if root is normal else root.find(W + path.split("/")[-1])
+            if e is not None and e.get(W + attr) is not None:
+                return e.get(W + attr)
+        return None
+    font = pick("rPr/rFonts", "ascii")
+    size = pick("rPr/sz", "val")
+    jc = pick("pPr/jc", "val")
+    return {
+        "default style font (value, name hash)": fnv(font) if font else 0,
+        "default style size (value, half-points)": int(size) if size else 0,
+        "default style justified (value)": 1 if jc in ("both", "distribute") else 0,
+    }
+
+
 def docx(z):
     body = [xml(z, "word/document.xml")]
     hf = [xml(z, n) for n in parts(z, r"word/(header|footer)\d*\.xml")]
     notes = [xml(z, n) for n in parts(z, r"word/(footnotes|endnotes)\.xml")]
     styles_used = {e.get(W + "val") for r in body for tag in ("pStyle", "rStyle", "tblStyle") for e in r.iter(W + tag)}
     paras = [p for r in body for p in r.iter(W + "p")]
+    in_tables = {id(p) for r in body for t in r.iter(W + "tbl") for p in t.iter(W + "p")}
+    ppr = [p.find(W + "pPr") for p in paras if id(p) not in in_tables]
+    ppr = [x for x in ppr if x is not None]
+    cell_ppr = [x for x in (p.find(W + "pPr") for p in paras if id(p) in in_tables) if x is not None]
+    formatted = lambda x: (x.find(W + "jc") is not None and x.find(W + "jc").get(W + "val") not in ("left", "start")) or x.find(W + "spacing") is not None or x.find(W + "ind") is not None
+    # Values, compared exactly ("(value" in the name): the last section's page size and margins.
+    pg = ([None] + [e for r in body for e in r.iter(W + "pgSz")])[-1]
+    pm = ([None] + [e for r in body for e in r.iter(W + "pgMar")])[-1]
+    val = lambda e, k: int(float(e.get(W + k, 0))) if e is not None else 0
     return {
+        **default_style(z),
+        "style definitions": count([xml(z, "word/styles.xml")], W + "style") if "word/styles.xml" in z.namelist() else 0,
+        "page width (value, twips)": val(pg, "w"),
+        "page height (value, twips)": val(pg, "h"),
+        "page margins top/right/bottom/left (value, twips)": sum(val(pm, k) * 10 ** (5 * i) for i, k in enumerate(("top", "right", "bottom", "left"))),
+        "paragraphs aligned other than left (outside tables)": sum(1 for x in ppr if x.find(W + "jc") is not None and x.find(W + "jc").get(W + "val") not in ("left", "start")),
+        "paragraphs with spacing set (outside tables)": sum(1 for x in ppr if x.find(W + "spacing") is not None),
+        "paragraphs with indents set (outside tables)": sum(1 for x in ppr if x.find(W + "ind") is not None),
+        "table cell paragraphs with alignment, spacing or indents": sum(1 for x in cell_ppr if formatted(x)),
         "paragraphs (non-empty)": sum(1 for p in paras if "".join(t.text or "" for t in p.iter(W + "t")).strip()),
         "tables": count(body, W + "tbl"),
         "table rows": count(body, W + "tr"),

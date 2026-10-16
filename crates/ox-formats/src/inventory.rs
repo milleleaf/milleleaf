@@ -67,7 +67,12 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
             .collect::<Result<_, _>>()?;
         let comments: Vec<Vec<u8>> =
             matching(|n| n == "word/comments.xml").iter().map(|n| part(n)).collect::<Result<_, _>>()?;
-        Ok(("docx", docx(&body, &hf, &notes, &comments, &names)))
+        let styles = if has("word/styles.xml") { Some(part("word/styles.xml")?) } else { None };
+        let mut c = docx(&body, &hf, &notes, &comments, &names);
+        if let Some(st) = styles {
+            default_style(&st, &mut c);
+        }
+        Ok(("docx", c))
     } else if has("xl/workbook.xml") {
         let sheets: Vec<Vec<u8>> = matching(|n| numbered_req(n, "xl/worksheets/sheet"))
             .iter()
@@ -208,6 +213,51 @@ fn text_in(xml: &[u8], ns: &[u8], tag: &[u8]) -> String {
     out
 }
 
+/// FNV-1a 32-bit of a string's UTF-8 (the same in the Python counter): compares names as values.
+fn fnv(s: &str) -> u64 {
+    s.bytes().fold(0x811C_9DC5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as u64
+}
+
+/// The default paragraph style's font, size and justification (font and size falling back to
+/// the document defaults), and how many styles the document defines.
+fn default_style(st: &[u8], c: &mut Counts) {
+    // Where we are: in docDefaults' run properties, or in the default paragraph style's rPr / pPr.
+    let (mut in_dd, mut in_normal, mut in_rpr, mut in_ppr) = (false, false, false, false);
+    let (mut n_font, mut n_size, mut n_jc, mut d_font, mut d_size) = (None, None, None, None, None);
+    let mut styles = 0u64;
+    walk(st, |ev| match ev {
+        Ev::Open(n, l, e) if n == W => match l {
+            b"rPrDefault" => in_dd = true,
+            b"style" => {
+                styles += 1;
+                in_normal = attr(e, b"type").as_deref() == Some("paragraph")
+                    && matches!(attr(e, b"default").as_deref(), Some("1" | "true"));
+            }
+            b"rPr" => in_rpr = true,
+            b"pPr" => in_ppr = true,
+            b"rFonts" if in_rpr && in_normal => n_font = attr(e, b"ascii"),
+            b"rFonts" if in_dd => d_font = attr(e, b"ascii"),
+            b"sz" if in_rpr && in_normal => n_size = attr(e, b"val"),
+            b"sz" if in_dd => d_size = attr(e, b"val"),
+            b"jc" if in_ppr && in_normal => n_jc = attr(e, b"val"),
+            _ => {}
+        },
+        Ev::Close(n, l) if n == W => match l {
+            b"rPrDefault" => in_dd = false,
+            b"style" => in_normal = false,
+            b"rPr" => in_rpr = false,
+            b"pPr" => in_ppr = false,
+            _ => {}
+        },
+        _ => {}
+    });
+    let font = n_font.or(d_font);
+    c.insert("default style font (value, name hash)", font.as_deref().map(fnv).unwrap_or(0));
+    c.insert("default style size (value, half-points)", n_size.or(d_size).and_then(|v| v.parse().ok()).unwrap_or(0));
+    c.insert("default style justified (value)", u64::from(matches!(n_jc.as_deref(), Some("both" | "distribute"))));
+    c.insert("style definitions", styles);
+}
+
 fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], names: &[String]) -> Counts {
     let mut c = Counts::new();
     // Body: one pass, tracking open paragraphs (non-empty if any w:t inside has text), the styles
@@ -224,15 +274,50 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     let (mut in_t, mut run_bold, mut depth) = (0usize, false, 0usize);
     let mut runs: Vec<usize> = Vec::new();
     let (mut text, mut bold_text) = (String::new(), String::new());
+    // Paragraph properties: a child of w:p's own w:pPr (depth p+2) is the paragraph's.
+    let mut para_at: Vec<usize> = Vec::new();
+    let (mut aligned, mut spaced, mut indented) = (0u64, 0u64, 0u64);
+    // Inside tables: (table depth, is the open cell paragraph formatted yet), and the count.
+    let (mut tables, mut cell_formatted, mut cell_paras) = (0usize, false, 0u64);
+    let (mut page, mut margins) = ([0u64; 2], [0u64; 4]);
+    let num = |e: &BytesStart, k: &[u8]| attr(e, k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) as u64;
     walk(body, |ev| match ev {
         Ev::Open(n, l, e) if n == W => {
             depth += 1;
+            if para_at.last().map(|d| d + 2) == Some(depth) {
+                let f = match l {
+                    b"jc" => !matches!(attr(e, b"val").as_deref(), Some("left" | "start")),
+                    b"spacing" | b"ind" => true,
+                    _ => false,
+                };
+                if tables > 0 {
+                    cell_formatted |= f;
+                } else {
+                    match l {
+                        b"jc" if f => aligned += 1,
+                        b"spacing" => spaced += 1,
+                        b"ind" => indented += 1,
+                        _ => {}
+                    }
+                }
+            }
+            if l == b"tbl" {
+                tables += 1;
+            }
+            match l {
+                b"pgSz" => page = [num(e, b"w"), num(e, b"h")],
+                b"pgMar" => margins = [num(e, b"top"), num(e, b"right"), num(e, b"bottom"), num(e, b"left")],
+                _ => {}
+            }
             let l = std::str::from_utf8(l).unwrap_or("");
             if let Some(k) = count.iter().find(|k| **k == l) {
                 *tags.entry(k).or_default() += 1;
             }
             match l {
-                "p" => paras.push(false),
+                "p" => {
+                    paras.push(false);
+                    para_at.push(depth);
+                }
                 "t" => in_t += 1,
                 "r" => {
                     runs.push(depth);
@@ -259,7 +344,12 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
                 return;
             }
             match l {
+            b"tbl" => tables -= 1,
             b"p" => {
+                para_at.pop();
+                if tables > 0 && std::mem::take(&mut cell_formatted) {
+                    cell_paras += 1;
+                }
                 if paras.pop() == Some(true) {
                     nonempty += 1;
                 }
@@ -311,6 +401,16 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             _ => {}
         });
     }
+    c.insert("page width (value, twips)", page[0]);
+    c.insert("page height (value, twips)", page[1]);
+    c.insert(
+        "page margins top/right/bottom/left (value, twips)",
+        margins.iter().enumerate().map(|(i, m)| m * 10u64.pow(5 * i as u32)).sum(),
+    );
+    c.insert("paragraphs aligned other than left (outside tables)", aligned);
+    c.insert("paragraphs with spacing set (outside tables)", spaced);
+    c.insert("paragraphs with indents set (outside tables)", indented);
+    c.insert("table cell paragraphs with alignment, spacing or indents", cell_paras);
     c.insert("paragraphs (non-empty)", nonempty);
     c.insert("tables", g("tbl"));
     c.insert("table rows", g("tr"));
@@ -579,6 +679,16 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("styles used", None),
             ("bold text chars", None),
             ("list paragraphs (numPr)", None),
+            ("page width (value, twips)", None),
+            ("default style font (value, name hash)", None),
+            ("default style size (value, half-points)", None),
+            ("default style justified (value)", None),
+            ("style definitions", None),
+            ("page height (value, twips)", None),
+            ("page margins top/right/bottom/left (value, twips)", None),
+            ("paragraphs aligned other than left (outside tables)", None),
+            ("paragraphs with spacing set (outside tables)", None),
+            ("paragraphs with indents set (outside tables)", None),
             ("merged cells (gridSpan/vMerge)", None),
             ("fields", None),
             ("headers and footers (parts)", None),
