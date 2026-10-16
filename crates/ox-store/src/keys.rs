@@ -164,6 +164,12 @@ pub struct SigInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum LayerStatus {
+    /// Its bytes were purged; the hash and the purge record remain.
+    Purged {
+        by: String,
+        at: String,
+        reason: Option<String>,
+    },
     /// Content no longer matches its hash.
     Tampered {
         actual: String,
@@ -244,6 +250,11 @@ impl Store {
     /// Checks one stored layer: its hash, then every signature on it.
     pub fn verify(&self, layer_hash: &str) -> Result<LayerStatus> {
         let p = self.dir.join("layers").join(format!("{layer_hash}.json"));
+        if !p.exists()
+            && let Some(g) = self.purged(layer_hash)
+        {
+            return Ok(LayerStatus::Purged { by: g.by, at: g.at, reason: g.reason });
+        }
         let bytes = io(&p, fs::read(&p))?;
         let actual = hash_of(&bytes);
         if actual != layer_hash {

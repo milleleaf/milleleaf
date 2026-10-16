@@ -141,6 +141,7 @@ pub fn run(
         "checkpoint" => checkpoint(file, args),
         "verify" => verify(file, args),
         "sign" => sign(file, pos, args),
+        "purge" => purge(file, pos, args),
         "key" => key(pos),
         _ => return None,
     };
@@ -356,6 +357,10 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
                 unsigned += 1;
                 "unsigned".into()
             }
+            LayerStatus::Purged { by, at, reason } => format!(
+                "purged by {by} on {at}{}",
+                reason.as_ref().map(|r| format!(" ({r})")).unwrap_or_default()
+            ),
         };
         println!("{}  {:<44} {text}", short(&h), id);
     }
@@ -374,6 +379,16 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// Deletes a layer's content, keeping its hash; the purge record replicates like a layer.
+fn purge(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String> {
+    let s = Store::open(dir).map_err(e)?;
+    let h = s.resolve(pos.get(2).ok_or("`purge` needs a layer hash")?).map_err(e)?;
+    let by = opt(args, "--author").unwrap_or("ox");
+    let c = s.purge(&h, by, opt(args, "--reason")).map_err(e)?;
+    println!("ox: purged {} (record {}); head {}", short(&h), short(&c.layer), short(&c.stack));
+    Ok(ExitCode::SUCCESS)
 }
 
 fn sign(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String> {

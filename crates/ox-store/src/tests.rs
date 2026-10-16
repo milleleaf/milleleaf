@@ -545,3 +545,47 @@ fn pictures_are_stored_by_hash_and_a_swapped_one_fails_verify() {
     let err = s.commit(&l, CommitOptions::default()).unwrap_err();
     assert!(matches!(err, StoreError::MissingAsset(_)), "{err}");
 }
+
+#[test]
+fn a_purged_layer_loses_its_bytes_keeps_its_hash_and_composes_empty() {
+    let t = TempDir::new("purge");
+    let s = hello(&t);
+    // A layer with something that must go (say, personal data typed by mistake).
+    let secret = layer("oops", vec![("3f1c2a90-0000-4c1e-9a00-000000000023", "test::note", json!("private phone number"))]);
+    let c = s.commit(&secret, CommitOptions::default()).unwrap();
+    let composed_with = serde_json::to_string(&composed(&s.flat(&s.head().unwrap().unwrap()).unwrap())).unwrap();
+    assert!(composed_with.contains("private phone number"));
+
+    let rec = s.purge(&c.layer, "owner", Some("personal data")).unwrap();
+    // Bytes gone, hash and index kept, the head's composition no longer has it.
+    assert!(!s.dir.join("layers").join(format!("{}.json", c.layer)).exists());
+    assert!(s.index(&c.layer).is_ok());
+    let composed_after = serde_json::to_string(&composed(&s.flat(&s.head().unwrap().unwrap()).unwrap())).unwrap();
+    assert!(!composed_after.contains("private phone number"));
+    // No copy left in caches either.
+    let leftover = walk_files(&s.dir).into_iter().any(|p| fs::read(&p).is_ok_and(|b| String::from_utf8_lossy(&b).contains("private phone number")));
+    assert!(!leftover, "content still on disk somewhere in .ox");
+    match s.verify(&c.layer).unwrap() {
+        LayerStatus::Purged { by, reason, .. } => assert_eq!((by.as_str(), reason.as_deref()), ("owner", Some("personal data"))),
+        other => panic!("{other:?}"),
+    }
+
+    // Another copy of the project receives the purge record and does the same.
+    let t2 = TempDir::new("purge-copy");
+    let s2 = hello(&t2);
+    s2.commit(&secret, CommitOptions::default()).unwrap();
+    let record = s.layer(&rec.layer).unwrap();
+    assert_eq!(record.header.purges.len(), 1);
+    s2.commit(&record, CommitOptions::default()).unwrap();
+    assert!(!s2.dir.join("layers").join(format!("{}.json", c.layer)).exists());
+    assert!(matches!(s2.verify(&c.layer).unwrap(), LayerStatus::Purged { .. }));
+}
+
+fn walk_files(d: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for e in fs::read_dir(d).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() { out.extend(walk_files(&p)); } else { out.push(p); }
+    }
+    out
+}

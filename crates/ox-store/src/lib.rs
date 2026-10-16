@@ -329,9 +329,17 @@ impl Store {
         Ok((hash, dropped, new))
     }
 
-    /// The layer stored under `hash`, checked against its hash.
+    /// The layer stored under `hash`, checked against its hash. A purged layer comes back empty,
+    /// with the header its index kept.
     pub fn layer(&self, hash: &str) -> Result<Layer> {
         let p = self.layer_path(hash);
+        if !p.exists()
+            && let Some(purge) = self.purged(hash)
+        {
+            let mut header = self.index(hash).map(|i| i.header).unwrap_or_default();
+            header.purges = vec![purge];
+            return Ok(Layer { header, imports: vec![], schemas: Default::default(), data: vec![] });
+        }
         let bytes = io(&p, fs::read(&p))?;
         let actual = hash_of(&bytes);
         if actual != hash {
@@ -572,6 +580,8 @@ impl Store {
             self.sign(&hash, k)?;
             signed = true;
         }
+        // A purge record, made here or received from another copy of the project: carry it out.
+        self.apply_purges(layer)?;
         Ok(Commit {
             layer: hash,
             stack,
@@ -652,6 +662,66 @@ impl Store {
             out.push(self.commit(&l.layer, opts)?);
         }
         Ok(out)
+    }
+
+    /// The purge that removed a layer's bytes from this store, if one did.
+    pub fn purged(&self, hash: &str) -> Option<ox_core::Purge> {
+        let bytes = fs::read(self.dir.join("purged").join(format!("{hash}.json"))).ok()?;
+        serde_json::from_slice(&bytes).ok()
+    }
+
+    /// Purges a layer's content (mode A, `bytes`): commits a signed-able purge record, then deletes
+    /// the layer's bytes here, keeping its hash and index entry. Every store the record reaches does
+    /// the same. Who may purge (owner or approver) is checked once roles exist (plan M4 item 5).
+    pub fn purge(&self, hash: &str, by: &str, reason: Option<&str>) -> Result<Commit> {
+        let hash = self.resolve(hash)?;
+        if self.stack_path(&hash).exists() {
+            return Err(StoreError::Key(format!("{hash} is a commit, not a layer; purge the layer")));
+        }
+        let record = Layer {
+            header: Header {
+                id: format!("purge/{}", &hash[..12]),
+                ox_version: OX_VERSION.into(),
+                data_version: "1.0.0".into(),
+                author: by.into(),
+                timestamp: time::now_rfc3339(),
+                kind: Some("purge".into()),
+                purges: vec![ox_core::Purge {
+                    layer: hash.clone(),
+                    mode: "bytes".into(),
+                    by: by.into(),
+                    at: time::now_rfc3339(),
+                    reason: reason.map(str::to_string),
+                }],
+                ..Header::default()
+            },
+            imports: vec![],
+            schemas: Default::default(),
+            data: vec![],
+        };
+        self.commit(&record, CommitOptions::default())
+    }
+
+    /// Carries out the purges a committed layer lists: bytes deleted, a marker kept, caches dropped
+    /// (they hold composed content).
+    fn apply_purges(&self, layer: &Layer) -> Result<()> {
+        for p in &layer.header.purges {
+            if p.mode != "bytes" {
+                continue; // `key`: destroying a sealed layer's key comes with encryption (M4).
+            }
+            let d = self.dir.join("purged");
+            io(&d, fs::create_dir_all(&d))?;
+            let marker = d.join(format!("{}.json", p.layer));
+            if !marker.exists() {
+                write_new(&marker, &serde_json::to_vec_pretty(p).expect("json"))?;
+            }
+            let lp = self.layer_path(&p.layer);
+            if lp.exists() {
+                io(&lp, fs::remove_file(&lp))?;
+            }
+            let _ = fs::remove_dir_all(self.dir.join("cache"));
+        }
+        Ok(())
     }
 
     fn blob_path(&self, hex: &str) -> PathBuf {

@@ -28,6 +28,8 @@ USAGE:
                                                   every layer that set it
   ox checkpoint <dir> [--keep N] [--author NAME]  flatten all but the top N layers (default 1)
   ox verify   <dir> [--require]                   hash and signatures of every layer in the head
+  ox purge    <dir> <layer> [--reason TEXT] [--author NAME]
+                 delete a layer's content, keep its hash; the record goes to every copy
   ox sign     <dir> <layer-hash> [--key NAME]     add a detached signature
   ox key new  <name> [<dir>]                      new Ed25519 key in ~/.config/ox/keys
                                                   (or $OX_KEYS); with <dir>, the project knows it

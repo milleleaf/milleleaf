@@ -36,6 +36,38 @@ pub struct Header {
     /// *Revision store.* On a checkpoint: the layers (hashes, bottom first) it stands for.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub replaces: Vec<String>,
+    /// *Revision store.* The layer's content is encrypted (crypto-shredding, plan M1.5 item 7 B): its
+    /// `data` is empty and the ciphertext is a blob. Destroying the key purges every copy at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed: Option<Sealed>,
+    /// *Revision store.* On a purge record: the layers it purges (plan M1.5 item 7). A store that
+    /// receives it deletes their bytes and keeps their hashes; compose treats them as empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub purges: Vec<Purge>,
+}
+
+/// How a sealed layer's content is encrypted. The scheme (hybrid X25519 + ML-KEM, plan M4 item 5)
+/// is decided when encryption is built; until then a sealed layer composes as empty.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sealed {
+    pub scheme: String,
+    /// The content key's id: purging the layer means destroying this key everywhere.
+    pub key: String,
+    /// The ciphertext, as a blob value (`sha256-<hex>`).
+    pub content: String,
+}
+
+/// One purged layer: what, how, by whom, when and why.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Purge {
+    /// The purged layer's hash (hex).
+    pub layer: String,
+    /// `bytes` (delete the content, keep the hash) or `key` (destroy a sealed layer's key).
+    pub mode: String,
+    pub by: String,
+    pub at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
