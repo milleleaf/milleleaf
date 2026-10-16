@@ -94,7 +94,17 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
             .iter()
             .map(|n| part(n))
             .collect::<Result<_, _>>()?;
-        Ok(("pptx", pptx(&slides, &notes, &names)))
+        let mut c = pptx(&slides, &notes, &names);
+        let (mut w, mut h) = (0, 0);
+        walk(&part("ppt/presentation.xml")?, |ev| {
+            if let Ev::Open(P, b"sldSz", e) = ev {
+                let n = |k: &[u8]| attr(e, k).and_then(|v| v.parse().ok()).unwrap_or(0);
+                (w, h) = (n(b"cx"), n(b"cy"));
+            }
+        });
+        c.insert("slide width (value, EMU)", w);
+        c.insert("slide height (value, EMU)", h);
+        Ok(("pptx", c))
     } else {
         Err("not a .docx, .xlsx or .pptx".into())
     }
@@ -618,13 +628,58 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     c
 }
 
+/// A shape's fill and outline as the counters see them: set on the shape (`p:spPr`), else from its
+/// style's `fillRef` / `lnRef` (index 0 is none).
+#[derive(Default)]
+struct SpLook {
+    depth: usize,
+    fill: Option<bool>,
+    line: Option<bool>,
+    fill_ref: bool,
+    line_ref: bool,
+    in_ln: bool,
+}
+
+impl SpLook {
+    const FILLS: [&[u8]; 4] = [b"solidFill", b"gradFill", b"pattFill", b"blipFill"];
+    /// An element opening at `depth` (the shape is at `self.depth`).
+    fn see(&mut self, n: &[u8], l: &[u8], e: &BytesStart, depth: usize) {
+        let filled = Self::FILLS.contains(&l);
+        match (n, depth - self.depth) {
+            // p:sp > p:style > a:fillRef / a:lnRef
+            (A, 2) if l == b"fillRef" || l == b"lnRef" => {
+                let on = !matches!(attr(e, b"idx").as_deref(), None | Some("0"));
+                if l == b"fillRef" {
+                    self.fill_ref = on
+                } else {
+                    self.line_ref = on
+                }
+            }
+            // p:sp > p:spPr > fill, and p:sp > p:spPr > a:ln > fill
+            (A, 2) if filled || l == b"noFill" => self.fill = Some(filled),
+            (A, 2) => self.in_ln = l == b"ln",
+            (A, 3) if self.in_ln && (filled || l == b"noFill") => self.line = Some(filled),
+            _ => {}
+        }
+    }
+    fn shown(&self) -> (bool, bool) {
+        (self.fill.unwrap_or(self.fill_ref), self.line.unwrap_or(self.line_ref))
+    }
+}
+
 fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
     let mut t: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut table_text = String::new();
+    let mut bold_text = String::new();
     for s in slides {
         let (mut in_tbl, mut in_t) = (0usize, 0usize);
+        // Runs: is the open a:r bold (its own a:rPr b="1")?
+        let mut run_bold: Option<bool> = None;
         // Open shapes: (has text yet, is Milleleaf's own). An import carries Milleleaf's own.
-        let mut sps: Vec<(bool, bool)> = Vec::new();
+        // and how many of its paragraphs have an outline level (counted when it has text).
+        let mut sps: Vec<(bool, bool, u64)> = Vec::new();
+        // Their fill and outline: set in spPr (Some(shown)), and the style's references.
+        let mut looks: Vec<SpLook> = Vec::new();
         // A transition counts when it does something (an effect or sound child, or auto-advance)
         // and isn't the mc:Fallback copy of one already counted in mc:Choice.
         let (mut fallback, mut transition): (usize, Option<(usize, bool)>) = (0, None);
@@ -632,6 +687,9 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
         walk(s, |ev| match ev {
             Ev::Open(n, l, e) => {
                 depth += 1;
+                if let Some(lk) = looks.last_mut() {
+                    lk.see(n, l, e, depth);
+                }
                 if let Some((d, does)) = transition.as_mut() {
                     *does |= depth == *d + 1;
                 }
@@ -645,7 +703,8 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
                         return;
                     }
                     (P, b"sp") => {
-                        sps.push((false, false));
+                        sps.push((false, false, 0));
+                        looks.push(SpLook { depth, ..SpLook::default() });
                         "shapes (sp)"
                     }
                     (P, b"cNvPr") => {
@@ -670,6 +729,22 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
                         in_t += 1;
                         return;
                     }
+                    (A, b"r") => {
+                        run_bold = Some(false);
+                        return;
+                    }
+                    (A, b"rPr") => {
+                        if let Some(b) = run_bold.as_mut() {
+                            *b = matches!(attr(e, b"b").as_deref(), Some("1" | "true"));
+                        }
+                        return;
+                    }
+                    (A, b"pPr") if !matches!(attr(e, b"lvl").as_deref(), None | Some("0")) => {
+                        if let Some(top) = sps.last_mut() {
+                            top.2 += 1;
+                        }
+                        return;
+                    }
                     _ => return,
                 };
                 *t.entry(k).or_default() += 1;
@@ -679,6 +754,7 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
                 match (n, l) {
                     (A, b"tbl") => in_tbl = in_tbl.saturating_sub(1),
                     (A, b"t") => in_t = in_t.saturating_sub(1),
+                    (A, b"r") => run_bold = None,
                     (MC, b"Fallback") => fallback -= 1,
                     (P, b"transition") => {
                         if transition.take().is_some_and(|(_, does)| does) && fallback == 0 {
@@ -686,11 +762,20 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
                         }
                     }
                     (P, b"sp") => {
-                        if let Some((false, ours)) = sps.pop() {
-                            *t.entry("shapes without text").or_default() += 1;
-                            if ours {
-                                *t.entry("_milleleaf shapes without text").or_default() += 1;
+                        if let Some(lk) = looks.pop() {
+                            let (f, l) = lk.shown();
+                            *t.entry("shapes with a fill").or_default() += u64::from(f);
+                            *t.entry("shapes with an outline").or_default() += u64::from(l);
+                        }
+                        match sps.pop() {
+                            Some((false, ours, _)) => {
+                                *t.entry("shapes without text").or_default() += 1;
+                                if ours {
+                                    *t.entry("_milleleaf shapes without text").or_default() += 1;
+                                }
                             }
+                            Some((true, _, levels)) => *t.entry("slide paragraphs with an outline level").or_default() += levels,
+                            None => {}
                         }
                     }
                     _ => {}
@@ -699,6 +784,9 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
             Ev::Text(x) if in_t > 0 => {
                 if !x.trim().is_empty() {
                     sps.iter_mut().for_each(|s| s.0 = true);
+                }
+                if run_bold == Some(true) {
+                    bold_text.push_str(x);
                 }
                 if in_tbl > 0 {
                     table_text.push_str(x);
@@ -740,6 +828,10 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
         count_parts(names, |n| media(n) && av.iter().any(|e| n.to_ascii_lowercase().ends_with(e))),
     );
     c.insert("hyperlinks", g("hyperlinks"));
+    c.insert("slide paragraphs with an outline level", g("slide paragraphs with an outline level"));
+    c.insert("shapes with a fill", g("shapes with a fill"));
+    c.insert("shapes with an outline", g("shapes with an outline"));
+    c.insert("slide bold text chars", norm_len(&bold_text));
     // The deck adapter doesn't carry tables, so their text goes with them.
     c.insert("table text chars", norm_len(&table_text));
     c
@@ -800,6 +892,12 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
         ],
         "pptx" => &[
             ("slides", None),
+            ("slide width (value, EMU)", None),
+            ("slide height (value, EMU)", None),
+            ("slide paragraphs with an outline level", None),
+            ("slide bold text chars", None),
+            ("shapes with a fill", None),
+            ("shapes with an outline", None),
             // Shapes without text are the exception, listed on their own.
             ("shapes (sp)", None),
             ("notes slides", None),

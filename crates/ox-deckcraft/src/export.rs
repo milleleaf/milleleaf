@@ -80,6 +80,27 @@ fn text_run(text: &str, props: RunProps) -> Run {
     }
 }
 
+/// `deck::shape`: the shape's geometry, fill and outline.
+fn shape_look(shape: &mut Shape, sh: &Map<String, Value>) {
+    shape.geom = Geom::preset(match s(sh, "kind") {
+        Some("ellipse") => "ellipse",
+        Some("roundRect") => "roundRect",
+        _ => "rect",
+    });
+    shape.fill = Some(s(sh, "fill").and_then(solid).unwrap_or(Fill::None));
+    shape.line = Some(match s(sh, "stroke").and_then(solid) {
+        Some(f) => Line {
+            fill: Some(f),
+            width: Some(pt(num(sh, "strokeWidth").max(1.0))),
+            ..Line::default()
+        },
+        None => Line {
+            fill: Some(Fill::None),
+            ..Line::default()
+        },
+    });
+}
+
 fn plain_body(paragraphs: Vec<Paragraph>) -> TextBody {
     TextBody {
         body: BodyProps {
@@ -121,12 +142,35 @@ fn text_body(fr: &Composed, t: &Map<String, Value>, report: &mut ExportReport) -
             ..ParaProps::default()
         };
         if p.get("bullet").and_then(Value::as_bool) == Some(true) {
-            props.bullet = Some(Bullet::Char { char: "•".into() });
+            props.bullet = Some(match (s(p, "bulletChar"), p.get("autoNum")) {
+                (_, Some(n)) => Bullet::AutoNum {
+                    scheme: s(n.as_object().unwrap_or(&Map::new()), "scheme").unwrap_or("arabicPeriod").to_string(),
+                    start_at: n.get("startAt").and_then(Value::as_u64).unwrap_or(1) as u32,
+                },
+                (Some(c), None) => Bullet::Char { char: c.to_string() },
+                (None, None) => Bullet::Char { char: "•".into() },
+            });
             props.margin_left = Some(18.0 * (level as f64 + 1.0));
             props.indent = Some(-18.0);
         } else {
             props.bullet = Some(Bullet::None);
         }
+        // Indents the source deck's layout gave (an adopted deck).
+        if let Some(m) = p.get("marginLeftPt").and_then(Value::as_f64) {
+            props.margin_left = Some(m);
+        }
+        if let Some(i) = p.get("indentPt").and_then(Value::as_f64) {
+            props.indent = Some(i);
+        }
+        let spacing = |k: &str| p.get(k).and_then(|v| serde_json::from_value(v.clone()).ok());
+        props.space_before = spacing("spaceBefore");
+        props.space_after = spacing("spaceAfter");
+        props.line_spacing = spacing("lineSpacing");
+        if let Some(Fill::Solid { color }) = s(p, "bulletColor").and_then(solid) {
+            props.bullet_color = Some(color);
+        }
+        props.bullet_font = s(p, "bulletFont").map(String::from);
+        props.bullet_size = p.get("bulletSize").and_then(Value::as_f64);
         let mut runs = Vec::new();
         let mut last_props = RunProps::default();
         for r in p
@@ -363,13 +407,29 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                 shape.kind = table_kind(fr, xfrm.w, xfrm.h);
                 report.tables += 1;
             } else if let Some(t) = obj(fr, "deck::text") {
-                shape.text = Some(text_body(fr, t, &mut report));
+                let mut body = text_body(fr, t, &mut report);
+                if let Some(i) = t.get("insets").and_then(Value::as_object) {
+                    let side = |k: &str| i.get(k).and_then(Value::as_f64).map(pt);
+                    (body.body.inset_l, body.body.inset_t, body.body.inset_r, body.body.inset_b) =
+                        (side("left"), side("top"), side("right"), side("bottom"));
+                }
+                body.body.anchor = Some(match s(t, "verticalAlign") {
+                    Some("middle") => Anchor::Middle,
+                    Some("bottom") => Anchor::Bottom,
+                    _ => Anchor::Top,
+                });
+                shape.text = Some(body);
                 shape.text_box = true;
                 shape.fill = Some(Fill::None);
                 shape.line = Some(Line {
                     fill: Some(Fill::None),
                     ..Line::default()
                 });
+                // A box with a look of its own (an adopted deck's filled or outlined text box).
+                if let Some(sh) = obj(fr, "deck::shape") {
+                    shape_look(&mut shape, sh);
+                    shape.text_box = false;
+                }
             } else if let Some(pic) = obj(fr, "deck::picture").or_else(|| obj(fr, "deck::vector")) {
                 let blob = s(pic, "blob").unwrap_or("");
                 // A missing asset stops the export: a deck with a hole in it is worse than no deck.
@@ -401,23 +461,7 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                 };
                 shape.descr = s(pic, "alt").unwrap_or("").to_string();
             } else if let Some(sh) = obj(fr, "deck::shape") {
-                shape.geom = Geom::preset(match s(sh, "kind") {
-                    Some("ellipse") => "ellipse",
-                    Some("roundRect") => "roundRect",
-                    _ => "rect",
-                });
-                shape.fill = Some(s(sh, "fill").and_then(solid).unwrap_or(Fill::None));
-                shape.line = Some(match s(sh, "stroke").and_then(solid) {
-                    Some(f) => Line {
-                        fill: Some(f),
-                        width: Some(pt(num(sh, "strokeWidth").max(1.0))),
-                        ..Line::default()
-                    },
-                    None => Line {
-                        fill: Some(Fill::None),
-                        ..Line::default()
-                    },
-                });
+                shape_look(&mut shape, sh);
             } else {
                 report.warnings.push(format!(
                     "{}: nothing DeckCraft can show yet; skipped",

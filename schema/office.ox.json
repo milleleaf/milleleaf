@@ -608,6 +608,46 @@
                       "numbered": {
                         "dataType": "Boolean",
                         "optional": true
+                      },
+                      "bulletChar": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "bulletColor": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "bulletFont": {
+                        "dataType": "String",
+                        "optional": true
+                      },
+                      "bulletSize": {
+                        "dataType": "Real",
+                        "optional": true
+                      },
+                      "autoNum": {
+                        "dataType": "Object",
+                        "optional": true
+                      },
+                      "marginLeftPt": {
+                        "dataType": "Real",
+                        "optional": true
+                      },
+                      "indentPt": {
+                        "dataType": "Real",
+                        "optional": true
+                      },
+                      "spaceBefore": {
+                        "dataType": "Object",
+                        "optional": true
+                      },
+                      "spaceAfter": {
+                        "dataType": "Object",
+                        "optional": true
+                      },
+                      "lineSpacing": {
+                        "dataType": "Object",
+                        "optional": true
                       }
                     }
                   }
@@ -624,6 +664,26 @@
                 ]
               },
               "optional": true
+            },
+            "insets": {
+              "dataType": "Object",
+              "optional": true,
+              "objectRestrictions": {
+                "values": {
+                  "left": {
+                    "dataType": "Real"
+                  },
+                  "top": {
+                    "dataType": "Real"
+                  },
+                  "right": {
+                    "dataType": "Real"
+                  },
+                  "bottom": {
+                    "dataType": "Real"
+                  }
+                }
+              }
             }
           }
         }

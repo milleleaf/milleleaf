@@ -180,9 +180,17 @@
                   "text": "Owner: Finance"
                 }
               ],
-              "align": "left"
+              "align": "left",
+              "marginLeftPt": 0.0,
+              "indentPt": 0.0
             }
-          ]
+          ],
+          "insets": {
+            "left": 9.45,
+            "top": 4.72,
+            "right": 9.45,
+            "bottom": 4.72
+          }
         }
       }
     },

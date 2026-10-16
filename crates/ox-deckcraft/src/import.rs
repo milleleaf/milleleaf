@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use deckcraft_model::style::{ColorBase, Fill};
-use deckcraft_model::text::{Bullet, RunKind};
-use deckcraft_model::{Presentation, RunProps, Shape, ShapeKind, TextBody};
+use deckcraft_model::text::{Anchor, Bullet, RunKind};
+use deckcraft_model::{Presentation, RunProps, Shape, ShapeKind, TextBody, resolve};
 use ox_core::Composed;
 use ox_core::model::{Header, Layer, Node, OX_VERSION, stable_id};
 use ox_core::render::{chart_data, field_text, format_value};
@@ -167,13 +167,30 @@ fn canonical_para(p: &Map<String, Value>) -> Value {
 }
 
 /// Paragraphs of an edited text body, in OX form (no fields yet).
-fn read_paragraphs(t: &TextBody) -> Vec<Map<String, Value>> {
+/// A text body's paragraphs as `deck::text` paragraphs. With `inherit` (the slide's context and
+/// the shape), each paragraph and run takes its effective formatting: what the layout and master
+/// give it (bullets by level, sizes, colours, fonts), since an adopted deck's layouts aren't kept.
+fn read_paragraphs(t: &TextBody, inherit: Option<(&resolve::Ctx, &Shape)>) -> Vec<Map<String, Value>> {
     t.paragraphs
         .iter()
         .map(|p| {
+            let pp = match inherit {
+                Some((ctx, sh)) => resolve::para(ctx, sh, p),
+                None => p.props.clone(),
+            };
             let mut runs = Vec::new();
             for r in &p.runs {
-                let mut m = run_format(&r.props);
+                let mut m = match inherit {
+                    Some((ctx, sh)) => {
+                        let rp = resolve::run(ctx, sh, p, &r.props);
+                        let mut m = run_format(&rp);
+                        let c = resolve::text_color(ctx, &rp);
+                        m.insert("color".into(), json!(format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)));
+                        m.insert("font".into(), json!(resolve::font_family(ctx, &rp)));
+                        m
+                    }
+                    None => run_format(&r.props),
+                };
                 let text = match r.kind {
                     RunKind::Break => "\n".to_string(),
                     _ => r.text.clone(),
@@ -186,23 +203,103 @@ fn read_paragraphs(t: &TextBody) -> Vec<Map<String, Value>> {
                 "runs".into(),
                 Value::Array(merge_runs(runs).into_iter().map(Value::Object).collect()),
             );
-            let align = match p.props.align {
+            let align = match pp.align {
                 Some(deckcraft_model::text::Align::Center) => "center",
                 Some(deckcraft_model::text::Align::Right) => "right",
                 Some(deckcraft_model::text::Align::Justify) => "justify",
                 _ => "left",
             };
             para.insert("align".into(), json!(align));
-            if matches!(
-                p.props.bullet,
-                Some(Bullet::Char { .. } | Bullet::AutoNum { .. })
-            ) {
-                para.insert("bullet".into(), json!(true));
+            match &pp.bullet {
+                Some(Bullet::Char { char }) => {
+                    para.insert("bullet".into(), json!(true));
+                    if inherit.is_some() {
+                        para.insert("bulletChar".into(), json!(char));
+                    }
+                }
+                Some(Bullet::AutoNum { scheme, start_at }) => {
+                    para.insert("bullet".into(), json!(true));
+                    if inherit.is_some() {
+                        para.insert("autoNum".into(), json!({ "scheme": scheme, "startAt": start_at }));
+                    }
+                }
+                _ => {}
+            }
+            if p.level > 0 || para.contains_key("bullet") {
                 para.insert("level".into(), json!(p.level));
+            }
+            if let Some((ctx, _)) = inherit {
+                // Indents in points, spacing (DeckCraft's form) and the bullet's look, as the
+                // layout gave them.
+                if let Some(m) = pp.margin_left {
+                    para.insert("marginLeftPt".into(), json!(m));
+                }
+                if let Some(i) = pp.indent {
+                    para.insert("indentPt".into(), json!(i));
+                }
+                for (k, v) in [("spaceBefore", &pp.space_before), ("spaceAfter", &pp.space_after), ("lineSpacing", &pp.line_spacing)] {
+                    if let Some(v) = v.as_ref().and_then(|v| serde_json::to_value(v).ok()) {
+                        para.insert(k.into(), v);
+                    }
+                }
+                if para.contains_key("bullet") {
+                    if let Some(c) = &pp.bullet_color {
+                        let c = ctx.color(c, None);
+                        para.insert("bulletColor".into(), json!(format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)));
+                    }
+                    if let Some(f) = &pp.bullet_font {
+                        para.insert("bulletFont".into(), json!(f));
+                    }
+                    if let Some(sz) = pp.bullet_size {
+                        para.insert("bulletSize".into(), json!(sz));
+                    }
+                }
             }
             para
         })
         .collect()
+}
+
+/// A shape's effective fill, outline and geometry as `deck::shape`, or `None` when it shows
+/// neither fill nor outline. Gradients and pictures become their first colour (said in a warning).
+fn shape_look(ctx: &resolve::Ctx, sh: &Shape, warnings: &mut Vec<String>, si: usize) -> Option<Value> {
+    let hex = |c: deckcraft_model::Rgba| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b);
+    let mut colour = |f: &Fill, ph: Option<deckcraft_model::Rgba>, what: &str| match f {
+        Fill::Solid { color } => Some(hex(ctx.color(color, ph))),
+        Fill::Gradient(g) => {
+            warnings.push(format!("slide {}: `{}`'s {what} gradient isn't carried; used its first colour", si + 1, sh.name));
+            g.stops.first().map(|s| hex(ctx.color(&s.color, ph)))
+        }
+        Fill::None | Fill::Background | Fill::Group => None,
+        _ => {
+            warnings.push(format!("slide {}: `{}`'s {what} (picture or pattern) isn't carried", si + 1, sh.name));
+            None
+        }
+    };
+    let (fill, fph) = resolve::fill(ctx, sh);
+    let fill = fill.as_ref().and_then(|f| colour(f, fph, "fill"));
+    let (line, lph) = resolve::line(ctx, sh);
+    let stroke = line.fill.as_ref().and_then(|f| colour(f, lph, "outline"));
+    if fill.is_none() && stroke.is_none() {
+        return None;
+    }
+    let kind = match &sh.geom {
+        deckcraft_model::Geom::Preset { name, .. } if name == "ellipse" || name == "roundRect" => name.as_str(),
+        deckcraft_model::Geom::Preset { name, .. } if name != "rect" => {
+            warnings.push(format!("slide {}: `{}` is a `{name}`; drawn as a rectangle", si + 1, sh.name));
+            "rect"
+        }
+        _ => "rect",
+    };
+    let mut m = Map::from_iter([("kind".to_string(), json!(kind))]);
+    if let Some(f) = fill {
+        m.insert("fill".into(), json!(f));
+    }
+    if let Some(st) = stroke {
+        m.insert("stroke".into(), json!(st));
+        m.insert("strokeWidth".into(), json!(px(line.width.unwrap_or(0.75))));
+    }
+    Some(Value::Object(m))
 }
 
 /// How many times `shown` stands in a paragraph's text runs.
@@ -649,7 +746,7 @@ fn import_into(
                             .map(|a| a.iter().filter_map(|p| p.as_object().cloned()).collect())
                             .unwrap_or_default();
                         let mut new_paras =
-                            sh.text.as_ref().map(read_paragraphs).unwrap_or_default();
+                            sh.text.as_ref().map(|t| read_paragraphs(t, None)).unwrap_or_default();
                         // Put linked fields back where their values still stand.
                         let mut lost = Vec::new();
                         for (i, op) in old_paras.iter().enumerate() {
@@ -803,7 +900,8 @@ fn import_into(
                         continue;
                     };
                     g.insert("z".into(), json!(zi));
-                    let paragraphs: Vec<Value> = read_paragraphs(text)
+                    let ctx = resolve::Ctx::for_slide(edited, slide);
+                    let paragraphs: Vec<Value> = read_paragraphs(text, ctx.as_ref().map(|c| (c, sh)))
                         .into_iter()
                         .map(Value::Object)
                         .collect();
@@ -816,17 +914,33 @@ fn import_into(
                     used_frame_names.insert(n.clone());
                     slide_children.insert(n.clone(), Some(path.clone()));
                     slide_order.push(n);
-                    nodes.push(Node {
-                        path: path.clone(),
-                        attributes: Map::from_iter([
-                            ("deck::frame".to_string(), Value::Object(g)),
-                            (
-                                "deck::text".to_string(),
-                                json!({ "role": "body", "paragraphs": paragraphs }),
-                            ),
-                        ]),
-                        ..Node::default()
-                    });
+                    let mut dt = json!({ "role": "body", "paragraphs": paragraphs });
+                    let mut attributes = Map::from_iter([("deck::frame".to_string(), Value::Object(g))]);
+                    if let Some(ctx) = &ctx {
+                        // The box's effective look: its fill, outline and shape, and where the
+                        // text sits in it.
+                        if let Some(look) = shape_look(ctx, sh, &mut report.warnings, si) {
+                            attributes.insert("deck::shape".into(), look);
+                        }
+                        let body = resolve::body(ctx, sh);
+                        // Inner margins (PowerPoint's defaults when unset), in OX pixels.
+                        dt["insets"] = json!({
+                            "left": px(body.inset_l.unwrap_or(7.2)),
+                            "top": px(body.inset_t.unwrap_or(3.6)),
+                            "right": px(body.inset_r.unwrap_or(7.2)),
+                            "bottom": px(body.inset_b.unwrap_or(3.6)),
+                        });
+                        let anchor = match body.anchor {
+                            Some(Anchor::Middle) => Some("middle"),
+                            Some(Anchor::Bottom) => Some("bottom"),
+                            _ => None,
+                        };
+                        if let Some(a) = anchor {
+                            dt["verticalAlign"] = json!(a);
+                        }
+                    }
+                    attributes.insert("deck::text".into(), dt);
+                    nodes.push(Node { path: path.clone(), attributes, ..Node::default() });
                     report.added.push(path);
                 }
             }

@@ -224,10 +224,36 @@ def fallback_copies(root):
     return {e for fb in root.iter(MC + "Fallback") for e in fb.iter()}
 
 
+FILLS = ("solidFill", "gradFill", "pattFill", "blipFill")
+
+
+def shape_look(sp):
+    """(has a fill, has an outline): set on the shape (spPr), else from its style reference."""
+    pr, st = sp.find(P + "spPr"), sp.find(P + "style")
+    def ref(name):
+        r = st.find(A + name) if st is not None else None
+        return r is not None and r.get("idx") not in (None, "0")
+    direct = [c.tag.split("}")[1] for c in pr] if pr is not None else []
+    fill = any(t in FILLS for t in direct) if any(t in FILLS + ("noFill",) for t in direct) else ref("fillRef")
+    ln = pr.find(A + "ln") if pr is not None else None
+    lfill = [c.tag.split("}")[1] for c in ln] if ln is not None else []
+    line = any(t in FILLS for t in lfill) if any(t in FILLS + ("noFill",) for t in lfill) else ref("lnRef")
+    return fill, line
+
+
 def pptx(z):
     slides = [xml(z, n) for n in parts(z, r"ppt/slides/slide\d+\.xml")]
+    sz = xml(z, "ppt/presentation.xml").find(P + "sldSz")
+    bold_text = re.sub(r"\s+", " ", "".join(t.text or "" for r in slides for run in r.iter(A + "r") if (run.find(A + "rPr") is not None and run.find(A + "rPr").get("b") in ("1", "true")) for t in run.iter(A + "t"))).strip()
     notes = [xml(z, n) for n in parts(z, r"ppt/notesSlides/notesSlide\d+\.xml")]
     return {
+        "slide width (value, EMU)": int(sz.get("cx", 0)) if sz is not None else 0,
+        "slide height (value, EMU)": int(sz.get("cy", 0)) if sz is not None else 0,
+        # In text shapes only: tables and shapes without text are counted on their own.
+        "slide paragraphs with an outline level": sum(1 for r in slides for sp in r.iter(P + "sp") if "".join(t.text or "" for t in sp.iter(A + "t")).strip() for pp in sp.iter(A + "pPr") if pp.get("lvl") not in (None, "0")),
+        "slide bold text chars": len(bold_text),
+        "shapes with a fill": sum(1 for r in slides for sp in r.iter(P + "sp") if shape_look(sp)[0]),
+        "shapes with an outline": sum(1 for r in slides for sp in r.iter(P + "sp") if shape_look(sp)[1]),
         "slides": len(slides),
         "shapes (sp)": count(slides, P + "sp"),
         "pictures (pic)": count(slides, P + "pic"),

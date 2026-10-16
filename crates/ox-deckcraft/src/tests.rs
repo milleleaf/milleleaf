@@ -450,3 +450,28 @@ fn adopted_placeholders_take_their_layouts_position() {
     }
     assert!(!report.warnings.iter().any(|w| w.contains("no position")), "{:?}", report.warnings);
 }
+
+#[test]
+fn adopted_text_takes_what_its_layout_gives_it() {
+    // The Ofqual/DfE briefing: bullets, levels and their colour come from the master; the boxes
+    // on slide 23 are filled and outlined, with centred text.
+    let bytes = std::fs::read(example("../real/briefing.pptx")).expect("fixture");
+    let p = from_pptx(&bytes).expect("reads");
+    let (layer, _) = crate::adopt(&p, "real-deck", "briefing", header()).expect("adopts");
+    let texts: Vec<&serde_json::Value> = layer.data.iter().filter_map(|n| n.attributes.get("deck::text")).collect();
+    let paras = || texts.iter().flat_map(|t| t["paragraphs"].as_array().into_iter().flatten());
+    let nested = paras()
+        .find(|p| p["runs"][0]["text"] == json!("Policy, purposes and priorities"))
+        .expect("a second-level bullet on slide 3");
+    assert_eq!(nested["level"], json!(1));
+    assert_eq!(nested["bullet"], json!(true));
+    assert!(nested["bulletColor"].is_string() && nested["marginLeftPt"].is_number(), "{nested}");
+    let english = layer
+        .data
+        .iter()
+        .find(|n| n.attributes.get("deck::text").is_some_and(|t| t["paragraphs"][0]["runs"][0]["text"] == json!("English")))
+        .expect("the English box");
+    assert_eq!(english.attributes["deck::shape"]["fill"], json!("#ccecff"));
+    assert!(english.attributes["deck::shape"]["stroke"].is_string());
+    assert_eq!(english.attributes["deck::text"]["verticalAlign"], json!("middle"));
+}
