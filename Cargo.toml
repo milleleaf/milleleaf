@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ox-core", "crates/ox-cli", "crates/ox-wordcraft", "crates/ox-gridcraft", "crates/ox-deckcraft", "crates/ox-pack", "crates/ox-odf", "crates/ox-store", "crates/ox-formats"]
+members = ["crates/ox-core", "crates/ox-cli", "crates/ox-wordcraft", "crates/ox-gridcraft", "crates/ox-deckcraft", "crates/ox-pack", "crates/ox-odf", "crates/ox-store", "crates/ox-formats", "crates/ox-seal"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +16,7 @@ ox-pack = { path = "crates/ox-pack" }
 ox-odf = { path = "crates/ox-odf" }
 ox-store = { path = "crates/ox-store" }
 ox-formats = { path = "crates/ox-formats" }
+ox-seal = { path = "crates/ox-seal" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

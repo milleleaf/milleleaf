@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 ox-core = { workspace = true }
+ox-seal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

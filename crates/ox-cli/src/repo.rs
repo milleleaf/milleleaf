@@ -180,7 +180,11 @@ fn commit(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Stri
     } else {
         None
     };
+    let seal_to: Vec<String> = opt(args, "--seal-to")
+        .map(|v| v.split(',').map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect())
+        .unwrap_or_default();
     let opts = CommitOptions {
+        seal_to: &seal_to,
         expect: opt(args, "--expect")
             .map(|h| s.resolve(h))
             .transpose()
@@ -203,10 +207,11 @@ fn commit(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Stri
                 eprintln!("rebased over {} layer(s)", c.rebased_over.len());
             }
             println!(
-                "ox: committed {} ({}){} → head {}",
+                "ox: committed {} ({}){}{} → head {}",
                 layer.header.id,
                 short(&c.layer),
                 if c.signed { ", signed" } else { "" },
+                if seal_to.is_empty() { String::new() } else { format!(", sealed for {}", seal_to.join(", ")) },
                 short(&c.stack)
             );
             Ok(ExitCode::SUCCESS)
@@ -357,10 +362,22 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
                 unsigned += 1;
                 "unsigned".into()
             }
-            LayerStatus::Purged { by, at, reason } => format!(
-                "purged by {by} on {at}{}",
+            LayerStatus::Purged { mode, by, at, reason } => format!(
+                "purged{} by {by} on {at}{}",
+                if mode == "key" { " (key destroyed)" } else { "" },
                 reason.as_ref().map(|r| format!(" ({r})")).unwrap_or_default()
             ),
+        };
+        let text = match s.sealed_info(&h).map_err(e)? {
+            Some(info) if !matches!(status, LayerStatus::Purged { .. }) => {
+                if let Some(p) = &info.problem {
+                    bad += 1;
+                    println!("BLOB  sealed layer {}: {p}", short(&h));
+                }
+                let who = if info.recipients.is_empty() { "nobody (no wraps here)".to_string() } else { info.recipients.join(", ") };
+                format!("{text}; sealed for {who}")
+            }
+            _ => text,
         };
         println!("{}  {:<44} {text}", short(&h), id);
     }
@@ -386,8 +403,15 @@ fn purge(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Strin
     let s = Store::open(dir).map_err(e)?;
     let h = s.resolve(pos.get(2).ok_or("`purge` needs a layer hash")?).map_err(e)?;
     let k = key_for(args)?;
-    let c = s.purge(&h, &k, opt(args, "--reason")).map_err(e)?;
-    println!("ox: purged {} (record {}); head {}", short(&h), short(&c.layer), short(&c.stack));
+    let mode = if has(args, "--key-destroy") { "key" } else { opt(args, "--mode").unwrap_or("bytes") };
+    let c = s.purge_mode(&h, &k, opt(args, "--reason"), mode).map_err(e)?;
+    println!(
+        "ox: purged {}{} (record {}); head {}",
+        short(&h),
+        if mode == "key" { " (key destroyed; a recipient who already opened it may have kept a copy)" } else { "" },
+        short(&c.layer),
+        short(&c.stack)
+    );
     Ok(ExitCode::SUCCESS)
 }
 
@@ -410,19 +434,25 @@ fn key(pos: &[&String]) -> Result<ExitCode, String> {
             let p = k.save(&KeyPair::dir()).map_err(e)?;
             println!("ox: new key {name} → {}", p.display());
             println!("{}", k.public());
+            let xw = k.xwing_public().unwrap_or_default();
+            println!("{xw}");
             if let Some(dir) = pos.get(3) {
                 let s = Store::open(Path::new(dir.as_str())).map_err(e)?;
                 let q = s.add_key(name, &k.public()).map_err(e)?;
-                println!("ox: the project knows it ({})", q.display());
+                s.add_xwing_key(name, &xw).map_err(e)?;
+                println!("ox: the project knows it ({}, and its X-Wing key for sealed layers)", q.display());
             }
             Ok(ExitCode::SUCCESS)
         }
         Some("add") => {
             let (Some(dir), Some(name), Some(public)) = (pos.get(2), pos.get(3), pos.get(4)) else {
-                return Err("usage: ox key add <dir> <name> <ed25519:…>".into());
+                return Err("usage: ox key add <dir> <name> <ed25519:…> [<xwing:…>]".into());
             };
             let s = Store::open(Path::new(dir.as_str())).map_err(e)?;
             let p = s.add_key(name, public).map_err(e)?;
+            if let Some(xw) = pos.get(5) {
+                s.add_xwing_key(name, xw).map_err(e)?;
+            }
             println!("ox: the project knows {name} ({})", p.display());
             Ok(ExitCode::SUCCESS)
         }
@@ -435,6 +465,6 @@ fn key(pos: &[&String]) -> Result<ExitCode, String> {
             println!("ox: {name} is {role} in this project");
             Ok(ExitCode::SUCCESS)
         }
-        _ => Err("usage: ox key new <name> [<dir>] | ox key add <dir> <name> <ed25519:…> | ox key role <dir> <name> <role>".into()),
+        _ => Err("usage: ox key new <name> [<dir>] | ox key add <dir> <name> <ed25519:…> [<xwing:…>] | ox key role <dir> <name> <role>".into()),
     }
 }

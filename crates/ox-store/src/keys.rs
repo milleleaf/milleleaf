@@ -28,6 +28,9 @@ pub const MAY_PURGE: [&str; 2] = ["owner", "approver"];
 pub struct KeyPair {
     pub name: String,
     key: SigningKey,
+    /// X-Wing seed for opening sealed layers (plan M1.5 item 7, mode B). `None` in key files made
+    /// before sealing existed; such a key signs but can't open.
+    xwing: Option<ox_seal::Seed>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -36,6 +39,9 @@ struct KeyFile {
     /// base64 Ed25519 seed.
     secret: String,
     public: String,
+    /// base64 X-Wing seed (32 bytes); absent in older key files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    xwing: Option<String>,
 }
 
 impl KeyPair {
@@ -45,7 +51,30 @@ impl KeyPair {
         Ok(KeyPair {
             name: name.into(),
             key: SigningKey::from_bytes(&seed),
+            xwing: Some(ox_seal::random32().map_err(|e| StoreError::Key(e.to_string()))?),
         })
+    }
+
+    /// `xwing:<base64>` of the 1216-byte X-Wing public key, if this key can open sealed layers.
+    pub fn xwing_public(&self) -> Option<String> {
+        self.xwing.map(|s| format!("xwing:{}", B64.encode(ox_seal::public_key(&s))))
+    }
+
+    pub(crate) fn xwing_seed(&self) -> Option<&ox_seal::Seed> {
+        self.xwing.as_ref()
+    }
+
+    /// Every key in a keys folder (unreadable files skipped).
+    pub fn all_in(dir: &Path) -> Vec<KeyPair> {
+        let mut out: Vec<KeyPair> = fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".key"))
+            .filter_map(|e| KeyPair::load(&e.path()).ok())
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
     }
 
     /// `ed25519:<base64>`.
@@ -79,6 +108,7 @@ impl KeyPair {
             name: self.name.clone(),
             secret: B64.encode(self.key.to_bytes()),
             public: self.public(),
+            xwing: self.xwing.map(|s| B64.encode(s)),
         };
         io(
             &p,
@@ -104,9 +134,19 @@ impl KeyPair {
             .ok()
             .and_then(|v| v.try_into().ok())
             .ok_or_else(|| StoreError::Key(format!("{}: bad secret", path.display())))?;
+        let xwing = match &kf.xwing {
+            None => None,
+            Some(x) => Some(
+                B64.decode(x)
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or_else(|| StoreError::Key(format!("{}: bad xwing seed", path.display())))?,
+            ),
+        };
         Ok(KeyPair {
             name: kf.name,
             key: SigningKey::from_bytes(&seed),
+            xwing,
         })
     }
 
@@ -127,6 +167,11 @@ fn parse_public(s: &str) -> Option<VerifyingKey> {
         .try_into()
         .ok()?;
     VerifyingKey::from_bytes(&b).ok()
+}
+
+pub(crate) fn parse_xwing(s: &str) -> Option<Vec<u8>> {
+    let b = B64.decode(s.trim().strip_prefix("xwing:")?).ok()?;
+    (b.len() == 1216).then_some(b)
 }
 
 /// First 16 hex characters of the key's SHA-256: names the signature file.
@@ -171,6 +216,8 @@ pub struct SigInfo {
 pub enum LayerStatus {
     /// Its bytes were purged; the hash and the purge record remain.
     Purged {
+        /// `bytes`, or `key` (a sealed layer whose content key was destroyed).
+        mode: String,
         by: String,
         at: String,
         reason: Option<String>,
@@ -202,6 +249,23 @@ impl Store {
         let p = d.join(format!("{name}.pub"));
         io(&p, fs::write(&p, format!("{}\n", public.trim())))?;
         Ok(p)
+    }
+
+    /// Adds a person's X-Wing public key (`.ox/keys/<name>.xwing`), so layers can be sealed to them.
+    pub fn add_xwing_key(&self, name: &str, public: &str) -> Result<PathBuf> {
+        if parse_xwing(public).is_none() {
+            return Err(StoreError::Key(format!("not an X-Wing public key (xwing:<base64 of 1216 bytes>): {}…", &public[..public.len().min(24)])));
+        }
+        let d = self.dir.join("keys");
+        io(&d, fs::create_dir_all(&d))?;
+        let p = d.join(format!("{name}.xwing"));
+        io(&p, fs::write(&p, format!("{}\n", public.trim())))?;
+        Ok(p)
+    }
+
+    /// A known person's X-Wing public key bytes.
+    pub fn xwing_key(&self, name: &str) -> Option<Vec<u8>> {
+        parse_xwing(&fs::read_to_string(self.dir.join("keys").join(format!("{name}.xwing"))).ok()?)
     }
 
     /// Sets a known key's role: `owner`, `approver`, `editor` or `viewer` (plan M4 item 5).
@@ -284,10 +348,11 @@ impl Store {
     /// Checks one stored layer: its hash, then every signature on it.
     pub fn verify(&self, layer_hash: &str) -> Result<LayerStatus> {
         let p = self.dir.join("layers").join(format!("{layer_hash}.json"));
-        if !p.exists()
-            && let Some(g) = self.purged(layer_hash)
+        // Mode A removes the file; mode B keeps the (now unreadable) layer.
+        if let Some(g) = self.purged(layer_hash)
+            && (!p.exists() || g.mode == "key")
         {
-            return Ok(LayerStatus::Purged { by: g.by, at: g.at, reason: g.reason });
+            return Ok(LayerStatus::Purged { mode: g.mode, by: g.by, at: g.at, reason: g.reason });
         }
         let bytes = io(&p, fs::read(&p))?;
         let actual = hash_of(&bytes);

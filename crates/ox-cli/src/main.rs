@@ -19,22 +19,24 @@ USAGE:
 
   ox init     <dir> [--from STACK.ox.json]        start a revision store (.ox/), optionally with
                                                   every layer of an existing stack committed
-  ox commit   <dir> <LAYER.ox.json> [--expect HASH] [--rebase] [--sign [--key NAME]]
+  ox commit   <dir> <LAYER.ox.json> [--expect HASH] [--rebase] [--sign [--key NAME]] [--seal-to A,B]
                                                   append a layer; refused if the head moved since
-                                                  HASH (or the layer's header.base)
+                                                  HASH (or the layer's header.base); --seal-to
+                                                  encrypts it so only A and B can compose it
   ox head     <dir>                               the current stack hash
   ox log      <dir> [<node> [<attribute>]]        commits, newest first; or one node's history
   ox blame    <dir> <node> [<attribute>]          each value, the links it came through, and
                                                   every layer that set it
   ox checkpoint <dir> [--keep N] [--author NAME]  flatten all but the top N layers (default 1)
   ox verify   <dir> [--require]                   hash and signatures of every layer in the head
-  ox purge    <dir> <layer> [--reason TEXT] [--key NAME]
-                 delete a layer's content, keep its hash; signed by an owner or approver
+  ox purge    <dir> <layer> [--reason TEXT] [--key NAME] [--key-destroy]
+                 delete a layer's content, keep its hash; signed by an owner or approver;
+                 --key-destroy (sealed layers): destroy its content key in every copy instead
   ox key role <dir> <name> <owner|approver|editor|viewer>
   ox sign     <dir> <layer-hash> [--key NAME]     add a detached signature
-  ox key new  <name> [<dir>]                      new Ed25519 key in ~/.config/ox/keys
+  ox key new  <name> [<dir>]                      new Ed25519 + X-Wing key in ~/.config/ox/keys
                                                   (or $OX_KEYS); with <dir>, the project knows it
-  ox key add  <dir> <name> <ed25519:…>            the project knows someone else's key
+  ox key add  <dir> <name> <ed25519:…> [<xwing:…>]  the project knows someone else's key
 
   ox layers   <stack.ox.json>                     list the stack, bottom layer first
   ox validate <stack.ox.json>                     check schemas, references and composition

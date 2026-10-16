@@ -9,7 +9,10 @@
 //!   stacks/<sha256>.json      one per commit: imports the previous stack + the new layer
 //!   index/<sha256>.json       per layer, written once: header + which nodes and keys it touches
 //!   sigs/<sha256>/<key>.json  detached Ed25519 signatures (optional)
-//!   keys/<name>.pub           public keys the project knows
+//!   keys/<name>.pub           public keys the project knows (`.xwing`: X-Wing keys, `.role`: roles)
+//!   blobs/<sha256>            assets, and the ciphertext of sealed layers
+//!   wraps/<key id>/<name>.json  a sealed layer's content key wrapped to one recipient (deletable)
+//!   purged/<sha256>.json      purges carried out here
 //!   cache/                    derived, safe to delete (flattened stacks)
 //! ```
 //!
@@ -19,10 +22,12 @@
 
 mod history;
 mod keys;
+mod seal;
 mod time;
 
 pub use history::{BlameEntry, Touch};
 pub use keys::{KeyPair, LayerStatus, SigInfo, Signature};
+pub use seal::{Opened, SealInfo};
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
@@ -183,6 +188,9 @@ pub struct CommitOptions<'a> {
     /// Where `{"blob": path}` values are read from before they're stored by hash; defaults to the
     /// project root (a stack file's folder for `import_stack`).
     pub assets: Option<&'a Path>,
+    /// Seal the layer to these people (names with an X-Wing key in the project's key list): its
+    /// content is stored encrypted and only they can compose it (plan M1.5 item 7, mode B).
+    pub seal_to: &'a [String],
 }
 
 #[derive(Debug, Clone)]
@@ -201,6 +209,9 @@ pub struct Commit {
 pub struct Store {
     pub root: PathBuf,
     pub dir: PathBuf,
+    /// Where this person's private keys are looked for when opening sealed layers
+    /// (`KeyPair::dir()` unless set).
+    pub keys: PathBuf,
 }
 
 impl Store {
@@ -222,6 +233,7 @@ impl Store {
         Ok(Store {
             root: project.to_path_buf(),
             dir,
+            keys: KeyPair::dir(),
         })
     }
 
@@ -233,6 +245,7 @@ impl Store {
         Ok(Store {
             root: project.to_path_buf(),
             dir,
+            keys: KeyPair::dir(),
         })
     }
 
@@ -421,16 +434,27 @@ impl Store {
     }
 
     /// The layers of a stack, loaded and checked, as `ox_core::load_stack` would give them.
+    /// Sealed layers are opened in memory when a local key can, else come back empty.
     pub fn load(&self, stack: &str) -> Result<Vec<LoadedLayer>> {
         self.layers(stack)?
             .into_iter()
             .map(|h| {
                 Ok(LoadedLayer {
                     source: self.layer_path(&h),
-                    layer: self.layer(&h)?,
+                    layer: self.opened(&h)?.0,
                 })
             })
             .collect()
+    }
+
+    /// `open_layer`, saying on stderr when a sealed layer stays closed.
+    fn opened(&self, hash: &str) -> Result<(Layer, Opened)> {
+        let (l, o) = self.open_layer(hash)?;
+        if let Opened::Locked(why) = &o {
+            // ponytail: printed from the library; return notices to callers if a GUI needs them.
+            eprintln!("note: layer {} ({}) is sealed and {why}; composed as empty", l.header.id, &hash[..12.min(hash.len())]);
+        }
+        Ok((l, o))
     }
 
     /// A stack flattened, from the cache when possible (`.ox/cache`), else from the nearest
@@ -449,12 +473,20 @@ impl Store {
             cur = s.base.clone();
             pending.push(s.added);
         }
+        // A flat that includes a sealed layer is never cached: decrypted content stays in memory,
+        // and one composed without it would hide it from a recipient later. So no stack above a
+        // sealed layer has a cache, and the walk above always reaches back past it.
+        let mut sealed = false;
         for added in pending.into_iter().rev() {
             for h in &added {
-                flat.apply(&self.layer(h)?);
+                let (l, o) = self.opened(h)?;
+                sealed |= o != Opened::Plain;
+                flat.apply(&l);
             }
         }
-        self.save_flat(stack, &flat);
+        if !sealed {
+            self.save_flat(stack, &flat);
+        }
         Ok(flat)
     }
 
@@ -506,7 +538,7 @@ impl Store {
 
     /// Commits `layer` on top of the head by compare-and-swap.
     pub fn commit(&self, layer: &Layer, opts: CommitOptions) -> Result<Commit> {
-        let mut layer = layer.clone();
+        let mut layer = if opts.seal_to.is_empty() { layer.clone() } else { self.seal(layer, opts.seal_to)? };
         self.intern_blobs(&mut layer, opts.assets.unwrap_or(&self.root))?;
         let layer = &layer;
         let (hash, dropped, new) = self.put_layer_new(layer)?;
@@ -583,6 +615,7 @@ impl Store {
         drop(_lock);
         // Derived data, after the head moved: extend the parent's cached flat by one layer.
         if let Some(prev) = &head
+            && layer.header.sealed.is_none()
             && let Some(mut flat) = self.cached_flat(prev)
         {
             flat.apply(&self.layer(&hash)?);
@@ -596,6 +629,10 @@ impl Store {
         }
         // A purge record, made here or received from another copy of the project: carry it out.
         self.apply_purges(layer)?;
+        // A sealed layer arriving after its key was destroyed here: wraps that came with it go too.
+        if layer.header.sealed.is_some() && self.purged(&hash).is_some() {
+            self.destroy_key(&hash)?;
+        }
         Ok(Commit {
             layer: hash,
             stack,
@@ -688,10 +725,23 @@ impl Store {
     /// must be a project owner or approver, then deletes the layer's bytes here, keeping its hash and
     /// index entry. Every store the record (and its signature) reaches does the same.
     pub fn purge(&self, hash: &str, key: &KeyPair, reason: Option<&str>) -> Result<Commit> {
+        self.purge_mode(hash, key, reason, "bytes")
+    }
+
+    /// `purge` with a mode: `bytes` (A), or `key` (B, crypto-shredding: a sealed layer's content
+    /// key is destroyed, its wraps deleted here and in every store the record reaches; the
+    /// ciphertext and the layer stay, unreadable).
+    pub fn purge_mode(&self, hash: &str, key: &KeyPair, reason: Option<&str>, mode: &str) -> Result<Commit> {
         let by = key.name.as_str();
         let hash = self.resolve(hash)?;
         if self.stack_path(&hash).exists() {
             return Err(StoreError::Key(format!("{hash} is a commit, not a layer; purge the layer")));
+        }
+        match mode {
+            "bytes" => {}
+            "key" if self.index(&hash)?.header.sealed.is_some() => {}
+            "key" => return Err(StoreError::Key(format!("{} isn't sealed, so it has no key to destroy; purge its bytes", &hash[..12]))),
+            m => return Err(StoreError::Key(format!("purge mode must be `bytes` or `key`, not `{m}`"))),
         }
         let record = Layer {
             header: Header {
@@ -703,7 +753,7 @@ impl Store {
                 kind: Some("purge".into()),
                 purges: vec![ox_core::Purge {
                     layer: hash.clone(),
-                    mode: "bytes".into(),
+                    mode: mode.into(),
                     by: by.into(),
                     at: time::now_rfc3339(),
                     reason: reason.map(str::to_string),
@@ -721,8 +771,12 @@ impl Store {
     /// (they hold composed content).
     fn apply_purges(&self, layer: &Layer) -> Result<()> {
         for p in &layer.header.purges {
-            if p.mode != "bytes" {
-                continue; // `key`: destroying a sealed layer's key comes with encryption (M4).
+            if p.mode != "bytes" && p.mode != "key" {
+                continue;
+            }
+            // The layer's hash names a file; anything else in a received record is ignored.
+            if p.layer.len() != 64 || !p.layer.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
             }
             let d = self.dir.join("purged");
             io(&d, fs::create_dir_all(&d))?;
@@ -730,9 +784,14 @@ impl Store {
             if !marker.exists() {
                 write_new(&marker, &serde_json::to_vec_pretty(p).expect("json"))?;
             }
-            let lp = self.layer_path(&p.layer);
-            if lp.exists() {
-                io(&lp, fs::remove_file(&lp))?;
+            // Either way the key goes; a `bytes` purge also removes the layer and its ciphertext.
+            self.destroy_key(&p.layer)?;
+            if p.mode == "bytes" {
+                self.remove_ciphertext(&p.layer)?;
+                let lp = self.layer_path(&p.layer);
+                if lp.exists() {
+                    io(&lp, fs::remove_file(&lp))?;
+                }
             }
             let _ = fs::remove_dir_all(self.dir.join("cache"));
         }
@@ -870,7 +929,13 @@ impl Store {
         if layers.len() <= keep + 1 {
             return Ok(None);
         }
-        let cut = layers.len() - keep;
+        // Never fold a sealed layer into a checkpoint: that would either write its plaintext into
+        // an unsealed layer or drop it for its recipients. Fold only what lies below the first one.
+        let first_sealed = layers.iter().position(|h| self.index(h).is_ok_and(|i| i.header.sealed.is_some()));
+        let cut = first_sealed.map_or(layers.len() - keep, |i| i.min(layers.len() - keep));
+        if cut < 2 {
+            return Ok(None);
+        }
         let (old, kept) = layers.split_at(cut);
         let mut flat = Flat::default();
         for h in old {

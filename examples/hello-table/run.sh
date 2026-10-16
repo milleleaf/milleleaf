@@ -150,7 +150,7 @@ node -e '
 ' "$TMP"
 rm -rf "$TMP"
 
-echo; echo "== 15. Revision store: commit by compare-and-swap, blame, checkpoint, signatures"
+echo; echo "== 15. Revision store: commit by compare-and-swap, blame, checkpoint, signatures, sealed layers"
 TMP=$(mktemp -d)
 export OX_KEYS="$TMP/keys"                       # a throwaway key, not yours
 $OX init "$TMP/proj" --from project.ox.json
@@ -193,6 +193,26 @@ $OX verify "$P2" --require > /dev/null 2>&1 || { echo "--require refused layers 
 $OX commit "$P2" grid-edit.ox.json --sign --key stranger > /dev/null
 if $OX verify "$P2" --require > /dev/null 2>&1; then echo "expected --require to refuse an unlisted key"; exit 1; fi
 echo "checked: --require refuses a layer signed only by an unlisted key"
+#    a sealed layer: only its recipient composes it, its plaintext is never on disk, and an owner
+#    destroying its key (crypto-shredding) makes every copy unreadable
+$OX key new alice "$P2" > /dev/null
+$OX key role "$P2" owner owner > /dev/null
+cat > "$TMP/sealed.ox.json" <<'JSON'
+{"header": {"id": "edit/sealed-note", "oxVersion": "ox_alpha", "dataVersion": "1.0.0", "author": "alice", "timestamp": "2026-10-16"},
+ "data": [{"path": "3f1c2a90-0000-4c1e-9a00-000000000023", "attributes": {"test::note": "sealed demo text"}}]}
+JSON
+$OX commit "$P2" "$TMP/sealed.ox.json" --seal-to alice
+SEALED=$($OX verify "$P2" 2> /dev/null | grep "sealed for alice" | cut -c1-12)
+[ -n "$SEALED" ] || { echo "verify doesn't report the sealed layer"; exit 1; }
+if grep -rq "sealed demo text" "$P2/.ox"; then echo "a sealed layer's plaintext is on disk"; exit 1; fi
+$OX compose "$P2" --out "$TMP/sealed.json" 2> /dev/null
+grep -q "sealed demo text" "$TMP/sealed.json" || { echo "the recipient can't open the sealed layer"; exit 1; }
+if grep -rq "sealed demo text" "$P2/.ox"; then echo "opening a sealed layer left its plaintext on disk"; exit 1; fi
+$OX purge "$P2" "$SEALED" --key owner --key-destroy --reason demo
+$OX compose "$P2" --out "$TMP/sealed.json" 2> /dev/null
+if grep -q "sealed demo text" "$TMP/sealed.json"; then echo "still readable after its key was destroyed"; exit 1; fi
+$OX verify "$P2" 2> /dev/null | grep "key destroyed"
+echo "checked: a sealed layer opens for its recipient only, and destroying its key shreds it"
 $OX validate "$TMP/proj" | tail -1
 #    the store composes exactly like the stack files with the same edits
 $OX compose "$TMP/proj" --out "$TMP/a.json" 2> /dev/null

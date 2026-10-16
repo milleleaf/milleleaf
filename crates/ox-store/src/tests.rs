@@ -609,3 +609,111 @@ fn walk_files(d: &Path) -> Vec<PathBuf> {
     }
     out
 }
+
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for f in fs::read_dir(from).unwrap().flatten() {
+        fs::copy(f.path(), to.join(f.file_name())).unwrap();
+    }
+}
+
+fn has_text(d: &Path, text: &str) -> bool {
+    walk_files(d).into_iter().any(|p| fs::read(&p).is_ok_and(|b| String::from_utf8_lossy(&b).contains(text)))
+}
+
+#[test]
+fn sealed_layers_open_only_for_recipients_and_a_key_purge_shreds_every_copy() {
+    const SECRET: &str = "salary 123456 (sealed)";
+    let t = TempDir::new("seal");
+    let (ka, kb) = (TempDir::new("seal-keys-alice"), TempDir::new("seal-keys-bob"));
+    let s = hello(&t);
+    let alice = KeyPair::generate("alice").unwrap();
+    let bob = KeyPair::generate("bob").unwrap();
+    let owner = KeyPair::generate("owner").unwrap();
+    alice.save(&ka.0).unwrap();
+    bob.save(&kb.0).unwrap();
+    for k in [&alice, &bob, &owner] {
+        s.add_key(&k.name, &k.public()).unwrap();
+        s.add_xwing_key(&k.name, &k.xwing_public().unwrap()).unwrap();
+    }
+    s.set_role("owner", "owner").unwrap();
+    let as_ = |dir: &Path, keys: &Path| {
+        let mut x = Store::open(dir).unwrap();
+        x.keys = keys.to_path_buf();
+        x
+    };
+    let flat_text = |st: &Store| serde_json::to_string(&composed(&st.flat(&st.head().unwrap().unwrap()).unwrap())).unwrap();
+
+    let secret = layer("pay", vec![("3f1c2a90-0000-4c1e-9a00-000000000023", "test::note", json!(SECRET))]);
+    let to = vec!["alice".to_string()];
+    // Someone without an X-Wing key in the project can't be a recipient.
+    assert!(s.commit(&secret, CommitOptions { seal_to: &["nobody".to_string()], ..CommitOptions::default() }).is_err());
+    let c = s.commit(&secret, CommitOptions { seal_to: &to, ..CommitOptions::default() }).unwrap();
+    let stored = s.layer(&c.layer).unwrap();
+    let sealed = stored.header.sealed.clone().expect("sealed header");
+    assert_eq!(sealed.scheme, "hpke-xwing-sha256-aes256gcm/v1");
+    assert!(stored.data.is_empty());
+    assert!(s.dir.join("wraps").join(&sealed.key).join("alice.json").exists());
+
+    // The recipient composes it; bob (in the project, not a recipient) and a stranger see it empty.
+    let sa = as_(&t.0, &ka.0);
+    assert!(flat_text(&sa).contains(SECRET));
+    assert_eq!(sa.open_layer(&c.layer).unwrap().1, crate::Opened::Decrypted);
+    let sb = as_(&t.0, &kb.0);
+    assert!(!flat_text(&sb).contains(SECRET));
+    assert!(matches!(sb.open_layer(&c.layer).unwrap().1, crate::Opened::Locked(_)));
+    // Nothing in .ox holds the plaintext: not the layer, the ciphertext blob, the index or a cache.
+    assert!(!has_text(&s.dir, SECRET), "plaintext on disk after opening");
+    assert!(!has_text(&s.dir, "salary"), "plaintext on disk after opening");
+    // A checkpoint folds only the layers below the sealed one, so the recipient still sees it.
+    assert!(sa.checkpoint(0, "test").unwrap().is_some());
+    assert!(flat_text(&sa).contains(SECRET));
+    assert!(!has_text(&s.dir, SECRET));
+    let info = s.sealed_info(&c.layer).unwrap().unwrap();
+    assert_eq!((info.recipients, info.problem), (vec!["alice".to_string()], None));
+
+    // A second copy of the project receives the layer, its ciphertext and wraps.
+    let t2 = TempDir::new("seal-copy");
+    let s2 = hello(&t2);
+    let c2 = s2.commit(&stored, CommitOptions::default()).unwrap();
+    assert_eq!(c2.layer, c.layer, "a byte-for-byte copy keeps its hash");
+    let hex = sealed.content.strip_prefix("sha256-").unwrap();
+    fs::create_dir_all(s2.dir.join("blobs")).unwrap();
+    fs::copy(s.dir.join("blobs").join(hex), s2.dir.join("blobs").join(hex)).unwrap();
+    copy_dir(&s.dir.join("wraps").join(&sealed.key), &s2.dir.join("wraps").join(&sealed.key));
+    for k in [&alice, &owner] {
+        s2.add_key(&k.name, &k.public()).unwrap();
+    }
+    s2.set_role("owner", "owner").unwrap();
+    let s2a = as_(&t2.0, &ka.0);
+    assert!(flat_text(&s2a).contains(SECRET));
+
+    // Only an owner or approver may destroy the key; a key purge needs a sealed layer.
+    assert!(matches!(s.purge_mode(&c.layer, &alice, None, "key"), Err(StoreError::NotAllowed(_))));
+    let plain = s.commit(&layer("plain", vec![("3f1c2a90-0000-4c1e-9a00-000000000023", "test::x", json!(1))]), CommitOptions::default()).unwrap();
+    assert!(s.purge_mode(&plain.layer, &owner, None, "key").is_err());
+    let backup = TempDir::new("seal-wrap-backup");
+    copy_dir(&s.dir.join("wraps").join(&sealed.key), &backup.0);
+    let rec = s.purge_mode(&c.layer, &owner, Some("left the company"), "key").unwrap();
+    assert!(!s.dir.join("wraps").join(&sealed.key).exists(), "wraps destroyed");
+    assert!(s.dir.join("layers").join(format!("{}.json", c.layer)).exists(), "the layer stays");
+    assert!(s.dir.join("blobs").join(hex).exists(), "the (useless) ciphertext stays");
+    assert!(!flat_text(&sa).contains(SECRET), "the recipient can no longer open it");
+    match s.verify(&c.layer).unwrap() {
+        LayerStatus::Purged { mode, by, reason, .. } => {
+            assert_eq!((mode.as_str(), by.as_str(), reason.as_deref()), ("key", "owner", Some("left the company")))
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // The copy receives the signed record and destroys its wraps too.
+    let record = s.layer(&rec.layer).unwrap();
+    copy_dir(&s.dir.join("sigs").join(&rec.layer), &s2.dir.join("sigs").join(&rec.layer));
+    s2.commit(&record, CommitOptions::default()).unwrap();
+    assert!(!s2.dir.join("wraps").join(&sealed.key).exists());
+    assert!(!flat_text(&s2a).contains(SECRET));
+    assert!(matches!(s2.verify(&c.layer).unwrap(), LayerStatus::Purged { mode, .. } if mode == "key"));
+    // A wrap that turns up later (an old backup) doesn't reopen it.
+    copy_dir(&backup.0, &s2.dir.join("wraps").join(&sealed.key));
+    assert!(matches!(s2a.open_layer(&c.layer).unwrap().1, crate::Opened::Locked(_)));
+}
