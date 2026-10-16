@@ -111,6 +111,11 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
 }
 
 /// `prefix` + optional digits + `.xml` (Python `prefix\d*\.xml`).
+/// A formula that refers to another workbook: `[1]Sheet!A1`, `'[2]My sheet'!B2`.
+pub fn external_ref(f: &str) -> bool {
+    f.split('[').skip(1).any(|r| r.split(']').next().is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())))
+}
+
 fn numbered(n: &str, prefix: &str) -> bool {
     n.strip_prefix(prefix)
         .and_then(|r| r.strip_suffix(".xml"))
@@ -632,8 +637,15 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
         _ => {}
     });
     let (mut own_names, mut hidden, mut locked) = (0u64, 0u64, 0u64);
+    // Names that point into another workbook (`[1]Sheet!A1`), through an external link.
+    let (mut external_names, mut in_name) = (0u64, false);
     walk(wb, |ev| match ev {
-        Ev::Open(S, b"definedName", e) if !attr(e, b"name").unwrap_or_default().starts_with("ox_") => own_names += 1,
+        Ev::Open(S, b"definedName", e) if !attr(e, b"name").unwrap_or_default().starts_with("ox_") => {
+            own_names += 1;
+            in_name = true;
+        }
+        Ev::Close(S, b"definedName") => in_name = false,
+        Ev::Text(t) if in_name && external_ref(t) => external_names += 1,
         Ev::Open(S, b"sheet", e) if matches!(attr(e, b"state").as_deref(), Some("hidden" | "veryHidden")) => hidden += 1,
         Ev::Open(S, b"workbookProtection", e) if matches!(attr(e, b"lockStructure").as_deref(), Some("1" | "true")) => locked += 1,
         _ => {}
@@ -650,6 +662,7 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
         c.insert(k, g(k));
     }
     c.insert("defined names (not Milleleaf's)", own_names);
+    c.insert("defined names into other workbooks", external_names);
     c.insert("hidden sheets", hidden);
     c.insert("workbook structure locked", locked);
     c.insert("protected sheets", g("protected sheets"));
@@ -657,6 +670,7 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     c.insert("charts", count_parts(names, |n| numbered(n, "xl/charts/chart")));
     c.insert("drawings", count_parts(names, |n| numbered(n, "xl/drawings/drawing")));
     c.insert("media files", count_parts(names, |n| n.starts_with("xl/media/") && n.len() > 9));
+    c.insert("external links", count_parts(names, |n| numbered(n, "xl/externalLinks/externalLink")));
     c.insert("comments", comments.iter().map(|x| count_tag(x, S, b"comment")).sum());
     c.insert("tables (ListObjects)", count_parts(names, |n| numbered(n, "xl/tables/table")));
     c

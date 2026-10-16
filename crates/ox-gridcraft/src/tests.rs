@@ -346,3 +346,45 @@ fn comments_merges_panes_and_names_added_in_excel_come_back() {
     let a2 = out.styles.get(sh.cell(CellRef::parse("A2").unwrap()).unwrap().style);
     assert!(a2.font.bold && a2.fill.pattern != gridcraft_model::PatternType::None, "the bold, filled cell exports as it was");
 }
+
+/// The real finance workbook, adopted the way `ox adopt` does it (`examples/real/finance.xlsx`).
+fn finance_node() -> Composed {
+    let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
+    // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
+    let root = "382bc55d-0f5e-5e81-a9ba-10f117e753d2";
+    let wb = from_xlsx(&std::fs::read(real.join("finance.xlsx")).unwrap()).unwrap();
+    let (layer, _) = crate::adopt(&wb, root, "finance", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    find(&trees, root).expect("workbook").clone()
+}
+
+fn real_fixture(name: &str) -> Workbook {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    from_xlsx(&std::fs::read(p).expect("fixture")).expect("reads")
+}
+
+#[test]
+#[ignore = "about 2.5 min in a debug build (GridCraft recalculates 26k formulas); run.sh step 18 runs it"]
+fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
+    let node = finance_node();
+    // LibreOffice 24.2: recalculated digits, its own row heights, borders, styles, comment authors,
+    // header/footer codes… all its rewrites. It drops the structure lock: kept, with a warning.
+    let mut lo = real_fixture("finance.libreoffice-resaved.xlsx");
+    let (layer, report) =
+        crate::import_saved_by(&node, &mut lo, header(), Some("LibreOffice/24.2.7.2$Linux_X86_64")).expect("imports");
+    assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
+    assert!(report.warnings.iter().any(|w| w.contains("structure lock")), "{:?}", report.warnings);
+
+    // Excel 16 (Mac): sheet Output's left margin set to 1 in and its Standard Width to 12. Exactly
+    // that comes back; Excel's own rewrites (row heights, default width, trailing spaces) don't.
+    let mut xl = real_fixture("finance.msoffice-margins.xlsx");
+    let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel")).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
+    let gs = &layer.data[0].attributes["grid::sheet"];
+    assert_eq!(gs["name"], "Output");
+    assert_eq!(gs["print"]["margins"][0], json!(1.0));
+    assert_eq!(gs["defaults"]["colWidth"], json!(90.0), "12 characters");
+}

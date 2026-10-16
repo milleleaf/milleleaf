@@ -156,8 +156,24 @@ fn guess_type(cells: &[&Value]) -> &'static str {
     }
 }
 
+/// For comparing: LibreOffice writes `TRUE()`/`FALSE()` for `TRUE`/`FALSE`.
 fn normalize_formula(text: &str) -> String {
-    Formula::new(text).text
+    // ponytail: also rewrites the words inside a string literal; only the comparison sees it.
+    Formula::new(text).text.replace("TRUE()", "TRUE").replace("FALSE()", "FALSE")
+}
+
+/// Equal, with numbers equal to 12 significant digits: recalculating (GridCraft, LibreOffice)
+/// moves the last digits of a double.
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {
+            (Some(x), Some(y)) => x == y || (x - y).abs() <= 1e-12 * x.abs().max(y.abs()),
+            _ => x == y,
+        },
+        (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| same(a, b)),
+        (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))),
+        _ => a == b,
+    }
 }
 
 fn is_linked(n: &Composed, key: &str) -> bool {
@@ -171,6 +187,18 @@ pub fn import(
     wb: &mut Workbook,
     header: Header,
 ) -> Result<(Layer, ImportReport), GridError> {
+    import_saved_by(node, wb, header, None)
+}
+
+/// [`import`], knowing which application saved the file (`docProps/app.xml`): LibreOffice's own
+/// rewrites that look like edits (its fitted row heights, its default sizes) aren't taken as edits.
+pub fn import_saved_by(
+    node: &Composed,
+    wb: &mut Workbook,
+    header: Header,
+    saved_by: Option<&str>,
+) -> Result<(Layer, ImportReport), GridError> {
+    let libreoffice = saved_by.is_some_and(|a| a.starts_with("LibreOffice"));
     let found = string_name(wb, NAME_WORKBOOK).ok_or(GridError::NotExported)?;
     if found != node.path {
         return Err(GridError::WrongWorkbook {
@@ -238,6 +266,8 @@ pub fn import(
                 .find(|s| s.name == old_sheet)
                 .map(|s| crate::look::sheet_look(s))
                 .unwrap_or_default();
+            let mut now = now;
+            crate::look::settle(&mut now, &was, libreoffice);
             let mut looked = false;
             for k in crate::look::KEYS {
                 if k == "cols" {
@@ -255,34 +285,6 @@ pub fn import(
                     }
                     if !cols.is_empty() {
                         gs.insert(k.into(), Value::Object(cols));
-                    }
-                } else if k == "defaults" {
-                    // Excel and LibreOffice write their own default sizes on every save: not an
-                    // edit. ponytail: adopt carries them, imports don't.
-                } else if k == "print" {
-                    // Their own page margins too: margins aren't brought back (said in a warning);
-                    // the rest of the page setup is.
-                    let strip = |v: Option<&Value>| {
-                        let mut v = v.cloned().unwrap_or_else(|| {
-                            serde_json::to_value(gridcraft_model::PrintSettings::default()).unwrap_or_default()
-                        });
-                        let m = v.as_object_mut().and_then(|o| o.remove("margins"));
-                        (v, m)
-                    };
-                    let ((n, nm), (w, wm)) = (strip(now.get(k)), strip(was.get(k)));
-                    if nm != wm {
-                        report.warnings.push(format!(
-                            "{}: page margins differ from the export (editors write their own); not brought back",
-                            sheet_node.path
-                        ));
-                    }
-                    if n != w {
-                        looked = true;
-                        let mut p = n;
-                        if let (Some(o), Some(m)) = (p.as_object_mut(), gs.get(k).and_then(|o| o.get("margins")).or(wm.as_ref())) {
-                            o.insert("margins".into(), m.clone());
-                        }
-                        gs.insert(k.into(), p);
                     }
                 } else if now.get(k) != was.get(k) {
                     looked = true;
@@ -379,7 +381,7 @@ pub fn import(
                     "rows".into(),
                     Value::Array(body.into_iter().map(Value::Array).collect()),
                 );
-                if Value::Object(new_data.clone()) != Value::Object(data.clone()) {
+                if !same(&Value::Object(new_data.clone()), &Value::Object(data.clone())) {
                     if is_linked(item, "office::data::table") {
                         report.conflicts.push(item.path.clone());
                     } else {
@@ -399,7 +401,7 @@ pub fn import(
                 {
                     report.recomputed.push(item.path.clone());
                 }
-                if v.get("value") != Some(&new_value) {
+                if !v.get("value").is_some_and(|old| same(old, &new_value)) {
                     let mut nv = v.clone();
                     nv.insert("value".into(), new_value);
                     nodes.push(attr_node(
@@ -414,7 +416,7 @@ pub fn import(
                     .and_then(Value::as_str)
                     .map(normalize_formula);
                 let new_f = cell.formula.as_ref().map(|f| f.text.clone());
-                if old_f != new_f {
+                if old_f != new_f.as_deref().map(normalize_formula) {
                     let v = match &new_f {
                         Some(t) => json!({ "text": format!("={t}") }),
                         None => Value::Null,
@@ -432,10 +434,15 @@ pub fn import(
     // cell, with what Milleleaf would export for the edited data (so a row added in Excel, which
     // Milleleaf formats itself, isn't a style edit). The workbook's styles and every sheet's map
     // then come back from the file.
-    let expected = crate::export(&with_edits(node, &nodes))
-        .ok()
-        .and_then(|(b, _)| crate::to_xlsx(&b).ok())
-        .and_then(|x| crate::from_xlsx(&x).ok());
+    // With no edits, that is the export already read back above (one recalculation fewer).
+    let expected = if nodes.is_empty() {
+        base.clone()
+    } else {
+        crate::export(&with_edits(node, &nodes))
+            .ok()
+            .and_then(|(b, _)| crate::to_xlsx(&b).ok())
+            .and_then(|x| crate::from_xlsx(&x).ok())
+    };
     if let Some(exp) = &expected {
         let changed = node.children.iter().any(|sn| {
             let Some((si, sheet, _)) = locate(wb, &sn.path) else { return false };
@@ -472,9 +479,29 @@ pub fn import(
     // active changes with every save: adopt carries it, imports don't.)
     if let Some(base) = &base {
         let lock = |w: &Workbook| crate::look::workbook_look(w).remove("protection");
-        let (now, was) = (crate::look::names(wb), crate::look::names(base));
-        let (lock_now, lock_was) = (lock(wb), lock(base));
-        if now != was || lock_now != lock_was {
+        let (mut now, was) = (crate::look::names(wb), crate::look::names(base));
+        let (mut lock_now, lock_was) = (lock(wb), lock(base));
+        if libreoffice {
+            // LibreOffice drops names that point into another workbook (Milleleaf doesn't carry
+            // external links, so the reference it writes dangles) and a structure lock whose
+            // password hash it can't keep: neither is the user's edit.
+            let external = |n: &Value| n.get("formula").and_then(Value::as_str).is_some_and(crate::look::external_ref);
+            for n in &was {
+                if external(n) && !now.iter().any(|m| m.get("name") == n.get("name") && m.get("scope") == n.get("scope")) {
+                    now.push(n.clone());
+                }
+            }
+            if lock_now.is_none() && lock_was.is_some() {
+                report.warnings.push("LibreOffice dropped the workbook's structure lock; it is kept".into());
+                lock_now = lock_was.clone();
+            }
+        }
+        let key = |v: &[Value]| {
+            let mut k: Vec<String> = v.iter().map(Value::to_string).collect();
+            k.sort();
+            k
+        };
+        if key(&now) != key(&was) || lock_now != lock_was {
             // On top of a workbook statement already made above (its styles).
             let mut gw = nodes
                 .iter()

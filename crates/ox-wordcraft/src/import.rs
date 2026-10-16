@@ -141,11 +141,14 @@ fn canonical(runs: &[Value]) -> Vec<Value> {
 }
 
 /// A list's id in the model: the name Milleleaf gave its definition on export, else `list-<num>`.
-fn list_id(doc: &Document, num: u32) -> String {
+/// The list a numbering instance is: the name Milleleaf gave its definition, else what the
+/// paragraphs matched by tag say (`known`: LibreOffice drops the names and renumbers), else new.
+fn list_id(doc: &Document, num: u32, known: &HashMap<u32, String>) -> String {
     doc.numbering
         .abstract_of(num)
         .and_then(|a| a.name.clone())
         .filter(|n| n.starts_with("list-"))
+        .or_else(|| known.get(&num).cloned())
         .unwrap_or_else(|| format!("list-{num}"))
 }
 
@@ -180,7 +183,47 @@ fn para_format(doc: &Document, p: &Paragraph) -> Option<Value> {
     }
     let from_style = style_para(doc, p);
     o.retain(|k, v| from_style.get(k) != Some(v));
+    // A tab stop cleared where the style sets none clears nothing (LibreOffice writes them).
+    if let Some(Value::Array(tabs)) = o.get_mut("tabs") {
+        let style_tabs: Vec<f64> = from_style
+            .get("tabs")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t.get("pos").and_then(Value::as_f64))
+            .collect();
+        // And one the style already sets the same way is repeated (LibreOffice repeats them).
+        let style_set: Vec<&Value> = from_style.get("tabs").and_then(Value::as_array).into_iter().flatten().collect();
+        tabs.retain(|t| {
+            let clear = t.get("align").and_then(Value::as_str) == Some("clear");
+            let pos = t.get("pos").and_then(Value::as_f64);
+            if clear {
+                pos.is_some_and(|p| style_tabs.iter().any(|s| (s - p).abs() < 0.5))
+            } else {
+                !style_set.contains(&t)
+            }
+        });
+        if tabs.is_empty() {
+            o.remove("tabs");
+        }
+    }
     (!o.is_empty()).then_some(v)
+}
+
+/// A paragraph format as a reader sees it, for comparing: a border in automatic colour is drawn
+/// black (LibreOffice writes it as black).
+fn format_seen(v: Option<&Value>) -> Option<Value> {
+    let mut v = v?.clone();
+    if let Some(b) = v.get_mut("borders").and_then(Value::as_object_mut) {
+        for side in b.values_mut() {
+            if let Some(c) = side.get_mut("color")
+                && c.is_null()
+            {
+                *c = json!([0, 0, 0]);
+            }
+        }
+    }
+    Some(v)
 }
 
 /// What a paragraph's style gives it: the document defaults, then each style it is based on.
@@ -264,28 +307,51 @@ fn style_name(doc: &Document, p: &Paragraph) -> String {
 
 /// A header's or footer's paragraphs as `{style, runs}` (what isn't carried is counted in
 /// `dropped`), by which page they're for: `default`, `first`, `even`.
-fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut usize) -> Map<String, Value> {
+fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut BTreeMap<&'static str, usize>) -> Map<String, Value> {
     let mut out = Map::new();
     for (which, id) in [("default", set.default), ("first", set.first), ("even", set.even)] {
         let Some(part) = id.and_then(|id| doc.parts.get(&id)) else { continue };
         let mut paras = Vec::new();
+        let d = dropped.entry(which).or_default();
         for b in &part.blocks {
             match b.as_para() {
                 Some(p) => {
                     let ex = extract(p, &|_| false);
-                    *dropped += ex.dropped_objects;
+                    *d += ex.dropped_objects;
                     let mut wp = json!({ "style": style_name(doc, p), "runs": ex.runs });
                     if let Some(f) = para_format(doc, p) {
                         wp["format"] = f;
                     }
                     paras.push(wp);
                 }
-                None => *dropped += 1,
+                None => *d += 1,
             }
         }
         out.insert(which.into(), Value::Array(paras));
     }
     out
+}
+
+/// A header or footer as a reader sees it, for comparing: a field's code without its formatting
+/// switch (`\* MERGEFORMAT`, which LibreOffice drops) and without the result it last showed (page
+/// numbers are worked out again), paragraph formats as seen.
+fn header_seen(v: Option<&Value>) -> Value {
+    let mut v = v.cloned().unwrap_or(Value::Null);
+    for p in v.as_array_mut().into_iter().flatten() {
+        if let Some(f) = format_seen(p.get("format")) {
+            p["format"] = f;
+        }
+        for r in p.get_mut("runs").and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(code) = r.get("docField").and_then(Value::as_str) {
+                let code = code.replace("\\* MERGEFORMAT", "").split_whitespace().collect::<Vec<_>>().join(" ");
+                r["docField"] = json!(code);
+                if let Some(o) = r.as_object_mut() {
+                    o.remove("text");
+                }
+            }
+        }
+    }
+    v
 }
 
 /// A second block with the same tag (pasted copy): the original's match becomes a best guess, and
@@ -468,6 +534,10 @@ fn table_style_look(doc: &Document, t: &Table) -> Map<String, Value> {
     };
     let mut m = Map::new();
     m.insert("grid".into(), json!(t.grid));
+    // The table style by name; "" for none (else the export would give it WordCraft's Table Grid,
+    // whose text size LibreOffice puts over the paragraph style's).
+    let style = t.props.style.as_deref().map(|id| doc.styles.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.to_string()));
+    m.insert("style".into(), json!(style.unwrap_or_default()));
     if let Some(p) = strip(serde_json::to_value(&t.props).ok(), &["style", "caption", "description", "fmtChange"]) {
         m.insert("props".into(), p);
     }
@@ -783,6 +853,17 @@ fn import_into(
     let mut nodes: Vec<Node> = Vec::new();
     // Lists the paragraphs use: list id → numbering instance in the edited file.
     let mut lists_used: BTreeMap<String, u32> = BTreeMap::new();
+    let mut known_lists: HashMap<u32, String> = HashMap::new();
+    for b in &edited.body {
+        if let (Block::Para(p), Some(n)) = (&**b, b.as_para().and_then(|p| p.props.numbering).filter(|n| n.num != 0)) {
+            let old = para_tag(p, &is_field)
+                .and_then(|t| by_path.get(t.as_str()).copied())
+                .and_then(|c| obj(c, "word::paragraph")?.get("list")?.get("id")?.as_str().map(String::from));
+            if let Some(id) = old {
+                known_lists.entry(n.num).or_insert(id);
+            }
+        }
+    }
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut captions_seen: BTreeSet<String> = BTreeSet::new();
     let mut new_order: Vec<String> = Vec::new();
@@ -948,7 +1029,7 @@ fn import_into(
                     new_para["format"] = f;
                 }
                 if let Some(n) = p.props.numbering.filter(|n| n.num != 0) {
-                    let id = list_id(edited, n.num);
+                    let id = list_id(edited, n.num, &known_lists);
                     lists_used.entry(id.clone()).or_insert(n.num);
                     new_para["list"] = json!({ "id": id, "level": n.level });
                 }
@@ -978,7 +1059,7 @@ fn import_into(
                         let same_style =
                             old.get("style").and_then(Value::as_str).unwrap_or("Normal") == style
                                 && old.get("list") == new_para.get("list")
-                                && old.get("format") == new_para.get("format");
+                                && format_seen(old.get("format")) == format_seen(new_para.get("format"));
                         if !(same_runs && same_style) || !children.is_empty() {
                             // Keep the original field runs' formatting where the field is unchanged.
                             let mut merged = new_para.clone();
@@ -1255,14 +1336,54 @@ fn import_into(
         }
     }
     // Headers and footers, and which pages they're for.
+    // Compared, page kind by page kind, with what Milleleaf's own export reads back as: an
+    // editor's rewrite (field switches, tab stops repeated from the style) isn't an edit. A part
+    // holding something Milleleaf can't read yet (LibreOffice turns a framed page number into a
+    // text frame) keeps the stack's version rather than losing what can't be seen.
     let sect = &edited.last_section;
     let mut dropped = 0;
     for (key, set) in [("headers", &sect.headers), ("footers", &sect.footers)] {
-        let v = header_set(edited, set, &mut dropped);
-        if v.is_empty() {
+        let mut d_now = BTreeMap::new();
+        let v = header_set(edited, set, &mut d_now);
+        dropped += d_now.values().sum::<usize>();
+        if adopting {
+            if v.is_empty() {
+                wd2.remove(key);
+            } else {
+                wd2.insert(key.into(), Value::Object(v));
+            }
+            continue;
+        }
+        let mut d_ours = BTreeMap::new();
+        let ours_v = ours_doc.as_ref().map(|od| {
+            let s = &od.last_section;
+            header_set(od, if key == "headers" { &s.headers } else { &s.footers }, &mut d_ours)
+        });
+        let stored = wd.get(key).and_then(Value::as_object).cloned().unwrap_or_default();
+        let mut merged = Map::new();
+        for which in ["default", "first", "even"] {
+            let (now, ours) = (v.get(which), ours_v.as_ref().and_then(|o| o.get(which)));
+            let keep = if header_seen(now) == header_seen(ours) {
+                true
+            } else if d_now.get(which).copied().unwrap_or(0) > d_ours.get(which).copied().unwrap_or(0) {
+                report.warnings.push(format!(
+                    "{key} ({which}): the file holds something Milleleaf can't read there yet (a frame or shape); the stack's version is kept"
+                ));
+                true
+            } else {
+                false
+            };
+            match if keep { stored.get(which) } else { now } {
+                Some(x) => {
+                    merged.insert(which.into(), x.clone());
+                }
+                None => {}
+            }
+        }
+        if merged.is_empty() {
             wd2.remove(key);
         } else {
-            wd2.insert(key.into(), Value::Object(v));
+            wd2.insert(key.into(), Value::Object(merged));
         }
     }
     for (key, on) in [("titlePage", sect.title_page), ("evenOddHeaders", edited.settings.even_odd_headers)] {
@@ -1282,7 +1403,12 @@ fn import_into(
             }
         }
     }
-    if seps.is_empty() {
+    // A file with no notes may write no separators (LibreOffice): nothing to compare then.
+    let ours_seps = ours_doc.as_ref().map(|od| (serde_json::to_value(&od.footnote_separators).ok(), serde_json::to_value(&od.endnote_separators).ok()));
+    let now_seps = Some((serde_json::to_value(&edited.footnote_separators).ok(), serde_json::to_value(&edited.endnote_separators).ok()));
+    if !adopting && (seps.is_empty() || now_seps == ours_seps) {
+        // keep the stack's
+    } else if seps.is_empty() {
         wd2.remove("noteSeparators");
     } else {
         wd2.insert("noteSeparators".into(), Value::Object(seps));

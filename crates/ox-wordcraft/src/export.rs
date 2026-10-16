@@ -358,6 +358,7 @@ fn table_block(
     let wt = obj(node, "word::table").cloned().unwrap_or_default();
     if let Some(style) = wt.get("style").and_then(Value::as_str) {
         match style_id(doc, style) {
+            _ if style.is_empty() => t.props.style = None,
             Some(id) => t.props.style = Some(id),
             None => report.warnings.push(format!(
                 "{}: table style `{style}` not in the document; used Table Grid",

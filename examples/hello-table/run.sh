@@ -256,3 +256,13 @@ for f in ../real/*.docx ../real/*.xlsx ../real/*.pptx; do
   echo "$(basename "$f"): $(tail -1 "$TMP/out.txt")"
 done
 rm -rf "$TMP"
+
+echo; echo "== 18. Editor re-saves of the real files import as no change; real edits come back"
+#    fixtures in examples/real/fixtures: Word 16.114, Excel and PowerPoint 16 (Mac), LibreOffice 24.2
+OUT=$(mktemp)
+( cd ../.. && cargo test -q -p ox-wordcraft blank_line && cargo test -q -p ox-deckcraft real_deck \
+    && cargo test -q -p ox-gridcraft real_workbook -- --ignored ) > "$OUT" 2>&1 \
+  || { cat "$OUT"; echo "real-file re-save test failed"; exit 1; }
+# each filter must have run a test (a filter that matches nothing passes with 0)
+[ "$(grep -cE 'test result: ok\. [1-9]' "$OUT")" -ge 3 ] || { cat "$OUT"; echo "a real-file test didn't run"; exit 1; }
+grep -E 'test result: ok\. [1-9]' "$OUT"; rm -f "$OUT"

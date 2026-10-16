@@ -479,8 +479,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 base,
                 ..Default::default()
             };
-            let (layer, report) =
-                ox_gridcraft::import(&node, &mut wb, header).map_err(|e| e.to_string())?;
+            let saved_by = ox_formats::saved_by(&bytes);
+            let (layer, report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref())
+                .map_err(|e| e.to_string())?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
             for w in collapse(&report.warnings) {

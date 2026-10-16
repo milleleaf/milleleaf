@@ -475,3 +475,39 @@ fn adopted_text_takes_what_its_layout_gives_it() {
     assert!(english.attributes["deck::shape"]["stroke"].is_string());
     assert_eq!(english.attributes["deck::text"]["verticalAlign"], json!("middle"));
 }
+
+/// The real briefing deck, adopted the way `ox adopt` does it (`examples/real/briefing.pptx`).
+fn briefing_node() -> Composed {
+    let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
+    // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
+    let root = "0eff38b6-b913-5af3-91ae-86226a64270e";
+    let p = from_pptx(&std::fs::read(real.join("briefing.pptx")).unwrap()).unwrap();
+    let (layer, _) = crate::adopt(&p, root, "briefing", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    ox_core::render::find(&trees, root).expect("deck").clone()
+}
+
+fn real_fixture(name: &str) -> Presentation {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    from_pptx(&std::fs::read(p).expect("fixture")).expect("reads")
+}
+
+#[test]
+fn real_deck_resaves_are_no_change_and_an_edit_keeps_the_layouts_look() {
+    let node = briefing_node();
+    for name in ["briefing.libreoffice-resaved.pptx", "briefing.msoffice-resaved.pptx"] {
+        let (layer, report) = import(&node, &real_fixture(name), header()).expect("imports");
+        assert!(layer.data.is_empty() && report.changed.is_empty(), "{name}: {:?}", report.changed);
+    }
+    // PowerPoint 16 (Mac): " (revised)" added to slide 1's subtitle frame. One frame changes, and
+    // its paragraphs keep the indents and spacing adopt took from the layout.
+    let (layer, report) = import(&node, &real_fixture("briefing.msoffice-edited.pptx"), header()).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
+    let paras = layer.data[0].attributes["deck::text"]["paragraphs"].as_array().unwrap().clone();
+    let text: String = paras.iter().flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default()).filter_map(|r| r["text"].as_str().map(String::from)).collect();
+    assert!(text.contains("(revised)"), "{text}");
+    assert!(paras.iter().all(|p| p.get("marginLeftPt").is_some() && p.get("spaceBefore").is_some()), "{paras:?}");
+}

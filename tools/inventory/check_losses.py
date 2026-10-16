@@ -29,6 +29,7 @@ covered_by = {
     "header/footer text chars": ("headers and footers (parts)", 10**9),
     "shapes (sp)": ("shapes without text", 1),
     "notes text chars": ("notes slide-number fields", 4),
+    "defined names (not Milleleaf's)": ("defined names into other workbooks", 1),
 }
 text_loss_listed = any(k.endswith("text chars") or k in ("headers and footers (parts)", "tables") for k in listed)
 

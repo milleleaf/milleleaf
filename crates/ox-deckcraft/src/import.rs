@@ -158,10 +158,31 @@ fn canonical_para(p: &Map<String, Value>) -> Value {
             None => r.clone(),
         })
         .collect();
+    // A line break joins the run before it: LibreOffice writes it as a run of its own.
+    let mut joined: Vec<Map<String, Value>> = Vec::new();
+    for r in runs {
+        match (r.get("text").and_then(Value::as_str), joined.last_mut()) {
+            (Some("\n"), Some(prev)) if prev.get("text").is_some_and(Value::is_string) => {
+                let t = format!("{}\n", prev["text"].as_str().unwrap_or(""));
+                prev.insert("text".into(), json!(t));
+            }
+            _ => joined.push(r),
+        }
+    }
+    // Spaces at the end of a paragraph can't be seen.
+    if let Some(t) = joined.last_mut().and_then(|r| r.get_mut("text")).and_then(|t| t.as_str().map(|s| s.trim_end_matches(' ').to_string())) {
+        if let Some(r) = joined.last_mut() {
+            r.insert("text".into(), json!(t));
+        }
+    }
+    let runs = joined;
+    // An empty line shows neither a bullet nor a level (LibreOffice resets both).
+    let blank = runs.iter().all(|r| r.get("text").and_then(Value::as_str).is_none_or(|t| t.trim().is_empty()));
+    let bullet = !blank && p.get("bullet").and_then(Value::as_bool).unwrap_or(false);
     json!({
         "runs": merge_runs(runs),
-        "bullet": p.get("bullet").and_then(Value::as_bool).unwrap_or(false),
-        "level": p.get("level").and_then(Value::as_u64).unwrap_or(0),
+        "bullet": bullet,
+        "level": if blank { 0 } else { p.get("level").and_then(Value::as_u64).unwrap_or(0) },
         "align": p.get("align").and_then(Value::as_str).unwrap_or("left"),
     })
 }
@@ -533,6 +554,28 @@ fn import_into(
         }
     }
 
+    // What Milleleaf's own export of each text frame reads back as, compared the same way: a
+    // file whose text differs from the stack only in how an editor wrote it (LibreOffice moves
+    // formatting into list styles and spells out what the layout gives) isn't an edit.
+    let ours: HashMap<String, Vec<Value>> = if adopting {
+        HashMap::new()
+    } else {
+        crate::export(deck, std::path::Path::new(""))
+            .ok()
+            .and_then(|(p, _)| crate::to_pptx(&p).ok())
+            .and_then(|b| crate::from_pptx(&b).ok())
+            .map(|p| {
+                p.slides
+                    .iter()
+                    .flat_map(|s| s.shapes.iter())
+                    .filter_map(|sh| {
+                        let paras = sh.text.as_ref().map(|t| read_paragraphs(t, None)).unwrap_or_default();
+                        Some((ox_name(sh)?.to_string(), paras.iter().map(canonical_para).collect()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let mut nodes: Vec<Node> = Vec::new();
     let mut claimed_slides: BTreeSet<String> = BTreeSet::new();
     let mut claimed_frames: BTreeSet<String> = BTreeSet::new();
@@ -745,8 +788,18 @@ fn import_into(
                             .and_then(Value::as_array)
                             .map(|a| a.iter().filter_map(|p| p.as_object().cloned()).collect())
                             .unwrap_or_default();
-                        let mut new_paras =
-                            sh.text.as_ref().map(|t| read_paragraphs(t, None)).unwrap_or_default();
+                        // An adopted frame carries each paragraph's effective formatting (indents,
+                        // spacing, bullets as the layout gave them): read the file the same way, or
+                        // an edit would drop them.
+                        let effective = old_paras.iter().any(|p| {
+                            ["marginLeftPt", "indentPt", "spaceBefore", "spaceAfter", "bulletChar", "autoNum"].iter().any(|k| p.contains_key(*k))
+                        });
+                        let ctx = effective.then(|| resolve::Ctx::for_slide(edited, slide)).flatten();
+                        let mut new_paras = sh
+                            .text
+                            .as_ref()
+                            .map(|t| read_paragraphs(t, ctx.as_ref().map(|c| (c, sh))))
+                            .unwrap_or_default();
                         // Put linked fields back where their values still stand.
                         let mut lost = Vec::new();
                         for (i, op) in old_paras.iter().enumerate() {
@@ -796,7 +849,7 @@ fn import_into(
                         }
                         let a: Vec<Value> = old_paras.iter().map(canonical_para).collect();
                         let b: Vec<Value> = new_paras.iter().map(canonical_para).collect();
-                        if a != b {
+                        if a != b && ours.get(&fr.path) != Some(&b) {
                             if lost.is_empty() {
                                 let mut t2 = t.clone();
                                 // Keep the original formatting on field runs.

@@ -20,7 +20,7 @@ mod look;
 
 pub use adopt::{AdoptReport, adopt};
 pub use export::{ExportReport, export};
-pub use import::{ImportReport, exported_revision, import};
+pub use import::{ImportReport, exported_revision, import, import_saved_by};
 
 use sha2::{Digest, Sha256};
 

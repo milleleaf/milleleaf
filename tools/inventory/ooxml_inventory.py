@@ -212,9 +212,11 @@ def xlsx(z):
         "workbook structure locked": sum(1 for w in wbx for e in w.iter(S + "workbookProtection") if e.get("lockStructure") in ("1", "true")),
         "sheets with gridlines off": sum(1 for sh in sheets for v in sh.iter(S + "sheetView") if v.get("showGridLines") in ("0", "false")),
         "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_")),
+        "defined names into other workbooks": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_") and re.search(r"\[\d+\]", d.text or "")),
         "charts": len(parts(z, r"xl/charts/chart\d*\.xml")),
         "drawings": len(parts(z, r"xl/drawings/drawing\d*\.xml")),
         "media files": len(parts(z, r"xl/media/.+")),
+        "external links": len(parts(z, r"xl/externalLinks/externalLink\d*\.xml")),
         "comments": sum(count([xml(z, n)], S + "comment") for n in parts(z, r"xl/comments\d*\.xml")),
         "tables (ListObjects)": len(parts(z, r"xl/tables/table\d*\.xml")),
         # Text lives in sharedStrings or inline in the cell (<is>), depending on the writer.

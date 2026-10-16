@@ -565,3 +565,15 @@ pub fn import(kind: Kind, ext: &str, bytes: Vec<u8>) -> Result<(Vec<u8>, Choice)
 
 #[cfg(test)]
 mod tests;
+
+/// The application that last saved an Office file (`docProps/app.xml`), e.g.
+/// `LibreOffice/24.2.7.2$Linux_X86_64 …` or `Microsoft Excel`.
+pub fn saved_by(bytes: &[u8]) -> Option<String> {
+    use std::io::Read;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    let mut s = String::new();
+    z.by_name("docProps/app.xml").ok()?.read_to_string(&mut s).ok()?;
+    let start = s.find("<Application>")? + "<Application>".len();
+    let end = start + s[start..].find("</Application>")?;
+    Some(s[start..end].trim().to_string())
+}
