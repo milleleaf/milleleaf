@@ -436,3 +436,17 @@ fn unicode_survives_a_pptx_round_trip_code_point_for_code_point() {
         assert!(all.contains(c), "lost or changed: {c:?}\n{all}");
     }
 }
+
+#[test]
+fn adopted_placeholders_take_their_layouts_position() {
+    // A real GOV.UK deck (examples/real, OGL v3): slide titles are placeholders with no position of
+    // their own; they used to be dropped without a word.
+    let path = example("../real/briefing.pptx");
+    let p = from_pptx(&std::fs::read(path).expect("examples/real/briefing.pptx")).expect("reads");
+    let (layer, report) = crate::adopt(&p, "real-deck", "briefing", header()).expect("adopts");
+    let text: String = layer.data.iter().filter_map(|n| n.attributes.get("deck::text")).map(|v| v.to_string()).collect();
+    for title in ["GCSE science grading", "Post-16 school/college measures", "Ofqual resources"] {
+        assert!(text.contains(title), "{title} lost; warnings: {:?}", report.warnings);
+    }
+    assert!(!report.warnings.iter().any(|w| w.contains("no position")), "{:?}", report.warnings);
+}

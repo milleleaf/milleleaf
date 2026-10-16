@@ -323,6 +323,21 @@ fn ox_name(sh: &Shape) -> Option<&str> {
     sh.name.strip_prefix(NAME_PREFIX)
 }
 
+/// The position a placeholder inherits: the same placeholder (by index, else by kind) on the slide's
+/// layout, else on its master.
+fn inherited_xfrm(p: &Presentation, slide: &deckcraft_model::Slide, sh: &Shape) -> Option<deckcraft_model::Xfrm> {
+    let ph = sh.ph.as_ref()?;
+    let same = |o: &Shape| {
+        o.ph.as_ref().is_some_and(|q| (ph.idx != 0 && q.idx == ph.idx) || q.kind == ph.kind) && o.xfrm.is_some()
+    };
+    for m in &p.masters {
+        if let Some(l) = m.layout(slide.layout) {
+            return l.shapes.iter().find(|o| same(o)).or_else(|| m.shapes.iter().find(|o| same(o))).and_then(|o| o.xfrm);
+        }
+    }
+    None
+}
+
 fn geometry(sh: &Shape) -> Option<Map<String, Value>> {
     let x = sh.xfrm?;
     let mut m = Map::new();
@@ -768,7 +783,26 @@ fn import_into(
                         continue;
                     };
                     let path = stable_id(&format!("{slide_path}|pptx-frame|{zi}|{}", text.text()));
-                    let Some(mut g) = geometry(sh) else { continue };
+                    // A placeholder with no position of its own (most titles) sits where its
+                    // layout's (or master's) placeholder sits.
+                    let placed;
+                    let sh = match sh.xfrm {
+                        Some(_) => sh,
+                        None => {
+                            let mut c = sh.clone();
+                            c.xfrm = inherited_xfrm(edited, slide, sh);
+                            placed = c;
+                            &placed
+                        }
+                    };
+                    let Some(mut g) = geometry(sh) else {
+                        report.warnings.push(format!(
+                            "slide {}: text `{}` has no position, here or on its layout; not carried",
+                            si + 1,
+                            text.text().chars().take(40).collect::<String>()
+                        ));
+                        continue;
+                    };
                     g.insert("z".into(), json!(zi));
                     let paragraphs: Vec<Value> = read_paragraphs(text)
                         .into_iter()
