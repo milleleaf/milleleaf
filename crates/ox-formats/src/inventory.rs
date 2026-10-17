@@ -880,7 +880,7 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
     c.insert("shapes with a fill", g("shapes with a fill"));
     c.insert("shapes with an outline", g("shapes with an outline"));
     c.insert("slide bold text chars", norm_len(&bold_text));
-    // The deck adapter doesn't carry tables, so their text goes with them.
+    // Table text, counted on its own (the shapes' text doesn't include it).
     c.insert("table text chars", norm_len(&table_text));
     c
 }
@@ -918,6 +918,7 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("header/footer text chars", None),
             ("footnote separator lines", None),
             ("media files", Some("pictures in the text, headers and footers are kept; embedded objects and other media aren't")),
+            ("hyperlinks", Some("web and mail links on text are kept; a link to a bookmark keeps its target, but bookmarks aren't carried")),
         ],
         "xlsx" => &[
             ("sheets", None),
@@ -963,6 +964,11 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("media files", Some("the slides' pictures are kept; the masters' and layouts' own pictures, sound and video aren't")),
             ("layouts", Some("only the layouts the slides use")),
             ("masters", Some("only the masters the slides use")),
+            ("tables", Some("cells' text, fills, borders, margins and merges are kept; the table style is written out into the cells")),
+            ("table cells", None),
+            ("table text chars", None),
+            ("connectors", Some("kept with their line, arrowheads and the shapes they join; shadows and other effects aren't")),
+            ("hyperlinks", Some("web and mail links on text are kept; links to slides, other actions, tooltips and links on whole shapes aren't")),
         ],
         _ => &[],
     }

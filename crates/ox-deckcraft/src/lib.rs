@@ -17,6 +17,7 @@
 
 mod export;
 mod import;
+mod table;
 
 pub use export::{ExportReport, export};
 pub use import::{ImportReport, adopt, exported_revision, import, import_in};

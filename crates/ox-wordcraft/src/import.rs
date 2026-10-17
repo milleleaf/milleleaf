@@ -136,6 +136,10 @@ fn run_format(cp: &CharProps) -> Map<String, Value> {
     if let Some(s) = cp.size {
         m.insert("sizePt".into(), json!(s));
     }
+    // A web or mail address, or `#bookmark` inside the document.
+    if let Some(l) = &cp.link {
+        m.insert("link".into(), json!(l));
+    }
     m
 }
 

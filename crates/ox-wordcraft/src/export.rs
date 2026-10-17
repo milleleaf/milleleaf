@@ -106,6 +106,7 @@ pub(crate) fn char_props(r: &Map<String, Value>) -> CharProps {
     if let Some(s) = r.get("sizePt").and_then(Value::as_f64) {
         cp.size = Some(s as f32);
     }
+    cp.link = r.get("link").and_then(Value::as_str).map(String::from);
     cp
 }
 

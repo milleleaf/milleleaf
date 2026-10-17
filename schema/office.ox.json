@@ -396,6 +396,10 @@
                       "picture": {
                         "dataType": "Object",
                         "optional": true
+                      },
+                      "link": {
+                        "dataType": "String",
+                        "optional": true
                       }
                     }
                   }
@@ -572,6 +576,14 @@
             "rotation": {
               "dataType": "Real",
               "optional": true
+            },
+            "flipH": {
+              "dataType": "Boolean",
+              "optional": true
+            },
+            "flipV": {
+              "dataType": "Boolean",
+              "optional": true
             }
           }
         }
@@ -637,6 +649,10 @@
                                 },
                                 "sizePt": {
                                   "dataType": "Real",
+                                  "optional": true
+                                },
+                                "link": {
+                                  "dataType": "String",
                                   "optional": true
                                 }
                               }
@@ -757,6 +773,20 @@
               "dataType": "Any",
               "optional": true
             },
+            "cols": {
+              "dataType": "Array",
+              "arrayRestrictions": { "value": { "dataType": "Real" } },
+              "optional": true
+            },
+            "rows": {
+              "dataType": "Array",
+              "arrayRestrictions": { "value": { "dataType": "Real" } },
+              "optional": true
+            },
+            "props": {
+              "dataType": "Object",
+              "optional": true
+            },
             "snapshot": {
               "dataType": "Array",
               "arrayRestrictions": {
@@ -820,6 +850,19 @@
               "dataType": "String",
               "optional": true
             }
+          }
+        }
+      }
+    },
+    "deck::line": {
+      "value": {
+        "dataType": "Object",
+        "objectRestrictions": {
+          "values": {
+            "geom": { "dataType": "Any" },
+            "line": { "dataType": "Any", "optional": true },
+            "from": { "dataType": "Object", "optional": true },
+            "to": { "dataType": "Object", "optional": true }
           }
         }
       }

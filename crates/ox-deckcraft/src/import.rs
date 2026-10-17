@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use deckcraft_model::style::{ColorBase, Fill, PictureAdjust, PictureMode};
-use deckcraft_model::text::{Anchor, Bullet, RunKind};
-use deckcraft_model::{Presentation, RunProps, Shape, ShapeKind, TextBody, resolve};
+use deckcraft_model::text::{Action, Anchor, Bullet, RunKind};
+use deckcraft_model::{ColorRef, Presentation, RunProps, Shape, ShapeId, ShapeKind, TextBody, resolve};
 use ox_core::Composed;
 use ox_core::model::{Header, Layer, Node, OX_VERSION, stable_id};
 use ox_core::render::{chart_data, field_text, format_value};
@@ -102,7 +102,40 @@ fn run_format(p: &RunProps) -> Map<String, Value> {
     if let Some(s) = p.size {
         m.insert("sizePt".into(), json!(s));
     }
+    // Web and mail links; other actions are warned about (`link_warnings`).
+    if let Some(Action::Url { url }) = p.link.as_ref().map(|h| &h.action) {
+        m.insert("link".into(), json!(url));
+    }
     m
+}
+
+/// What a shape's links and actions hold that the layer doesn't carry: actions other than a web
+/// or mail link, tooltips, mouse-over actions and actions on the shape itself.
+fn link_warnings(sh: &Shape, si: usize, warnings: &mut Vec<String>) {
+    let mut lost = BTreeSet::new();
+    if sh.click.is_some() || sh.hover.is_some() {
+        lost.insert("action on the shape");
+    }
+    let mut bodies: Vec<&TextBody> = sh.text.iter().collect();
+    if let ShapeKind::Table(t) = &sh.kind {
+        bodies.extend(t.rows.iter().flat_map(|r| r.cells.iter().map(|c| &c.text)));
+    }
+    for r in bodies.iter().flat_map(|b| b.paragraphs.iter().flat_map(|p| p.runs.iter())) {
+        if let Some(h) = &r.props.link {
+            if !matches!(h.action, Action::Url { .. }) {
+                lost.insert("link to a slide or show action");
+            }
+            if !h.tooltip.is_empty() {
+                lost.insert("link tooltip");
+            }
+        }
+        if r.props.hover.is_some() {
+            lost.insert("mouse-over action");
+        }
+    }
+    if !lost.is_empty() {
+        warnings.push(format!("slide {}: `{}`'s {} not carried", si + 1, sh.name, lost.into_iter().collect::<Vec<_>>().join(", ")));
+    }
 }
 
 /// Merges adjacent text runs with the same formatting; drops empty ones.
@@ -150,7 +183,7 @@ fn merge_runs(runs: Vec<Map<String, Value>>) -> Vec<Map<String, Value>> {
 }
 
 /// A paragraph as OX sees it, for comparison: text runs merged, fields by name only.
-fn canonical_para(p: &Map<String, Value>) -> Value {
+pub(crate) fn canonical_para(p: &Map<String, Value>) -> Value {
     let runs: Vec<Map<String, Value>> = p
         .get("runs")
         .and_then(Value::as_array)
@@ -195,7 +228,7 @@ fn canonical_para(p: &Map<String, Value>) -> Value {
 /// A text body's paragraphs as `deck::text` paragraphs. With `inherit` (the slide's context and
 /// the shape), each paragraph and run takes its effective formatting: what the layout and master
 /// give it (bullets by level, sizes, colours, fonts), since an adopted deck's layouts aren't kept.
-fn read_paragraphs(t: &TextBody, inherit: Option<(&resolve::Ctx, &Shape)>) -> Vec<Map<String, Value>> {
+pub(crate) fn read_paragraphs(t: &TextBody, inherit: Option<(&resolve::Ctx, &Shape)>) -> Vec<Map<String, Value>> {
     t.paragraphs
         .iter()
         .map(|p| {
@@ -469,7 +502,137 @@ fn geometry(sh: &Shape) -> Option<Map<String, Value>> {
     if x.rot.abs() > 0.01 {
         m.insert("rotation".into(), json!((x.rot * 100.0).round() / 100.0));
     }
+    // A line's direction is its flips.
+    for (k, on) in [("flipH", x.flip_h), ("flipV", x.flip_v)] {
+        if on {
+            m.insert(k.into(), json!(true));
+        }
+    }
     Some(m)
+}
+
+/// A colour fill with its theme colour worked out as RGB (the export has a theme of its own); a
+/// gradient becomes its first colour.
+pub(crate) fn rgb_fill(ctx: &resolve::Ctx, f: &Fill, ph: Option<deckcraft_model::Rgba>) -> Fill {
+    match f {
+        Fill::Solid { color } => Fill::solid(ColorRef::rgb(ctx.color(color, ph))),
+        Fill::Gradient(g) => match g.stops.first() {
+            Some(s) => Fill::solid(ColorRef::rgb(ctx.color(&s.color, ph))),
+            None => Fill::None,
+        },
+        f => f.clone(),
+    }
+}
+
+/// A line or connector as `deck::line`: its shape (DeckCraft's geometry), its effective outline
+/// with theme colours as RGB, and the frames its ends are attached to (`{"frame", "site"}`; a
+/// shape not known yet is `{"shape": id}` until the slide is done, see `attach_ends`).
+fn line_of(ctx: &resolve::Ctx, sh: &Shape, ids: &HashMap<ShapeId, String>) -> Value {
+    let (mut line, ph) = resolve::line(ctx, sh);
+    if let Some(f) = &line.fill {
+        line.fill = Some(rgb_fill(ctx, f, ph));
+    }
+    let mut m = Map::new();
+    m.insert("geom".into(), serde_json::to_value(&sh.geom).unwrap_or(Value::Null));
+    m.insert("line".into(), serde_json::to_value(&line).unwrap_or(Value::Null));
+    if let ShapeKind::Connector { start, end } = &sh.kind {
+        for (k, e) in [("from", start), ("to", end)] {
+            if let Some((id, site)) = e {
+                m.insert(k.into(), match ids.get(id) {
+                    Some(p) => json!({ "frame": p, "site": site }),
+                    None => json!({ "shape": id.0, "site": site }),
+                });
+            }
+        }
+    }
+    Value::Object(m)
+}
+
+/// A line shape the layer carries as `deck::line`: a connector or a line-like preset, without text.
+fn is_line(sh: &Shape) -> bool {
+    sh.is_line() && sh.text.as_ref().is_none_or(|t| t.text().trim().is_empty())
+}
+
+/// JSON equality with numbers within `tol` (editors round lengths to their own units).
+pub(crate) fn near(a: &Value, b: &Value, tol: f64) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => (x.as_f64().unwrap_or(0.0) - y.as_f64().unwrap_or(0.0)).abs() <= tol,
+        (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| near(a, b, tol)),
+        (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| near(v, w, tol))),
+        _ => a == b,
+    }
+}
+
+/// A DeckCraft `Line` (as JSON) without the values editors write out for an unset one: flat cap,
+/// single line, solid dash, round join, no arrowheads.
+pub(crate) fn plain_line(l: &Value) -> Value {
+    let mut l = l.clone();
+    if let Some(m) = l.as_object_mut() {
+        for (k, v) in [("cap", json!("flat")), ("compound", json!("single")), ("dash", json!({ "kind": "preset", "name": "solid" })), ("join", json!("round"))] {
+            if m.get(k) == Some(&v) {
+                m.remove(k);
+            }
+        }
+        for k in ["head", "tail"] {
+            if m.get(k).and_then(|e| e.get("kind")) == Some(&json!("none")) {
+                m.remove(k);
+            }
+        }
+        m.retain(|_, v| !v.is_null());
+    }
+    l
+}
+
+/// A `deck::line` as compared: a straight `line` and a `straightConnector1` draw the same
+/// (LibreOffice writes one as the other), and default line values don't count.
+fn canonical_line(v: &Value) -> Value {
+    let mut v = v.clone();
+    if v.pointer("/geom/name") == Some(&json!("line")) {
+        v["geom"]["name"] = json!("straightConnector1");
+    }
+    if let Some(l) = v.get("line") {
+        v["line"] = plain_line(l);
+    }
+    v
+}
+
+/// LibreOffice saves every link in the theme's hyperlink colour (`hl`): on a link, that colour is
+/// the editor's, not an edit, so such a run takes the colour the matching run in `like` has.
+fn editor_link_colour(b: &mut [Value], like: &[Value], hl: &str) {
+    for (pb, pl) in b.iter_mut().zip(like) {
+        let (Some(rb), Some(rl)) = (pb.get_mut("runs").and_then(Value::as_array_mut), pl.get("runs").and_then(Value::as_array)) else { continue };
+        for (r, l) in rb.iter_mut().zip(rl) {
+            if r.get("link").is_some() && r.get("color").and_then(Value::as_str) == Some(hl)
+                && let Some(m) = r.as_object_mut()
+            {
+                match l.get("color") {
+                    Some(c) => m.insert("color".into(), c.clone()),
+                    None => m.remove("color"),
+                };
+            }
+        }
+    }
+}
+
+/// Points `deck::line` ends still naming a shape id (`{"shape": id}`) at the frame that shape became
+/// on this slide; an end on something the layer doesn't carry is dropped, with a warning.
+fn attach_ends(nodes: &mut [Node], ids: &HashMap<ShapeId, String>, si: usize, warnings: &mut Vec<String>) {
+    for n in nodes {
+        let Some(Value::Object(l)) = n.attributes.get_mut("deck::line") else { continue };
+        for k in ["from", "to"] {
+            let Some(id) = l.get(k).and_then(|e| e.get("shape")).and_then(Value::as_u64) else { continue };
+            let site = l[k].get("site").cloned().unwrap_or(json!(0));
+            match ids.get(&ShapeId(id as u32)) {
+                Some(p) => {
+                    l.insert(k.into(), json!({ "frame": p, "site": site }));
+                }
+                None => {
+                    l.remove(k);
+                    warnings.push(format!("slide {}: a connector's end is attached to something not carried; it is left unattached", si + 1));
+                }
+            }
+        }
+    }
 }
 
 /// A picture shape as `deck::picture` (blob, media type, alt text, crop), its bytes kept in the
@@ -507,11 +670,12 @@ fn picture(edited: &Presentation, sh: &Shape, si: usize, report: &mut ImportRepo
 }
 
 fn geometry_changed(old: &Map<String, Value>, new: &Map<String, Value>) -> bool {
+    let flip = |m: &Map<String, Value>, k: &str| m.get(k).and_then(Value::as_bool).unwrap_or(false);
     ["x", "y", "w", "h", "rotation"].iter().any(|k| {
         let a = old.get(*k).and_then(Value::as_f64).unwrap_or(0.0);
         let b = new.get(*k).and_then(Value::as_f64).unwrap_or(0.0);
         (a - b).abs() > 0.6
-    })
+    }) || ["flipH", "flipV"].iter().any(|k| flip(old, k) != flip(new, k))
 }
 
 /// Compares the edited presentation with the composed deck `node` it was exported from and
@@ -610,25 +774,41 @@ fn import_into(
     // What Milleleaf's own export of each text frame reads back as, compared the same way: a
     // file whose text differs from the stack only in how an editor wrote it (LibreOffice moves
     // formatting into list styles and spells out what the layout gives) isn't an edit.
-    let ours: HashMap<String, Vec<Value>> = if adopting {
-        HashMap::new()
+    let ours_p: Option<Presentation> = if adopting {
+        None
     } else {
-        crate::export(deck, std::path::Path::new(""))
+        crate::export::export_with(deck, ox_core::PictureSource::StandIn(assets))
             .ok()
             .and_then(|(p, _)| crate::to_pptx(&p).ok())
             .and_then(|b| crate::from_pptx(&b).ok())
-            .map(|p| {
-                p.slides
-                    .iter()
-                    .flat_map(|s| s.shapes.iter())
-                    .filter_map(|sh| {
-                        let paras = sh.text.as_ref().map(|t| read_paragraphs(t, None)).unwrap_or_default();
-                        Some((ox_name(sh)?.to_string(), paras.iter().map(canonical_para).collect()))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
     };
+    let ours: HashMap<String, Vec<Value>> = ours_p
+        .iter()
+        .flat_map(|p| p.slides.iter().flat_map(|s| s.shapes.iter()))
+        .filter_map(|sh| {
+            let paras = sh.text.as_ref().map(|t| read_paragraphs(t, None)).unwrap_or_default();
+            Some((ox_name(sh)?.to_string(), paras.iter().map(canonical_para).collect()))
+        })
+        .collect();
+    // Lines and connectors the same way (their ends by the frames' names).
+    let mut ours_lines: HashMap<String, Value> = HashMap::new();
+    let mut ours_tables: HashMap<String, Value> = HashMap::new();
+    if let Some(p) = &ours_p {
+        for slide in &p.slides {
+            let Some(ctx) = resolve::Ctx::for_slide(p, slide) else { continue };
+            let ids: HashMap<ShapeId, String> = slide.shapes.iter().filter_map(|sh| Some((sh.id, ox_name(sh)?.to_string()))).collect();
+            for sh in slide.shapes.iter().filter(|sh| is_line(sh)) {
+                if let Some(n) = ox_name(sh) {
+                    ours_lines.insert(n.to_string(), line_of(&ctx, sh, &ids));
+                }
+            }
+            for sh in &slide.shapes {
+                if let (Some(n), Some(t)) = (ox_name(sh), crate::table::table_of(&ctx, sh, &mut Vec::new(), 0)) {
+                    ours_tables.insert(n.to_string(), t);
+                }
+            }
+        }
+    }
     let mut nodes: Vec<Node> = Vec::new();
     let mut claimed_slides: BTreeSet<String> = BTreeSet::new();
     let mut claimed_frames: BTreeSet<String> = BTreeSet::new();
@@ -654,6 +834,17 @@ fn import_into(
     }
 
     for (si, slide) in edited.slides.iter().enumerate() {
+        for sh in &slide.shapes {
+            link_warnings(sh, si, &mut report.warnings);
+        }
+        let slide_ctx = resolve::Ctx::for_slide(edited, slide);
+        // Which frame each shape on the slide is, for connector ends; new frames join as they're made.
+        let mut ids: HashMap<ShapeId, String> = slide
+            .shapes
+            .iter()
+            .filter_map(|sh| ox_name(sh).filter(|p| frame_home.contains_key(p)).map(|p| (sh.id, p.to_string())))
+            .collect();
+        let slide_nodes = nodes.len();
         // Which composed slide is this? Its name, else the slide most of its frames came from.
         let by_name = slide
             .name
@@ -767,8 +958,16 @@ fn import_into(
                     let mut attrs = Map::new();
                     // Geometry.
                     let old_g = obj(fr, "deck::frame").cloned().unwrap_or_default();
+                    // A table's size is its columns' and rows' (editors recompute the frame from them).
+                    let sized = |mut g: Map<String, Value>| {
+                        if matches!(sh.kind, ShapeKind::Table(_)) {
+                            g.remove("w");
+                            g.remove("h");
+                        }
+                        g
+                    };
                     if let Some(new_g) = geometry(sh)
-                        && geometry_changed(&old_g, &new_g)
+                        && geometry_changed(&sized(old_g.clone()), &sized(new_g.clone()))
                     {
                         let mut g = new_g;
                         g.insert("z".into(), json!(zi));
@@ -797,40 +996,12 @@ fn import_into(
                             report.conflicts.push(Conflict { path: fr.path.clone(), message: "linked table was edited in the slide; the source wins — edit the workbook".into() });
                         }
                     } else if let Some(dt) = obj(fr, "deck::table") {
-                        if let Some(grid) = table_grid(sh) {
-                            let snap: Vec<Vec<String>> = dt
-                                .get("snapshot")
-                                .and_then(Value::as_array)
-                                .map(|rows| {
-                                    rows.iter()
-                                        .map(|r| {
-                                            r.as_array()
-                                                .into_iter()
-                                                .flatten()
-                                                .map(|c| {
-                                                    c.get("text")
-                                                        .and_then(Value::as_str)
-                                                        .unwrap_or("")
-                                                        .to_string()
-                                                })
-                                                .collect()
-                                        })
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-                            if grid != snap {
+                        if let Some(new) = slide_ctx.as_ref().and_then(|ctx| crate::table::table_of(ctx, sh, &mut report.warnings, si)) {
+                            let was = ours_tables.get(&fr.path).cloned().unwrap_or_else(|| Value::Object(dt.clone()));
+                            if !crate::table::same_table(&new, &was) {
+                                // Keeps `style` (the HTML view's font).
                                 let mut t = dt.clone();
-                                t.insert(
-                                    "snapshot".into(),
-                                    json!(
-                                        grid.iter()
-                                            .map(|r| r
-                                                .iter()
-                                                .map(|c| json!({ "text": c }))
-                                                .collect::<Vec<_>>())
-                                            .collect::<Vec<_>>()
-                                    ),
-                                );
+                                t.extend(new.as_object().cloned().unwrap_or_default());
                                 attrs.insert("deck::table".into(), Value::Object(t));
                                 report.changed.push(fr.path.clone());
                             }
@@ -901,7 +1072,11 @@ fn import_into(
                             }
                         }
                         let a: Vec<Value> = old_paras.iter().map(canonical_para).collect();
-                        let b: Vec<Value> = new_paras.iter().map(canonical_para).collect();
+                        let mut b: Vec<Value> = new_paras.iter().map(canonical_para).collect();
+                        if let Some(ctx) = &slide_ctx {
+                            let c = ctx.color(&ColorRef::scheme(deckcraft_color::SchemeSlot::Hlink), None);
+                            editor_link_colour(&mut b, ours.get(&fr.path).unwrap_or(&a), &format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b));
+                        }
                         if a != b && ours.get(&fr.path) != Some(&b) {
                             if lost.is_empty() {
                                 let mut t2 = t.clone();
@@ -971,6 +1146,16 @@ fn import_into(
                                 report.changed.push(fr.path.clone());
                             }
                         }
+                    } else if let Some(old) = obj(fr, "deck::line") {
+                        if let (true, Some(ctx)) = (is_line(sh), &slide_ctx) {
+                            let new = line_of(ctx, sh, &ids);
+                            let was = ours_lines.get(&fr.path).cloned().unwrap_or_else(|| Value::Object(old.clone()));
+                            // Lengths within 0.1 pt: LibreOffice writes widths in its own units.
+                            if !near(&canonical_line(&new), &canonical_line(&was), 0.1) {
+                                attrs.insert("deck::line".into(), new);
+                                report.changed.push(fr.path.clone());
+                            }
+                        }
                     } else if let Some(shape) = obj(fr, "deck::shape") {
                         let fill = fill_hex(&sh.fill);
                         if fill.is_some()
@@ -997,6 +1182,47 @@ fn import_into(
                 }
                 None => {
                     // New on this slide: text boxes are carried; other new objects are reported.
+                    if let (Some(ctx), Some(mut g)) = (&slide_ctx, geometry(sh))
+                        && let Some(t) = crate::table::table_of(ctx, sh, &mut report.warnings, si)
+                    {
+                        g.insert("z".into(), json!(zi));
+                        let path = stable_id(&format!("{slide_path}|pptx-table|{zi}|{}", sh.name));
+                        let mut n = format!("table-{}", &path[..8]);
+                        let mut i = 2;
+                        while used_frame_names.contains(&n) {
+                            n = format!("table-{}-{i}", &path[..8]);
+                            i += 1;
+                        }
+                        used_frame_names.insert(n.clone());
+                        slide_children.insert(n.clone(), Some(path.clone()));
+                        slide_order.push(n);
+                        let attributes = Map::from_iter([("deck::frame".to_string(), Value::Object(g)), ("deck::table".to_string(), t)]);
+                        ids.insert(sh.id, path.clone());
+                        nodes.push(Node { path: path.clone(), attributes, ..Node::default() });
+                        report.added.push(path);
+                        continue;
+                    }
+                    if let (true, Some(ctx), Some(mut g)) = (is_line(sh), &slide_ctx, geometry(sh)) {
+                        g.insert("z".into(), json!(zi));
+                        let path = stable_id(&format!("{slide_path}|pptx-line|{zi}|{}", sh.name));
+                        let mut n = format!("line-{}", &path[..8]);
+                        let mut i = 2;
+                        while used_frame_names.contains(&n) {
+                            n = format!("line-{}-{i}", &path[..8]);
+                            i += 1;
+                        }
+                        used_frame_names.insert(n.clone());
+                        slide_children.insert(n.clone(), Some(path.clone()));
+                        slide_order.push(n);
+                        let attributes = Map::from_iter([
+                            ("deck::frame".to_string(), Value::Object(g)),
+                            ("deck::line".to_string(), line_of(ctx, sh, &ids)),
+                        ]);
+                        ids.insert(sh.id, path.clone());
+                        nodes.push(Node { path: path.clone(), attributes, ..Node::default() });
+                        report.added.push(path);
+                        continue;
+                    }
                     let Some(text) = sh.text.as_ref().filter(|t| !t.text().trim().is_empty())
                     else {
                         if let Some(pic) = picture(edited, sh, si, &mut report) {
@@ -1022,6 +1248,7 @@ fn import_into(
                                     ("deck::frame".to_string(), Value::Object(g)),
                                     ("deck::picture".to_string(), Value::Object(pic)),
                                 ]);
+                                ids.insert(sh.id, path.clone());
                                 nodes.push(Node { path: path.clone(), attributes, ..Node::default() });
                                 report.added.push(path);
                                 continue;
@@ -1099,11 +1326,14 @@ fn import_into(
                         }
                     }
                     attributes.insert("deck::text".into(), dt);
+                    ids.insert(sh.id, path.clone());
                     nodes.push(Node { path: path.clone(), attributes, ..Node::default() });
                     report.added.push(path);
                 }
             }
         }
+
+        attach_ends(&mut nodes[slide_nodes..], &ids, si, &mut report.warnings);
 
         // Frames gone from this slide.
         if let Some(cs) = composed_slide {

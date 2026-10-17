@@ -632,3 +632,41 @@ fn a_resave_is_no_change_against_a_node_from_the_store() {
     let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
     assert!(report.is_empty() && layer.data.is_empty(), "{:?}", report.changed);
 }
+
+#[test]
+fn hyperlinks_come_in_go_out_and_a_changed_address_is_a_change() {
+    let link = |url: &str| CharProps { link: Some(url.into()), ..CharProps::default() };
+    let mut doc = Document::default();
+    doc.body.clear();
+    doc.body.push(Arc::new(Block::Para(Paragraph::with_text("Ofqual's guidance", link("https://www.gov.uk/ofqual")))));
+    doc.body.push(Arc::new(Block::Para(Paragraph::with_text("public.enquiries@Ofqual.gov.uk", link("mailto:public.enquiries@Ofqual.gov.uk")))));
+    let doc = from_docx(&to_docx(&doc).unwrap()).unwrap();
+    let (layer, _) = crate::adopt(&doc, "adopted", "adopted", header()).expect("adopts");
+    assert!(serde_json::to_string(&layer).unwrap().contains("\"link\":\"mailto:public.enquiries@Ofqual.gov.uk\""));
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    let node = find(&trees, "adopted").expect("document").clone();
+    let (out, _) = export(&node, &[], std::path::Path::new("")).expect("exports");
+    let mut back = from_docx(&to_docx(&out).unwrap()).unwrap();
+    let links = |d: &Document| -> Vec<String> {
+        d.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.runs.iter().filter_map(|r| r.props.link.clone())).collect()
+    };
+    assert_eq!(links(&back), ["https://www.gov.uk/ofqual", "mailto:public.enquiries@Ofqual.gov.uk"]);
+    let (layer, report) = import(&node, &back, header()).expect("imports");
+    assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
+    // Someone points the first link elsewhere: one paragraph changes, with its new address.
+    for b in back.body.iter_mut() {
+        if let Block::Para(p) = Arc::make_mut(b) {
+            for r in &mut p.runs {
+                if r.props.link.as_deref() == Some("https://www.gov.uk/ofqual") {
+                    r.props.link = Some("https://example.org/".into());
+                }
+            }
+        }
+    }
+    let (layer, report) = import(&node, &back, header()).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
+    assert!(serde_json::to_string(&layer).unwrap().contains("https://example.org/"));
+}

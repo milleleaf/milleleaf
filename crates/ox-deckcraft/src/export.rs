@@ -8,7 +8,7 @@ use deckcraft_geom::{Size, Xfrm};
 use deckcraft_model::chart::{ChartType, Series};
 use deckcraft_model::defaults::{blank_presentation, layout_of_kind};
 use deckcraft_model::style::{Fill, Line, PictureFill};
-use deckcraft_model::text::{Align, Anchor, AutoFit, BodyProps, Bullet, ParaProps, RunKind};
+use deckcraft_model::text::{Action, Align, Anchor, AutoFit, BodyProps, Bullet, Hyperlink, ParaProps, RunKind};
 use deckcraft_model::{
     Background, Chart, ColorRef, Geom, LayoutType, Paragraph, Presentation, Run, RunProps, Shape,
     ShapeId, ShapeKind, Slide, SlideId, Table, TextBody, Theme,
@@ -68,6 +68,16 @@ pub(crate) fn run_props(r: &Map<String, Value>) -> RunProps {
     }
     if let Some(sz) = r.get("sizePt").and_then(Value::as_f64) {
         p.size = Some(sz);
+    }
+    if let Some(url) = s(r, "link") {
+        p.link = Some(Hyperlink {
+            action: Action::Url { url: url.to_string() },
+            tooltip: String::new(),
+            highlight_click: false,
+            sound: None,
+            stop_sound: false,
+            zoom_return: None,
+        });
     }
     p
 }
@@ -207,7 +217,8 @@ fn text_body(fr: &Composed, t: &Map<String, Value>, report: &mut ExportReport) -
             level,
             props,
             runs,
-            end_props: last_props,
+            // Text typed at the end of the paragraph doesn't join a link.
+            end_props: RunProps { link: None, ..last_props },
             ..Paragraph::default()
         });
     }
@@ -341,6 +352,12 @@ fn crop_of(pic: &Map<String, Value>) -> [f64; 4] {
 /// Builds a DeckCraft presentation from a composed `deck::deck` node. `assets` is the directory
 /// blob paths (pictures, SVG) are relative to — the project directory.
 pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportReport), DeckError> {
+    export_with(deck, ox_core::PictureSource::Read(assets))
+}
+
+/// [`export`], with where pictures' bytes come from (an importer's comparison export uses
+/// stand-ins, see [`ox_core::PictureSource`]).
+pub(crate) fn export_with(deck: &Composed, assets: ox_core::PictureSource) -> Result<(Presentation, ExportReport), DeckError> {
     let d = obj(deck, "deck::deck")
         .ok_or_else(|| DeckError::NotADeck(deck.path.clone()))?
         .clone();
@@ -391,6 +408,9 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                     .collect(),
             );
         }
+        // Shapes by frame path, and connector ends to attach once every shape is made.
+        let mut ids: std::collections::HashMap<&str, ShapeId> = std::collections::HashMap::new();
+        let mut ends: Vec<(usize, Option<(String, u32)>, Option<(String, u32)>)> = Vec::new();
         for fr in &slide_node.children {
             let g = obj(fr, "deck::frame").cloned().unwrap_or_default();
             let xfrm = Xfrm {
@@ -399,7 +419,8 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                 w: pt(num(&g, "w")),
                 h: pt(num(&g, "h")),
                 rot: num(&g, "rotation"),
-                ..Xfrm::default()
+                flip_h: g.get("flipH").and_then(Value::as_bool) == Some(true),
+                flip_v: g.get("flipV").and_then(Value::as_bool) == Some(true),
             };
             let mut shape = Shape {
                 id: ShapeId(alloc(&mut p)?),
@@ -412,8 +433,17 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
             if let Some(c) = obj(fr, "deck::chart") {
                 shape.kind = chart_kind(fr, c);
                 report.charts += 1;
-            } else if obj(fr, "deck::table").is_some() || obj(fr, "office::data::table").is_some() {
+            } else if obj(fr, "office::data::table").is_some() {
                 shape.kind = table_kind(fr, xfrm.w, xfrm.h);
+                report.tables += 1;
+            } else if let Some(t) = obj(fr, "deck::table") {
+                shape.kind = crate::table::table_shape(t, xfrm.w, xfrm.h, &mut |cell| {
+                    let paragraphs = match cell.get("paragraphs") {
+                        Some(_) => text_body(fr, cell, &mut report).paragraphs,
+                        None => TextBody::from_text(s(cell, "text").unwrap_or("")).paragraphs,
+                    };
+                    TextBody { paragraphs, ..TextBody::default() }
+                });
                 report.tables += 1;
             } else if let Some(t) = obj(fr, "deck::text") {
                 let mut body = text_body(fr, t, &mut report);
@@ -442,7 +472,7 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
             } else if let Some(pic) = obj(fr, "deck::picture").or_else(|| obj(fr, "deck::vector")) {
                 let blob = s(pic, "blob").unwrap_or("");
                 // A missing asset stops the export: a deck with a hole in it is worse than no deck.
-                let bytes = ox_core::read_blob(assets, blob).map_err(|e| {
+                let bytes = ox_core::picture_bytes(assets, blob).map_err(|e| {
                     DeckError::MissingAsset(format!("{}: can't read {blob}: {e}", fr.path))
                 })?;
                 let ct = s(pic, "mediaType").unwrap_or_else(|| ox_core::media_type_for(blob));
@@ -470,6 +500,16 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                     },
                 };
                 shape.descr = s(pic, "alt").unwrap_or("").to_string();
+            } else if let Some(l) = obj(fr, "deck::line") {
+                shape.geom = l.get("geom").cloned().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_else(|| Geom::preset("line"));
+                shape.line = l.get("line").cloned().and_then(|v| serde_json::from_value(v).ok());
+                shape.fill = Some(Fill::None);
+                let end = |k: &str| {
+                    let e = l.get(k)?;
+                    Some((s(e.as_object()?, "frame")?.to_string(), e.get("site").and_then(Value::as_u64).unwrap_or(0) as u32))
+                };
+                shape.kind = ShapeKind::Connector { start: None, end: None };
+                ends.push((slide.shapes.len(), end("from"), end("to")));
             } else if let Some(sh) = obj(fr, "deck::shape") {
                 shape_look(&mut shape, sh);
             } else {
@@ -479,8 +519,15 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                 ));
                 continue;
             }
+            ids.insert(fr.path.as_str(), shape.id);
             slide.shapes.push(shape);
             report.frames += 1;
+        }
+        for (i, from, to) in ends {
+            let at = |e: Option<(String, u32)>| e.and_then(|(p, site)| Some((*ids.get(p.as_str())?, site)));
+            if let Some(ShapeKind::Connector { start, end }) = slide.shapes.get_mut(i).map(|sh| &mut sh.kind) {
+                (*start, *end) = (at(from), at(to));
+            }
         }
         p.slides.push(Arc::new(slide));
         report.slides += 1;

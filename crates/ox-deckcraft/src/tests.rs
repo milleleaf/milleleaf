@@ -408,9 +408,10 @@ fn adopting_a_deck_carries_text_and_names_what_it_cannot() {
     let root = layer.data.iter().find(|n| n.path == "adopted-deck").expect("deck node");
     assert!(root.attributes.contains_key("deck::deck"));
     assert!(layer.data.iter().any(|n| n.attributes.contains_key("deck::text")));
-    for kind in ["(table)", "(chart)"] {
-        assert!(report.warnings.iter().any(|w| w.contains(kind)), "{kind}: {:?}", report.warnings);
-    }
+    assert!(report.warnings.iter().any(|w| w.contains("(chart)")), "{:?}", report.warnings);
+    // The table comes in as one of its own, with its cells' text and look.
+    let t = layer.data.iter().find_map(|n| n.attributes.get("deck::table")).expect("a table frame");
+    assert!(t["snapshot"][0][0]["look"]["fill"].is_object() && t["snapshot"][0][0]["paragraphs"].is_array(), "{t}");
     // The picture comes in as a frame, its bytes in the report for the caller to store.
     let pic = layer.data.iter().find_map(|n| n.attributes.get("deck::picture")).expect("a picture frame");
     assert!(report.pictures.contains_key(pic["blob"].as_str().unwrap()), "{pic}");
@@ -573,4 +574,65 @@ fn a_stack_files_picture_is_compared_by_the_hash_of_its_file() {
     let (_, report) = crate::import_in(&node, &swapped, header(), Some(&dir)).expect("imports");
     assert!(report.changed.contains(&first.path), "{:?}", report.changed);
     std::fs::remove_dir_all(&dir).ok();
+}
+
+
+#[test]
+fn real_deck_tables_lines_and_links_come_in_and_edits_to_them_are_changes() {
+    use deckcraft_model::text::Action;
+    let node = briefing_node();
+    let frames: Vec<&Composed> = node.children.iter().flat_map(|s| &s.children).collect();
+    let tables: Vec<&Composed> = frames.iter().copied().filter(|f| f.attributes.contains_key("deck::table")).collect();
+    let lines: Vec<&Composed> = frames.iter().copied().filter(|f| f.attributes.contains_key("deck::line")).collect();
+    assert_eq!((tables.len(), lines.len()), (2, 10));
+    // Two connectors on slide 24 are attached to the boxes they join.
+    let attached = lines.iter().filter(|l| l.attributes["deck::line"].get("from").is_some()).count();
+    assert_eq!(attached, 2);
+    let ends: Vec<&str> = lines.iter().flat_map(|l| ["from", "to"].map(|k| l.attributes["deck::line"].get(k).and_then(|e| e["frame"].as_str()))).flatten().collect();
+    assert!(ends.iter().all(|p| frames.iter().any(|f| f.path == *p)), "{ends:?}");
+    let links: Vec<String> = frames
+        .iter()
+        .filter_map(|f| f.attributes.get("deck::text"))
+        .flat_map(|t| t["paragraphs"].as_array().cloned().unwrap_or_default())
+        .flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default())
+        .filter_map(|r| r["link"].as_str().map(String::from))
+        .collect();
+    assert_eq!(links.len(), 3, "{links:?}");
+    assert!(links.iter().any(|l| l == "mailto:public.enquiries@Ofqual.gov.uk"), "{links:?}");
+    // The header row's style colours are worked out into the cells.
+    let head = &tables[0].attributes["deck::table"]["snapshot"][0][0];
+    assert!(head["paragraphs"][0]["runs"][0]["bold"] == json!(true) && head["look"]["fill"].is_object(), "{head}");
+
+    // Edits made in PowerPoint's file: a cell's text, a connector's colour, a link's address.
+    let mut p = real_fixture("briefing.msoffice-resaved.pptx");
+    let name = |f: &Composed| format!("{}{}", crate::NAME_PREFIX, f.path);
+    let (tname, lname) = (name(tables[0]), name(lines[0]));
+    for s in &mut p.slides {
+        let s = std::sync::Arc::make_mut(s);
+        for sh in &mut s.shapes {
+            if sh.name == tname
+                && let ShapeKind::Table(t) = &mut sh.kind
+            {
+                t.rows[1].cells[0].text = deckcraft_model::TextBody::from_text("Changed");
+            }
+            if sh.name == lname
+                && let Some(l) = &mut sh.line
+            {
+                l.fill = Some(deckcraft_model::style::Fill::solid(deckcraft_model::ColorRef::rgb(deckcraft_model::Rgba::rgb(255, 0, 0))));
+            }
+            for r in sh.text.iter_mut().flat_map(|t| t.paragraphs.iter_mut()).flat_map(|p| p.runs.iter_mut()) {
+                if let Some(h) = &mut r.props.link
+                    && matches!(&h.action, Action::Url { url } if url.starts_with("mailto:"))
+                {
+                    h.action = Action::Url { url: "mailto:someone@example.org".into() };
+                }
+            }
+        }
+    }
+    let (layer, report) = import(&node, &p, header()).expect("imports");
+    assert_eq!(report.changed.len(), 3, "{:?}", report.changed);
+    let got = |path: &str, key: &str| layer.data.iter().find(|n| n.path == path).and_then(|n| n.attributes.get(key)).cloned().expect(path);
+    assert_eq!(got(&tables[0].path, "deck::table")["snapshot"][1][0]["text"], json!("Changed"));
+    assert_eq!(got(&lines[0].path, "deck::line")["line"]["fill"]["color"]["base"]["rgb"], json!({ "r": 255, "g": 0, "b": 0, "a": 255 }));
+    assert!(layer.data.iter().any(|n| n.attributes.get("deck::text").is_some_and(|t| t.to_string().contains("mailto:someone@example.org"))));
 }
