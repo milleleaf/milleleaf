@@ -764,6 +764,15 @@
             "mediaType": {
               "dataType": "String",
               "optional": true
+            },
+            "crop": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Real"
+                }
+              }
             }
           }
         }

@@ -329,6 +329,15 @@ fn chart_kind(fr: &Composed, c: &Map<String, Value>) -> ShapeKind {
     ShapeKind::Chart(Box::new(chart))
 }
 
+/// A picture's crop (left, top, right, bottom fractions); none when absent.
+fn crop_of(pic: &Map<String, Value>) -> [f64; 4] {
+    let mut c = [0.0; 4];
+    for (i, v) in pic.get("crop").and_then(Value::as_array).into_iter().flatten().take(4).enumerate() {
+        c[i] = v.as_f64().unwrap_or(0.0);
+    }
+    c
+}
+
 /// Builds a DeckCraft presentation from a composed `deck::deck` node. `assets` is the directory
 /// blob paths (pictures, SVG) are relative to — the project directory.
 pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportReport), DeckError> {
@@ -456,6 +465,7 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
                 shape.kind = ShapeKind::Picture {
                     fill: PictureFill {
                         media,
+                        crop: crop_of(pic),
                         ..PictureFill::default()
                     },
                 };

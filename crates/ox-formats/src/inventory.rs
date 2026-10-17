@@ -956,6 +956,8 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             // Shapes without text are the exception, listed on their own.
             ("shapes (sp)", None),
             ("notes slides", None),
+            ("pictures (pic)", Some("position, picture, alt text and crop are kept; transparency, corrections and effects aren't")),
+            ("media files", Some("the slides' pictures are kept; the masters' and layouts' own pictures, sound and video aren't")),
             ("layouts", Some("only the layouts the slides use")),
             ("masters", Some("only the masters the slides use")),
         ],

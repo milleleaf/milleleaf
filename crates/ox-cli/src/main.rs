@@ -8,7 +8,7 @@ use ox_core::render::{deck_html, document_html, find};
 use ox_core::{Composer, Level, validate};
 
 mod repo;
-use repo::{asset_root, baseline, load_any as load_stack, open_any as open};
+use repo::{asset_root, baseline, place_pictures, load_any as load_stack, open_any as open};
 use serde_json::json;
 
 const USAGE: &str = "\
@@ -178,6 +178,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 kind: Some("adopt".into()),
                 ..Default::default()
             };
+            let mut pictures = Default::default();
             let (mut layer, warnings, summary) = match ext.as_str() {
                 "docx" => {
                     let doc = ox_wordcraft::from_docx(&bytes).map_err(|e| e.to_string())?;
@@ -189,6 +190,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                     let p = ox_deckcraft::from_pptx(&bytes).map_err(|e| e.to_string())?;
                     let (l, r) = ox_deckcraft::adopt(&p, &root, stem, header).map_err(|e| e.to_string())?;
                     let n = r.added.len();
+                    pictures = r.pictures;
                     (l, r.warnings, format!("{n} slides and frames"))
                 }
                 "xlsx" => {
@@ -203,6 +205,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             if let Some(n) = layer.data.iter_mut().find(|n| n.path == root) {
                 n.attributes.insert("ox::source".into(), src);
             }
+            place_pictures(&mut layer, &pictures, &out, &asset_root(&out))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
             let warnings = collapse(&warnings);
@@ -566,8 +569,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 base,
                 ..Default::default()
             };
-            let (layer, report) =
+            let (mut layer, report) =
                 ox_deckcraft::import(&node, &p, header).map_err(|e| e.to_string())?;
+            place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
             for w in collapse(&report.warnings) {

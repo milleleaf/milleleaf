@@ -408,9 +408,12 @@ fn adopting_a_deck_carries_text_and_names_what_it_cannot() {
     let root = layer.data.iter().find(|n| n.path == "adopted-deck").expect("deck node");
     assert!(root.attributes.contains_key("deck::deck"));
     assert!(layer.data.iter().any(|n| n.attributes.contains_key("deck::text")));
-    for kind in ["(table)", "(chart)", "(picture)"] {
+    for kind in ["(table)", "(chart)"] {
         assert!(report.warnings.iter().any(|w| w.contains(kind)), "{kind}: {:?}", report.warnings);
     }
+    // The picture comes in as a frame, its bytes in the report for the caller to store.
+    let pic = layer.data.iter().find_map(|n| n.attributes.get("deck::picture")).expect("a picture frame");
+    assert!(report.pictures.contains_key(pic["blob"].as_str().unwrap()), "{pic}");
 }
 
 #[test]
@@ -500,7 +503,7 @@ fn real_deck_resaves_are_no_change_and_an_edit_keeps_the_layouts_look() {
     let node = briefing_node();
     for name in ["briefing.libreoffice-resaved.pptx", "briefing.msoffice-resaved.pptx"] {
         let (layer, report) = import(&node, &real_fixture(name), header()).expect("imports");
-        assert!(layer.data.is_empty() && report.changed.is_empty(), "{name}: {:?}", report.changed);
+        assert!(layer.data.is_empty() && report.changed.is_empty(), "{name}: {:?} {:?}", report.changed, report.removed);
     }
     // PowerPoint 16 (Mac): " (revised)" added to slide 1's subtitle frame. One frame changes, and
     // its paragraphs keep the indents and spacing adopt took from the layout.
@@ -510,4 +513,23 @@ fn real_deck_resaves_are_no_change_and_an_edit_keeps_the_layouts_look() {
     let text: String = paras.iter().flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default()).filter_map(|r| r["text"].as_str().map(String::from)).collect();
     assert!(text.contains("(revised)"), "{text}");
     assert!(paras.iter().all(|p| p.get("marginLeftPt").is_some() && p.get("spaceBefore").is_some()), "{paras:?}");
+}
+
+#[test]
+fn real_deck_pictures_come_in_and_a_swapped_one_is_a_change() {
+    let node = briefing_node();
+    let frames: Vec<&Composed> = node.children.iter().flat_map(|s| &s.children).filter(|f| f.attributes.contains_key("deck::picture")).collect();
+    assert_eq!(frames.len(), 8);
+    // Ofqual's logo is cropped; the crop is carried.
+    assert!(frames.iter().any(|f| f.attributes["deck::picture"]["crop"].is_array()));
+    // Swap the bytes behind one picture, as if someone replaced it in PowerPoint.
+    let mut p = real_fixture("briefing.msoffice-resaved.pptx");
+    let swapped = b"\x89PNG\r\n\x1a\nnot really a picture".to_vec();
+    let m = p.media.iter_mut().find(|m| m.content_type == "image/jpeg").expect("a jpeg");
+    m.data = std::sync::Arc::new(swapped.clone());
+    let (layer, report) = import(&node, &p, header()).expect("imports");
+    assert!(!report.changed.is_empty(), "{:?}", report.warnings);
+    let blob = ox_core::stack::integrity_of(&swapped);
+    assert!(layer.data.iter().all(|n| n.attributes["deck::picture"]["blob"] == json!(blob)), "{:?}", layer.data);
+    assert_eq!(report.pictures[&blob].1, swapped);
 }

@@ -94,6 +94,57 @@ pub fn asset_root(file: &Path) -> PathBuf {
     }
 }
 
+/// Puts an import's pictures where `ox commit` finds them. One the project already holds stays a
+/// `sha256-…` value; a new one is written beside the layer in `<name>.assets/<hex>.<ext>` and
+/// the layer names it by that path, so commit stores it by hash. Returns how many were written.
+pub fn place_pictures(
+    layer: &mut ox_core::Layer,
+    pictures: &std::collections::BTreeMap<String, (String, Vec<u8>)>,
+    out: &Path,
+    root: &Path,
+) -> Result<usize, String> {
+    let name = out.file_name().and_then(|n| n.to_str()).unwrap_or("layer");
+    let dir = format!("{}.assets", name.trim_end_matches(".json").trim_end_matches(".ox"));
+    // Only the pictures the layer names: an unchanged one the import saw isn't in it.
+    let named = serde_json::to_string(&layer.data).map_err(e)?;
+    let mut paths = std::collections::HashMap::new();
+    for (blob, (media_type, bytes)) in pictures {
+        let hex = blob.trim_start_matches("sha256-");
+        if !named.contains(blob.as_str()) || root.join(ox_core::BLOB_DIR).join(hex).exists() {
+            continue;
+        }
+        let ext = match media_type.as_str() {
+            "image/jpeg" => "jpg",
+            "image/svg+xml" => "svg",
+            "image/x-emf" | "image/emf" => "emf",
+            "image/x-wmf" | "image/wmf" => "wmf",
+            t => t.strip_prefix("image/").unwrap_or("bin"),
+        };
+        let rel = format!("{dir}/{hex}.{ext}");
+        let p = out.parent().unwrap_or(Path::new("")).join(&rel);
+        std::fs::create_dir_all(p.parent().unwrap_or(Path::new(""))).map_err(e)?;
+        std::fs::write(&p, bytes).map_err(|x| format!("{}: {x}", p.display()))?;
+        paths.insert(blob.as_str(), rel);
+    }
+    fn walk(v: &mut serde_json::Value, paths: &std::collections::HashMap<&str, String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let Some(rel) = m.get("blob").and_then(|b| b.as_str()).and_then(|b| paths.get(b)) {
+                    m.insert("blob".into(), rel.clone().into());
+                }
+                m.values_mut().for_each(|x| walk(x, paths));
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|x| walk(x, paths)),
+            _ => {}
+        }
+    }
+    if !paths.is_empty() {
+        for n in &mut layer.data {
+            n.attributes.values_mut().for_each(|v| walk(v, &paths));
+        }
+    }
+    Ok(paths.len())
+}
 
 fn e(x: impl std::fmt::Display) -> String {
     x.to_string()

@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use deckcraft_model::style::{ColorBase, Fill};
+use deckcraft_model::style::{ColorBase, Fill, PictureAdjust, PictureMode};
 use deckcraft_model::text::{Anchor, Bullet, RunKind};
 use deckcraft_model::{Presentation, RunProps, Shape, ShapeKind, TextBody, resolve};
 use ox_core::Composed;
@@ -38,6 +38,10 @@ pub struct ImportReport {
     pub stale: bool,
     /// How each slide, frame and live field in the file was recognised, and how sure that is.
     pub matches: Vec<ox_core::Match>,
+    /// The bytes of every picture the layer names, by blob value (`sha256-<hex>`), with their
+    /// media type: the caller stores the ones its project doesn't have yet.
+    #[serde(skip)]
+    pub pictures: BTreeMap<String, (String, Vec<u8>)>,
 }
 
 impl ImportReport {
@@ -468,6 +472,40 @@ fn geometry(sh: &Shape) -> Option<Map<String, Value>> {
     Some(m)
 }
 
+/// A picture shape as `deck::picture` (blob, media type, alt text, crop), its bytes kept in the
+/// report. A linked picture isn't carried, and looks the layer can't hold yet are warnings.
+fn picture(edited: &Presentation, sh: &Shape, si: usize, report: &mut ImportReport) -> Option<Map<String, Value>> {
+    let ShapeKind::Picture { fill } = &sh.kind else {
+        return None;
+    };
+    let Some(m) = edited.media(fill.media).filter(|m| m.link.is_none() && !m.data.is_empty()) else {
+        report.warnings.push(format!("slide {}: `{}` is a linked picture; not carried", si + 1, sh.name));
+        return None;
+    };
+    let blob = ox_core::stack::integrity_of(&m.data);
+    report.pictures.insert(blob.clone(), (m.content_type.clone(), m.data.to_vec()));
+    let mut p = Map::from_iter([("blob".to_string(), json!(blob)), ("mediaType".to_string(), json!(m.content_type))]);
+    if !sh.descr.is_empty() {
+        p.insert("alt".into(), json!(sh.descr));
+    }
+    if fill.crop.iter().any(|c| c.abs() > 1e-4) {
+        p.insert("crop".into(), json!(fill.crop.map(|c| (c * 1e4).round() / 1e4)));
+    }
+    let lost: Vec<&str> = [
+        (fill.alpha.is_some(), "transparency"),
+        (fill.adjust != PictureAdjust::default(), "colour corrections"),
+        (fill.artistic.is_some(), "artistic effect (kept as it looks)"),
+        (matches!(fill.mode, PictureMode::Tile { .. }), "tiling"),
+    ]
+    .into_iter()
+    .filter_map(|(on, what)| on.then_some(what))
+    .collect();
+    if !lost.is_empty() {
+        report.warnings.push(format!("slide {}: `{}`'s {} not carried", si + 1, sh.name, lost.join(", ")));
+    }
+    Some(p)
+}
+
 fn geometry_changed(old: &Map<String, Value>, new: &Map<String, Value>) -> bool {
     ["x", "y", "w", "h", "rotation"].iter().any(|k| {
         let a = old.get(*k).and_then(Value::as_f64).unwrap_or(0.0);
@@ -893,6 +931,28 @@ fn import_into(
                                 });
                             }
                         }
+                    } else if let Some(old) = obj(fr, "deck::picture") {
+                        // ponytail: a stack whose picture is still a path (not committed, so not
+                        // stored by hash) can't tell a swapped picture; commit stores it by hash.
+                        if let Some(mut new) = picture(edited, sh, si, &mut report) {
+                            if old.get("blob").and_then(Value::as_str).is_some_and(|b| !b.starts_with("sha256-")) {
+                                new.insert("blob".into(), old["blob"].clone());
+                                match old.get("mediaType") {
+                                    Some(t) => new.insert("mediaType".into(), t.clone()),
+                                    None => new.remove("mediaType"),
+                                };
+                            }
+                            // LibreOffice rounds a crop a little (0.1724 comes back 0.1723).
+                            let crop = |m: &Map<String, Value>| {
+                                let c: Vec<f64> = m.get("crop").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_f64).collect();
+                                if c.is_empty() { vec![0.0; 4] } else { c }
+                            };
+                            let crop_moved = crop(old).iter().zip(crop(&new)).any(|(a, b)| (a - b).abs() > 1e-3);
+                            if crop_moved || ["blob", "alt"].iter().any(|k| old.get(*k) != new.get(*k)) {
+                                attrs.insert("deck::picture".into(), Value::Object(new));
+                                report.changed.push(fr.path.clone());
+                            }
+                        }
                     } else if let Some(shape) = obj(fr, "deck::shape") {
                         let fill = fill_hex(&sh.fill);
                         if fill.is_some()
@@ -921,6 +981,34 @@ fn import_into(
                     // New on this slide: text boxes are carried; other new objects are reported.
                     let Some(text) = sh.text.as_ref().filter(|t| !t.text().trim().is_empty())
                     else {
+                        if let Some(pic) = picture(edited, sh, si, &mut report) {
+                            // A picture placeholder may take its position from the layout.
+                            let mut placed = sh.clone();
+                            if placed.xfrm.is_none() {
+                                placed.xfrm = inherited_xfrm(edited, slide, sh);
+                            }
+                            if let Some(mut g) = geometry(&placed) {
+                                g.insert("z".into(), json!(zi));
+                                let blob = pic["blob"].as_str().unwrap_or_default();
+                                let path = stable_id(&format!("{slide_path}|pptx-picture|{zi}|{blob}"));
+                                let mut n = format!("picture-{}", &path[..8]);
+                                let mut i = 2;
+                                while used_frame_names.contains(&n) {
+                                    n = format!("picture-{}-{i}", &path[..8]);
+                                    i += 1;
+                                }
+                                used_frame_names.insert(n.clone());
+                                slide_children.insert(n.clone(), Some(path.clone()));
+                                slide_order.push(n);
+                                let attributes = Map::from_iter([
+                                    ("deck::frame".to_string(), Value::Object(g)),
+                                    ("deck::picture".to_string(), Value::Object(pic)),
+                                ]);
+                                nodes.push(Node { path: path.clone(), attributes, ..Node::default() });
+                                report.added.push(path);
+                                continue;
+                            }
+                        }
                         // Shapes without text too: an empty placeholder, but also a filled box.
                         report.warnings.push(format!(
                             "slide {}: new `{}` ({}{}) isn't carried yet",
