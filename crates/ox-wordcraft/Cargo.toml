@@ -12,6 +12,6 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 # Pinned: WordCraft moves fast. Bump deliberately and rerun the tests.
-wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
-wordcraft-formats = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
-wordcraft-docx = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
+wordcraft-formats = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
+wordcraft-docx = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }

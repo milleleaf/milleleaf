@@ -15,4 +15,4 @@ quick-xml = "=0.41.0"
 zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
-wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }

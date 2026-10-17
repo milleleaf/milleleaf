@@ -25,4 +25,4 @@ thiserror = "2"
 # DeckCraft's PDF writer (through craft-pdf) needs the ArtCraft patched krilla, as DeckCraft's own
 # workspace does; WordCraft's PDF writer uses the same krilla 0.8.
 [patch.crates-io]
-krilla = { git = "https://github.com/storytold/craft-libs", rev = "c3487320b2d1de657b860b3c8abb44e1f2b32bd8", version = "=0.8.2" }
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "83bf4cb25c01ed46e7645c4172974239868aaf06", version = "=0.8.2" }

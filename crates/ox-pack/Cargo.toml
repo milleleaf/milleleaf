@@ -15,10 +15,10 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 # Same pins as the adapters; PdfCraft pinned on its own.
-wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
-wordcraft-pdf = { git = "https://github.com/storytold/wordcraft", rev = "fd0bb2fb1ec081e3eddc4d01917637fef0cafdfe" }
-gridcraft-engine = { git = "https://github.com/storytold/gridcraft", rev = "e6b6b349708ab4978cb3f061f6bd6ecbc25667cb" }
-deckcraft-pdf = { git = "https://github.com/storytold/deckcraft", rev = "9859da39255c0262cd592bb57101d7f2fa961f72" }
-pdfcraft-cos = { git = "https://github.com/storytold/pdfcraft", rev = "cdf44d7999fe80263feeae63ba1a5ade0d2d0c1d" }
-pdfcraft-edit = { git = "https://github.com/storytold/pdfcraft", rev = "cdf44d7999fe80263feeae63ba1a5ade0d2d0c1d" }
-pdfcraft-organize = { git = "https://github.com/storytold/pdfcraft", rev = "cdf44d7999fe80263feeae63ba1a5ade0d2d0c1d" }
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
+wordcraft-pdf = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
+gridcraft-engine = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
+deckcraft-pdf = { git = "https://github.com/storytold/deckcraft", rev = "1dc69720db64323370dda061226becb09ad79fd4" }
+pdfcraft-cos = { git = "https://github.com/storytold/pdfcraft", rev = "924c4da4ac2879ac9107c6c82e20ac6be5570f0a" }
+pdfcraft-edit = { git = "https://github.com/storytold/pdfcraft", rev = "924c4da4ac2879ac9107c6c82e20ac6be5570f0a" }
+pdfcraft-organize = { git = "https://github.com/storytold/pdfcraft", rev = "924c4da4ac2879ac9107c6c82e20ac6be5570f0a" }
