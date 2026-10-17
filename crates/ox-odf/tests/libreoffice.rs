@@ -71,7 +71,8 @@ fn ods_edits_match_the_xlsx_edits() {
     let t = trees();
     let node = find(&t, "3f1c2a90-0000-4c1e-9a00-000000000010").expect("workbook");
     let mut wb = ox_gridcraft::from_xlsx(&xlsx).expect("reads");
-    let (layer, report) = ox_gridcraft::import(node, &mut wb, header()).expect("imports");
+    // As the CLI does: this XLSX was written by LibreOffice.
+    let (layer, report) = ox_gridcraft::import_saved_by(node, &mut wb, header(), Some("LibreOffice")).expect("imports");
     assert_eq!(report.renamed.len(), 1);
     assert_eq!(data(&layer), data(&committed("grid-edit.ox.json")));
 }
@@ -102,6 +103,6 @@ fn exports_convert_and_come_back_unchanged() {
     assert!(ods.starts_with(b"PK"));
     let mut back =
         ox_gridcraft::from_xlsx(&ox_odf::from_odf(&ods, "ods").expect("from ods")).expect("reads");
-    let (layer, _) = ox_gridcraft::import(node, &mut back, header()).expect("imports");
+    let (layer, _) = ox_gridcraft::import_saved_by(node, &mut back, header(), Some("LibreOffice")).expect("imports");
     assert!(layer.data.is_empty(), "{:?}", layer.data);
 }

@@ -546,7 +546,9 @@ pub(crate) fn settle(now: &mut Map<String, Value>, was: &Map<String, Value>, lib
     // Default sizes: Excel and LibreOffice write their own default column width (60–62 px for
     // GridCraft's 64), so only a change of more than 5 px (a user's Standard Width moves it by whole
     // characters, about 7 px each) is an edit.
-    if close(Some(now_d.0), Some(was_d.0), 5.0) && close(Some(now_d.1), Some(was_d.1), 1.0) {
+    // LibreOffice works the default row height out from the default font (12.8 pt where Excel has
+    // 15) and rewrites it on every save; its users can't set it, so it's never an edit.
+    if close(Some(now_d.0), Some(was_d.0), 5.0) && (libreoffice || close(Some(now_d.1), Some(was_d.1), 1.0)) {
         match was.get("defaults") {
             Some(v) => now.insert("defaults".into(), v.clone()),
             None => now.remove("defaults"),
