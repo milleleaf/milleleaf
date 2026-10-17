@@ -17,8 +17,8 @@ thiserror = { workspace = true }
 # Same pins as the adapters; PdfCraft pinned on its own.
 wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
 wordcraft-pdf = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
-gridcraft-engine = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
-deckcraft-pdf = { git = "https://github.com/storytold/deckcraft", rev = "1dc69720db64323370dda061226becb09ad79fd4" }
-pdfcraft-cos = { git = "https://github.com/storytold/pdfcraft", rev = "924c4da4ac2879ac9107c6c82e20ac6be5570f0a" }
-pdfcraft-edit = { git = "https://github.com/storytold/pdfcraft", rev = "924c4da4ac2879ac9107c6c82e20ac6be5570f0a" }
-pdfcraft-organize = { git = "https://github.com/storytold/pdfcraft", rev = "924c4da4ac2879ac9107c6c82e20ac6be5570f0a" }
+gridcraft-engine = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+deckcraft-pdf = { git = "https://github.com/storytold/deckcraft", rev = "2cf4535c5d5f19f61094d20a5c8a8eaf6cdb8ec7" }
+pdfcraft-cos = { git = "https://github.com/storytold/pdfcraft", rev = "bc7a12b94a7b67e1a051311eaed2155bc41290c9" }
+pdfcraft-edit = { git = "https://github.com/storytold/pdfcraft", rev = "bc7a12b94a7b67e1a051311eaed2155bc41290c9" }
+pdfcraft-organize = { git = "https://github.com/storytold/pdfcraft", rev = "bc7a12b94a7b67e1a051311eaed2155bc41290c9" }

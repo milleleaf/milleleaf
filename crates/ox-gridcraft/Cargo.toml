@@ -12,8 +12,8 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 # Pinned: GridCraft moves fast. Bump deliberately and rerun the tests.
-gridcraft-core = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
-gridcraft-model = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
-gridcraft-formula = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
-gridcraft-calc = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
-gridcraft-xlsx = { git = "https://github.com/storytold/gridcraft", rev = "f1894c6da64d4326022ae644c767581816a23c2c" }
+gridcraft-core = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-model = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-formula = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-calc = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-xlsx = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }

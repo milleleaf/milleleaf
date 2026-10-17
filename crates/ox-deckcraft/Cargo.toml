@@ -12,7 +12,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 # Pinned: DeckCraft moves fast. Bump deliberately and rerun the tests.
-deckcraft-model = { git = "https://github.com/storytold/deckcraft", rev = "1dc69720db64323370dda061226becb09ad79fd4" }
-deckcraft-pptx = { git = "https://github.com/storytold/deckcraft", rev = "1dc69720db64323370dda061226becb09ad79fd4" }
-deckcraft-geom = { git = "https://github.com/storytold/deckcraft", rev = "1dc69720db64323370dda061226becb09ad79fd4" }
-deckcraft-color = { git = "https://github.com/storytold/deckcraft", rev = "1dc69720db64323370dda061226becb09ad79fd4" }
+deckcraft-model = { git = "https://github.com/storytold/deckcraft", rev = "2cf4535c5d5f19f61094d20a5c8a8eaf6cdb8ec7" }
+deckcraft-pptx = { git = "https://github.com/storytold/deckcraft", rev = "2cf4535c5d5f19f61094d20a5c8a8eaf6cdb8ec7" }
+deckcraft-geom = { git = "https://github.com/storytold/deckcraft", rev = "2cf4535c5d5f19f61094d20a5c8a8eaf6cdb8ec7" }
+deckcraft-color = { git = "https://github.com/storytold/deckcraft", rev = "2cf4535c5d5f19f61094d20a5c8a8eaf6cdb8ec7" }
