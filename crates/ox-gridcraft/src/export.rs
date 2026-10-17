@@ -196,7 +196,13 @@ fn write_value(
 }
 
 /// Builds a GridCraft workbook from a composed `grid::workbook` node, recalculated.
-pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
+/// `assets` is the folder pictures' blobs are read from: the project (or stack) folder.
+pub fn export(node: &Composed, assets: &std::path::Path) -> Result<(Workbook, ExportReport), GridError> {
+    export_with(node, Some(assets))
+}
+
+/// The export, or (`assets` `None`) the importer's comparison export, with stand-ins for pictures.
+pub(crate) fn export_with(node: &Composed, assets: Option<&std::path::Path>) -> Result<(Workbook, ExportReport), GridError> {
     let gw = obj(node, "grid::workbook")
         .ok_or_else(|| GridError::NotAWorkbook(node.path.clone()))?
         .clone();
@@ -262,7 +268,7 @@ pub fn export(node: &Composed) -> Result<(Workbook, ExportReport), GridError> {
             }
         }
         if let Some(sh) = wb.sheet_mut(si) {
-            crate::look::apply_look(sh, gs, &sheet_node.path, &mut report.warnings);
+            crate::look::apply_look(sh, gs, &sheet_node.path, &mut report.warnings, assets)?;
         }
         crate::look::apply_cell_styles(&mut wb, si, gs.get("cellStyles"), &cell_styles, &sheet_node.path, &mut report.warnings);
         // A sheet whose sizes the model gives (an adopted workbook) keeps them: no auto-fit.

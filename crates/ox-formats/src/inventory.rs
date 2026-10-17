@@ -917,6 +917,7 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("headers and footers (parts)", None),
             ("header/footer text chars", None),
             ("footnote separator lines", None),
+            ("media files", Some("pictures in the text, headers and footers are kept; embedded objects and other media aren't")),
         ],
         "xlsx" => &[
             ("sheets", None),
@@ -944,6 +945,8 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("cells with a fill", None),
             ("cells with borders", None),
             ("cells with a number format", None),
+            ("media files", Some("floating pictures are kept; pictures inside cells and other media aren't")),
+            ("drawings", Some("floating pictures are kept; charts and shapes aren't")),
         ],
         "pptx" => &[
             ("slides", None),

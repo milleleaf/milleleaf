@@ -97,13 +97,13 @@ fn render_part(
 ) -> Result<(Vec<u8>, &'static str, Vec<String>), PackError> {
     let at = |e| part_err(&node.path, e);
     if node.attributes.contains_key("word::document") {
-        let (doc, report) = ox_wordcraft::export(node, layers).map_err(at)?;
+        let (doc, report) = ox_wordcraft::export(node, layers, assets).map_err(at)?;
         let pdf = wordcraft_pdf::export(&doc, &wordcraft_pdf::PdfOptions::default())
             .map_err(|e| part_err(&node.path, e))?;
         return Ok((pdf, "document", report.warnings));
     }
     if node.attributes.contains_key("grid::workbook") {
-        let (wb, report) = ox_gridcraft::export(node).map_err(|e| part_err(&node.path, e))?;
+        let (wb, report) = ox_gridcraft::export(node, assets).map_err(|e| part_err(&node.path, e))?;
         let opts = gridcraft_engine::cmd::print::PrintOptions {
             all_sheets: true,
             ..Default::default()

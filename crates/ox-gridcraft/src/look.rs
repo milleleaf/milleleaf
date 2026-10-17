@@ -13,11 +13,13 @@
 //! - `protection`: `<GridCraft SheetProtection>` (a password's hash, never the password)
 //! - `print`: `<GridCraft PrintSettings>` (page setup, print area, print titles, the sheet's
 //!   printed header and footer), when not the default
+//! - `pictures`: `[{blob, mediaType, alt?, at: "B2", dx, dy, w, h, mode?}]`, floating pictures
+//!   (offsets and size in points; `mode` GridCraft's `AnchorMode` when not move-and-size)
 //!
 //! GridCraft's own types are kept as data (its serde form) where they carry many options.
 
 use gridcraft_core::{CellRef, RangeRef};
-use gridcraft_model::{BorderLine, BorderStyle, Borders, Color, Comment, DefinedName, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Visibility, Workbook};
+use gridcraft_model::{Anchor, AnchorMode, BorderLine, BorderStyle, Borders, Color, Comment, DefinedName, Image, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Visibility, Workbook};
 use serde_json::{Map, Value, json};
 
 use crate::NAME_PREFIX;
@@ -31,12 +33,41 @@ fn line(l: &LineInfo) -> Option<Value> {
     serde_json::to_value(l).ok()
 }
 
-pub(crate) const KEYS: [&str; 10] =
-    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection"];
+pub(crate) const KEYS: [&str; 11] =
+    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection", "pictures"];
 
-/// The sheet's look as `grid::sheet` attributes (only the ones it has).
-pub(crate) fn sheet_look(sh: &Sheet) -> Map<String, Value> {
+/// Pictures by blob value: (media type, bytes).
+pub type Pictures = std::collections::BTreeMap<String, (String, Vec<u8>)>;
+
+/// The sheet's look as `grid::sheet` attributes (only the ones it has); its pictures' bytes go
+/// in `pics`.
+pub(crate) fn sheet_look(sh: &Sheet, pics: &mut Pictures) -> Map<String, Value> {
     let mut m = Map::new();
+    let r2 = |x: f32| ((x as f64) * 100.0).round() / 100.0;
+    let pictures: Vec<Value> = sh
+        .images
+        .iter()
+        .map(|im| {
+            let blob = ox_core::blob_of(&im.data);
+            let mut p = json!({
+                "blob": blob, "mediaType": im.mime, "at": im.anchor.cell.a1(),
+                "dx": r2(im.anchor.dx), "dy": r2(im.anchor.dy), "w": r2(im.anchor.width), "h": r2(im.anchor.height),
+            });
+            if !im.alt.is_empty() {
+                p["alt"] = json!(im.alt);
+            }
+            if im.anchor.mode != AnchorMode::default() {
+                p["mode"] = serde_json::to_value(im.anchor.mode).unwrap_or_default();
+            }
+            if !im.data.starts_with(ox_core::STAND_IN) {
+                pics.insert(blob, (im.mime.clone(), im.data.clone()));
+            }
+            p
+        })
+        .collect();
+    if !pictures.is_empty() {
+        m.insert("pictures".into(), Value::Array(pictures));
+    }
     if !sh.merges.is_empty() {
         m.insert("merges".into(), json!(sh.merges.iter().map(|r| r.a1()).collect::<Vec<_>>()));
     }
@@ -118,8 +149,27 @@ pub(crate) fn sheet_look(sh: &Sheet) -> Map<String, Value> {
     m
 }
 
-/// Applies `grid::sheet`'s look attributes to a sheet; what can't be read is a warning.
-pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warnings: &mut Vec<String>) {
+/// Applies `grid::sheet`'s look attributes to a sheet; what can't be read is a warning. Pictures'
+/// bytes come from `assets` (a stand-in without; see `ox_core::picture_bytes`); a missing one is
+/// an error, since a workbook with a hole in it is worse than none.
+pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warnings: &mut Vec<String>, assets: Option<&std::path::Path>) -> Result<(), crate::GridError> {
+    for (i, p) in gs.get("pictures").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        let blob = p.get("blob").and_then(Value::as_str).unwrap_or("");
+        let data = ox_core::picture_bytes(assets, blob).map_err(|e| crate::GridError::MissingAsset(format!("{at}: can't read {blob}: {e}")))?;
+        let n = |k: &str| p.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+        let Some(cell) = p.get("at").and_then(Value::as_str).and_then(CellRef::parse) else {
+            warnings.push(format!("{at}: picture {} has no cell to sit at; skipped", i + 1));
+            continue;
+        };
+        let mode = p.get("mode").and_then(|m| serde_json::from_value(m.clone()).ok()).unwrap_or_default();
+        sh.images.push(Image {
+            id: i as u32 + 1,
+            anchor: Anchor { cell, dx: n("dx"), dy: n("dy"), width: n("w"), height: n("h"), mode },
+            mime: p.get("mediaType").and_then(Value::as_str).map(String::from).unwrap_or_else(|| ox_core::media_type_for(blob).into()),
+            alt: p.get("alt").and_then(Value::as_str).unwrap_or("").to_string(),
+            data,
+        });
+    }
     let mut bad = |what: &str, v: &dyn std::fmt::Display| warnings.push(format!("{at}: {what} `{v}` can't be read; skipped"));
     for r in gs.get("merges").and_then(Value::as_array).into_iter().flatten() {
         match r.as_str().and_then(RangeRef::parse) {
@@ -205,6 +255,7 @@ pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warn
             _ => bad("column", c),
         }
     }
+    Ok(())
 }
 
 /// The workbook's own defined names (not Milleleaf's `ox_` ones): `{name, formula, scope?,
@@ -513,6 +564,25 @@ pub(crate) fn settle(now: &mut Map<String, Value>, was: &Map<String, Value>, lib
     let (dw, dh) = (blank.default_col_width as f64, blank.default_row_height as f64);
     let defaults = |m: &Map<String, Value>| (num(m, "defaults", "colWidth", dw), num(m, "defaults", "rowHeight", dh));
     let (now_d, was_d) = (defaults(now), defaults(was));
+    // Pictures: the same pictures in the same cells, placed and sized within a point. A picture's
+    // width is worked out from the columns it spans, and every editor writes its own column widths
+    // (Excel 2.5% and LibreOffice 4% narrower on the real workbook, anchors unchanged): width and
+    // left offset compare within 5% (a resize keeps the aspect ratio, so it still shows in the
+    // height).
+    if let (Some(Value::Array(n)), Some(Value::Array(w))) = (now.get("pictures"), was.get("pictures")) {
+        let f = |p: &Value, k: &str| p.get(k).and_then(Value::as_f64);
+        let same = n.len() == w.len()
+            && n.iter().zip(w).all(|(a, b)| {
+                ["blob", "at", "alt", "mode"].iter().all(|k| a.get(*k) == b.get(*k))
+                    && ["dy", "h"].iter().all(|k| close(f(a, k), f(b, k), 1.0))
+                    && ["dx", "w"].iter().all(|k| {
+                        close(f(a, k), f(b, k), (f(b, k).unwrap_or(0.0).abs() * 0.05).max(1.0))
+                    })
+            });
+        if same {
+            now.insert("pictures".into(), Value::Array(w.clone()));
+        }
+    }
     // Merges in another order; a list's items with the spaces after commas removed.
     if let (Some(Value::Array(n)), Some(Value::Array(w))) = (now.get("merges"), was.get("merges")) {
         let sorted = |a: &Vec<Value>| {

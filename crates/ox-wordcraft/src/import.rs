@@ -37,6 +37,53 @@ pub struct ImportReport {
     /// How each paragraph and table in the file was recognised (all by content-control tag, so
     /// all certain).
     pub matches: Vec<ox_core::Match>,
+    /// The bytes of every picture the file shows, by blob value (`sha256-<hex>`), with their media
+    /// type: the caller stores the ones its project doesn't have yet.
+    #[serde(skip)]
+    pub pictures: Pictures,
+}
+
+/// Pictures by blob value: (media type, bytes).
+pub type Pictures = BTreeMap<String, (String, Vec<u8>)>;
+
+/// An inline picture as a run, `{"picture": {blob, mediaType, w, h, alt?, crop?, float?}}`
+/// (points; `float` is WordCraft's placement, when it isn't inline), its bytes kept in `pics`.
+/// `None` for an OLE object's picture (the object itself isn't carried) or missing media.
+fn picture_run(doc_media: &BTreeMap<String, std::sync::Arc<Vec<u8>>>, o: &InlineObject, pics: &mut Pictures) -> Option<Value> {
+    let InlineObject::Image { media, w, h, alt, float, crop, ole } = o else { return None };
+    let bytes = doc_media.get(media).filter(|_| ole.is_none())?;
+    let blob = ox_core::blob_of(bytes);
+    let media_type = ox_core::media_type_for(media).to_string();
+    let r2 = |x: f32| ((x as f64) * 100.0).round() / 100.0;
+    let mut pic = Map::from_iter([
+        ("blob".to_string(), json!(blob)),
+        ("mediaType".to_string(), json!(media_type)),
+        ("w".to_string(), json!(r2(*w))),
+        ("h".to_string(), json!(r2(*h))),
+    ]);
+    if !alt.is_empty() {
+        pic.insert("alt".into(), json!(alt));
+    }
+    if crop.iter().any(|c| c.abs() > 1e-4) {
+        pic.insert("crop".into(), json!(crop.map(|c| ((c as f64) * 1e4).round() / 1e4)));
+    }
+    if *float != Default::default() {
+        if let Ok(Value::Object(mut f)) = serde_json::to_value(float) {
+            // f32 points, to 0.01 pt (401.04998779296875 is 401.05).
+            for v in f.values_mut() {
+                if let Some(x) = v.as_f64().filter(|_| v.is_f64()) {
+                    *v = json!((x * 100.0).round() / 100.0);
+                } else if let Value::Array(a) = v {
+                    a.iter_mut().filter(|x| x.is_f64()).for_each(|x| *x = json!((x.as_f64().unwrap_or(0.0) * 100.0).round() / 100.0));
+                }
+            }
+            pic.insert("float".into(), Value::Object(f));
+        }
+    }
+    if !bytes.starts_with(ox_core::STAND_IN) {
+        pics.insert(blob, (media_type, bytes.to_vec()));
+    }
+    Some(json!({ "picture": pic }))
 }
 
 impl ImportReport {
@@ -98,7 +145,7 @@ fn canonical(runs: &[Value]) -> Vec<Value> {
     let mut out: Vec<Map<String, Value>> = Vec::new();
     for r in runs {
         let Some(r) = r.as_object() else { continue };
-        if r.contains_key("fieldPath") || r.contains_key("docField") {
+        if r.contains_key("fieldPath") || r.contains_key("docField") || r.contains_key("picture") {
             out.push(r.clone());
             continue;
         }
@@ -307,7 +354,7 @@ fn style_name(doc: &Document, p: &Paragraph) -> String {
 
 /// A header's or footer's paragraphs as `{style, runs}` (what isn't carried is counted in
 /// `dropped`), by which page they're for: `default`, `first`, `even`.
-fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut BTreeMap<&'static str, usize>) -> Map<String, Value> {
+fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut BTreeMap<&'static str, usize>, pics: &mut Pictures) -> Map<String, Value> {
     let mut out = Map::new();
     for (which, id) in [("default", set.default), ("first", set.first), ("even", set.even)] {
         let Some(part) = id.and_then(|id| doc.parts.get(&id)) else { continue };
@@ -316,7 +363,7 @@ fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut BTreeMap<&'static s
         for b in &part.blocks {
             match b.as_para() {
                 Some(p) => {
-                    let ex = extract(p, &|_| false);
+                    let ex = extract(p, &|_| false, &doc.media, pics);
                     *d += ex.dropped_objects;
                     let mut wp = json!({ "style": style_name(doc, p), "runs": ex.runs });
                     if let Some(f) = para_format(doc, p) {
@@ -342,6 +389,16 @@ fn header_seen(v: Option<&Value>) -> Value {
             p["format"] = f;
         }
         for r in p.get_mut("runs").and_then(Value::as_array_mut).into_iter().flatten() {
+            // A picture that text doesn't wrap around: its distance from text means nothing, and
+            // LibreOffice puts every header picture behind the text when it saves (24.2).
+            if let Some(f) = r.pointer_mut("/picture/float").and_then(Value::as_object_mut)
+                && matches!(f.get("wrap").and_then(Value::as_str), Some("inFrontOfText" | "behindText"))
+            {
+                f.insert("wrap".into(), json!("none"));
+                for k in ["dist", "distTop", "distBottom"] {
+                    f.remove(k);
+                }
+            }
             if let Some(code) = r.get("docField").and_then(Value::as_str) {
                 let code = code.replace("\\* MERGEFORMAT", "").split_whitespace().collect::<Vec<_>>().join(" ");
                 r["docField"] = json!(code);
@@ -412,7 +469,7 @@ struct Extracted {
     dropped_objects: usize,
 }
 
-fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool) -> Extracted {
+fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<String, std::sync::Arc<Vec<u8>>>, pics: &mut Pictures) -> Extracted {
     let mut runs: Vec<Value> = Vec::new();
     let mut fields = Vec::new();
     let mut text = String::new();
@@ -451,6 +508,10 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool) -> Extracted {
                     runs.push(Value::Object(fmt));
                 }
                 Some(o) if o.is_marker() => {}
+                Some(o) if !in_field => match picture_run(media, o, pics) {
+                    Some(r) => runs.push(r),
+                    None => dropped_objects += 1,
+                },
                 Some(_) => dropped_objects += 1,
                 None => {}
             }
@@ -813,7 +874,7 @@ fn import_into(
         node.children.iter().map(|c| (c.path.as_str(), c)).collect();
     // What Milleleaf's own export writes for this node, read back the same way: page setup,
     // styles and tables' looks are carried when the file's differ from it.
-    let ours_doc = crate::export(node, &[])
+    let ours_doc = crate::export::export_with(node, &[], None)
         .ok()
         .and_then(|(d, _)| crate::from_docx(&crate::to_docx(&d).ok()?).ok());
     let mut used_names: BTreeSet<String> = node
@@ -895,10 +956,10 @@ fn import_into(
         match &**block {
             Block::Para(p) => {
                 let tag = para_tag(p, &is_field);
-                let ex = extract(p, &is_field);
+                let ex = extract(p, &is_field, &edited.media, &mut report.pictures);
                 if ex.dropped_objects > 0 {
                     report.warnings.push(format!(
-                        "paragraph {}: {} inline object(s) (pictures, shapes…) are not carried yet",
+                        "paragraph {}: {} inline object(s) (shapes, charts, embedded objects…) are not carried yet",
                         index + 1,
                         ex.dropped_objects
                     ));
@@ -1049,17 +1110,16 @@ fn import_into(
                             .and_then(Value::as_array)
                             .cloned()
                             .unwrap_or_default();
-                        let same_runs = canonical(&old_runs)
-                            == canonical(
-                                new_para["runs"]
-                                    .as_array()
-                                    .map(Vec::as_slice)
-                                    .unwrap_or(&[]),
-                            );
+                        // Numbers by value: a layer from the store holds 12.0 as 12.
+                        let same_runs = ox_core::same(
+                            &Value::Array(canonical(&old_runs)),
+                            &Value::Array(canonical(new_para["runs"].as_array().map(Vec::as_slice).unwrap_or(&[]))),
+                        );
+                        let opt = |v: Option<Value>| v.unwrap_or(Value::Null);
                         let same_style =
                             old.get("style").and_then(Value::as_str).unwrap_or("Normal") == style
-                                && old.get("list") == new_para.get("list")
-                                && format_seen(old.get("format")) == format_seen(new_para.get("format"));
+                                && ox_core::same(&opt(old.get("list").cloned()), &opt(new_para.get("list").cloned()))
+                                && ox_core::same(&opt(format_seen(old.get("format"))), &opt(format_seen(new_para.get("format"))));
                         if !(same_runs && same_style) || !children.is_empty() {
                             // Keep the original field runs' formatting where the field is unchanged.
                             let mut merged = new_para.clone();
@@ -1139,7 +1199,7 @@ fn import_into(
                                 wt.insert(k, v);
                             }
                         }
-                        if wt != old {
+                        if !ox_core::same(&Value::Object(wt.clone()), &Value::Object(old.clone())) {
                             nodes.push(Node {
                                 path: c.path.clone(),
                                 attributes: Map::from_iter([("word::table".into(), Value::Object(wt))]),
@@ -1344,7 +1404,7 @@ fn import_into(
     let mut dropped = 0;
     for (key, set) in [("headers", &sect.headers), ("footers", &sect.footers)] {
         let mut d_now = BTreeMap::new();
-        let v = header_set(edited, set, &mut d_now);
+        let v = header_set(edited, set, &mut d_now, &mut report.pictures);
         dropped += d_now.values().sum::<usize>();
         if adopting {
             if v.is_empty() {
@@ -1357,7 +1417,7 @@ fn import_into(
         let mut d_ours = BTreeMap::new();
         let ours_v = ours_doc.as_ref().map(|od| {
             let s = &od.last_section;
-            header_set(od, if key == "headers" { &s.headers } else { &s.footers }, &mut d_ours)
+            header_set(od, if key == "headers" { &s.headers } else { &s.footers }, &mut d_ours, &mut Pictures::new())
         });
         let stored = wd.get(key).and_then(Value::as_object).cloned().unwrap_or_default();
         let mut merged = Map::new();
@@ -1415,10 +1475,10 @@ fn import_into(
     }
     if dropped > 0 {
         report.warnings.push(format!(
-            "headers and footers: {dropped} picture(s), shape(s) or table(s) are not carried yet"
+            "headers and footers: {dropped} shape(s), chart(s), embedded object(s) or table(s) are not carried yet"
         ));
     }
-    if wd2 != wd {
+    if !ox_core::same(&Value::Object(wd2.clone()), &Value::Object(wd.clone())) {
         if !adopting {
             report.changed.push(node.path.clone());
         }

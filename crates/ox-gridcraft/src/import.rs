@@ -30,6 +30,10 @@ pub struct ImportReport {
     pub stale: bool,
     /// How each sheet and range was recognised (by its `ox_` defined name: certain).
     pub matches: Vec<ox_core::Match>,
+    /// The bytes of every picture the file shows, by blob value, with their media type: the
+    /// caller stores the ones its project doesn't have yet.
+    #[serde(skip)]
+    pub pictures: crate::Pictures,
 }
 
 impl ImportReport {
@@ -215,7 +219,7 @@ pub fn import_saved_by(
     // What Milleleaf's own export writes for this node, read back the same way: a sheet's look
     // or a defined name that differs from it was changed in Excel (column widths Milleleaf fitted
     // itself don't come back as edits).
-    let base = crate::export(node)
+    let base = crate::export::export_with(node, None)
         .ok()
         .and_then(|(b, _)| crate::to_xlsx(&b).ok())
         .and_then(|x| crate::from_xlsx(&x).ok());
@@ -259,12 +263,12 @@ pub fn import_saved_by(
             report.renamed.push(format!("{old_sheet} → {now}"));
         }
         if let (Some((si, ..)), Some(base)) = (&located, &base) {
-            let now = wb.sheet(*si).map(crate::look::sheet_look).unwrap_or_default();
+            let now = wb.sheet(*si).map(|s| crate::look::sheet_look(s, &mut report.pictures)).unwrap_or_default();
             let was = base
                 .sheets
                 .iter()
                 .find(|s| s.name == old_sheet)
-                .map(|s| crate::look::sheet_look(s))
+                .map(|s| crate::look::sheet_look(s, &mut crate::Pictures::new()))
                 .unwrap_or_default();
             let mut now = now;
             crate::look::settle(&mut now, &was, libreoffice);
@@ -438,7 +442,7 @@ pub fn import_saved_by(
     let expected = if nodes.is_empty() {
         base.clone()
     } else {
-        crate::export(&with_edits(node, &nodes))
+        crate::export::export_with(&with_edits(node, &nodes), None)
             .ok()
             .and_then(|(b, _)| crate::to_xlsx(&b).ok())
             .and_then(|x| crate::from_xlsx(&x).ok())

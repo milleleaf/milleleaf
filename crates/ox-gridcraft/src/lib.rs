@@ -20,6 +20,7 @@ mod look;
 
 pub use adopt::{AdoptReport, adopt};
 pub use export::{ExportReport, export};
+pub use look::Pictures;
 pub use import::{ImportReport, exported_revision, import, import_saved_by};
 
 use sha2::{Digest, Sha256};
@@ -43,6 +44,8 @@ pub enum GridError {
     NotExported,
     #[error("{0}")]
     Invalid(String),
+    #[error("missing asset: {0}")]
+    MissingAsset(String),
 }
 
 /// The defined name for a node path: `ox_` + the path with characters names can't hold

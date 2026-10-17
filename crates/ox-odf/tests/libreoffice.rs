@@ -98,7 +98,7 @@ fn exports_convert_and_come_back_unchanged() {
     }
     let t = trees();
     let node = find(&t, "3f1c2a90-0000-4c1e-9a00-000000000010").expect("workbook");
-    let (wb, _) = ox_gridcraft::export(node).expect("exports");
+    let (wb, _) = ox_gridcraft::export(node, std::path::Path::new("")).expect("exports");
     let ods = ox_odf::to_odf(&ox_gridcraft::to_xlsx(&wb).expect("xlsx"), "ods").expect("to ods");
     assert!(ods.starts_with(b"PK"));
     let mut back =

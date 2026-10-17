@@ -233,6 +233,28 @@
             "protection": {
               "dataType": "Object",
               "optional": true
+            },
+            "pictures": {
+              "dataType": "Array",
+              "optional": true,
+              "arrayRestrictions": {
+                "value": {
+                  "dataType": "Object",
+                  "objectRestrictions": {
+                    "values": {
+                      "blob": { "dataType": "Blob" },
+                      "mediaType": { "dataType": "String", "optional": true },
+                      "alt": { "dataType": "String", "optional": true },
+                      "at": { "dataType": "String" },
+                      "dx": { "dataType": "Real" },
+                      "dy": { "dataType": "Real" },
+                      "w": { "dataType": "Real" },
+                      "h": { "dataType": "Real" },
+                      "mode": { "dataType": "String", "optional": true }
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -369,6 +391,10 @@
                       },
                       "docField": {
                         "dataType": "String",
+                        "optional": true
+                      },
+                      "picture": {
+                        "dataType": "Object",
                         "optional": true
                       }
                     }

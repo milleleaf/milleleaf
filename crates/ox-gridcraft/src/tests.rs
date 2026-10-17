@@ -57,7 +57,7 @@ fn fixture(name: &str) -> Workbook {
 fn exported() -> (Composed, Workbook) {
     let trees = compose(&[]);
     let wb_node = node(&trees, WORKBOOK);
-    let (wb, report) = export(&wb_node).expect("exports");
+    let (wb, report) = export(&wb_node, std::path::Path::new("")).expect("exports");
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     assert!(report.stale_values.is_empty(), "{:?}", report.stale_values);
     let wb = from_xlsx(&to_xlsx(&wb).expect("writes")).expect("reads back");
@@ -255,7 +255,7 @@ fn adopting_a_workbook_keeps_every_value_and_formula() {
     loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
     let flat = ox_core::compose::flatten(&loaded);
     let trees = Composer::new(&flat).compose_all().expect("composes");
-    let (out, _) = export(&node(&trees, "adopted-wb")).expect("exports");
+    let (out, _) = export(&node(&trees, "adopted-wb"), std::path::Path::new("")).expect("exports");
     let total = out.sheet(0).unwrap().value(CellRef::parse("B6").unwrap());
     assert_eq!(total, GValue::number(1378750.0));
 }
@@ -337,7 +337,7 @@ fn comments_merges_panes_and_names_added_in_excel_come_back() {
 
     // And they export again.
     let trees = compose(&[layer]);
-    let (out, report) = export(&node(&trees, WORKBOOK)).expect("exports");
+    let (out, report) = export(&node(&trees, WORKBOOK), std::path::Path::new("")).expect("exports");
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     let sh = &out.sheets[0];
     assert_eq!(sh.comments[&CellRef::parse("B2").unwrap()].text, "Check this");
@@ -370,6 +370,10 @@ fn real_fixture(name: &str) -> Workbook {
 #[ignore = "about 2.5 min in a debug build (GridCraft recalculates 26k formulas); run.sh step 18 runs it"]
 fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
     let node = finance_node();
+    // The two floating pictures on its first sheet come in by hash.
+    let pics: Vec<&serde_json::Value> = node.children.iter().filter_map(|c| c.attributes.get("grid::sheet")?.get("pictures")).flat_map(|p| p.as_array().into_iter().flatten()).collect();
+    assert_eq!(pics.len(), 2, "{pics:?}");
+    assert!(pics.iter().all(|p| p["blob"].as_str().unwrap().starts_with("sha256-")));
     // LibreOffice 24.2: recalculated digits, its own row heights, borders, styles, comment authors,
     // header/footer codes… all its rewrites. It drops the structure lock: kept, with a warning.
     let mut lo = real_fixture("finance.libreoffice-resaved.xlsx");
@@ -387,4 +391,38 @@ fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
     assert_eq!(gs["name"], "Output");
     assert_eq!(gs["print"]["margins"][0], json!(1.0));
     assert_eq!(gs["defaults"]["colWidth"], json!(90.0), "12 characters");
+}
+
+#[test]
+fn sheet_pictures_come_back_and_a_swapped_one_is_a_change() {
+    use gridcraft_model::{Anchor, AnchorMode, Image, Sheet};
+    let mut sh = Sheet::new("S");
+    let anchor = Anchor { cell: CellRef::new(1, 1), dx: 2.0, dy: 3.0, width: 40.0, height: 30.0, mode: AnchorMode::MoveOnly };
+    sh.images.push(Image { id: 1, anchor, data: b"picture bytes".to_vec(), mime: "image/png".into(), alt: "logo".into() });
+    let mut pics = crate::Pictures::new();
+    let look = crate::look::sheet_look(&sh, &mut pics);
+    let blob = look["pictures"][0]["blob"].as_str().unwrap().to_string();
+    assert_eq!(pics[&blob].1, b"picture bytes");
+    assert_eq!(look["pictures"][0]["at"], json!("B2"));
+
+    // The importer's comparison export has no files: a stand-in reads back as the same value.
+    let mut back = Sheet::new("S");
+    crate::look::apply_look(&mut back, &look, "S", &mut vec![], None).unwrap();
+    let mut stand_in = crate::Pictures::new();
+    assert_eq!(crate::look::sheet_look(&back, &mut stand_in)["pictures"], look["pictures"]);
+    assert!(stand_in.is_empty(), "a stand-in isn't a picture to store");
+
+    // An editor nudging it by half a point is no change; a different picture is.
+    let mut nudged = look.clone();
+    nudged["pictures"][0]["dx"] = json!(2.5);
+    crate::look::settle(&mut nudged, &look, false);
+    assert_eq!(nudged["pictures"], look["pictures"]);
+    let mut swapped = look.clone();
+    swapped["pictures"][0]["blob"] = json!(ox_core::integrity_of(b"another"));
+    crate::look::settle(&mut swapped, &look, false);
+    assert_ne!(swapped["pictures"], look["pictures"]);
+
+    // An export without the picture's bytes stops, naming it.
+    let err = crate::look::apply_look(&mut Sheet::new("S"), &look, "S", &mut vec![], Some(std::path::Path::new("/nonexistent"))).unwrap_err();
+    assert!(err.to_string().contains(&blob), "{err}");
 }

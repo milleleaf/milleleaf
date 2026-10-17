@@ -52,7 +52,7 @@ fn header() -> Header {
 
 /// Exports the report, writes DOCX, reads it back (as Word would hand it over).
 fn round_trip_docx(node: &Composed, layers: &[String]) -> Document {
-    let (doc, report) = export(node, layers).expect("exports");
+    let (doc, report) = export(node, layers, std::path::Path::new("")).expect("exports");
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     from_docx(&to_docx(&doc).expect("writes docx")).expect("reads docx")
 }
@@ -424,7 +424,7 @@ fn adopt_and_export(doc: &Document) -> Document {
     loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
     let flat = ox_core::compose::flatten(&loaded);
     let trees = Composer::new(&flat).compose_all().expect("composes");
-    let (out, report) = export(find(&trees, "adopted").expect("document"), &[]).expect("exports");
+    let (out, report) = export(find(&trees, "adopted").expect("document"), &[], std::path::Path::new("")).expect("exports");
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     from_docx(&to_docx(&out).unwrap()).unwrap()
 }
@@ -488,7 +488,7 @@ fn adopt_carries_lists_merged_cells_and_a_plain_first_row() {
     let flat = ox_core::compose::flatten(&loaded);
     let trees = Composer::new(&flat).compose_all().expect("composes");
     let node = find(&trees, "adopted").expect("document");
-    let (out, report) = export(node, &[]).expect("exports");
+    let (out, report) = export(node, &[], std::path::Path::new("")).expect("exports");
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     let out = from_docx(&to_docx(&out).unwrap()).unwrap();
 
@@ -574,4 +574,61 @@ fn a_blank_line_typed_in_word_comes_back_and_word_resaves_stay_clean() {
     let (_, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
     assert_eq!((report.added.len(), report.removed.len()), (0, 0), "{report:?}");
     assert!(report.matches.iter().any(|m| m.by == "an empty paragraph in the same place"), "{:?}", report.matches);
+}
+
+#[test]
+fn the_report_logo_comes_in_and_a_swapped_one_is_a_change() {
+    let node = board_report_node();
+    let logo = |v: &serde_json::Value| -> Option<serde_json::Value> {
+        v["headers"].as_object()?.values().flat_map(|ps| ps.as_array().cloned().unwrap_or_default())
+            .flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default())
+            .find_map(|r| r.get("picture").cloned())
+    };
+    // Ofsted's logo floats in the first page's header, in front of the text.
+    let pic = logo(&node.attributes["word::document"]).expect("the header logo");
+    assert_eq!(pic["float"]["wrap"], json!("inFrontOfText"), "{pic}");
+    assert!(pic["blob"].as_str().unwrap().starts_with("sha256-"));
+
+    // LibreOffice's re-save keeps it.
+    let (layer, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
+    let doc_changed = layer.data.iter().find(|n| n.path == node.path).and_then(|n| logo(&n.attributes["word::document"]));
+    assert!(doc_changed.is_none(), "LibreOffice changed the logo: {doc_changed:?} {:?}", report.warnings);
+
+    // Someone swaps the picture in Word.
+    let mut doc = real_fixture("board-report.msoffice-resaved.docx");
+    let swapped = b"\xff\xd8\xffnot really a jpeg".to_vec();
+    let key = doc.media.keys().next().expect("a picture").clone();
+    doc.media.insert(key, Arc::new(swapped.clone()));
+    let (layer, report) = import(&node, &doc, header()).expect("imports");
+    assert_eq!(report.changed, vec![node.path.clone()], "{:?}", report.warnings);
+    let now = logo(&layer.data[0].attributes["word::document"]).expect("the new logo");
+    let blob = ox_core::integrity_of(&swapped);
+    assert_eq!(now["blob"], json!(blob));
+    assert_eq!(report.pictures[&blob].1, swapped);
+}
+
+#[test]
+fn a_resave_is_no_change_against_a_node_from_the_store() {
+    // The store keeps layers as canonical JSON (RFC 8785), which writes 12.0 as 12: numbers
+    // must compare by value, or every paragraph with a spacing would come back changed.
+    fn as_stored(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Number(n) => {
+                if let Some(f) = n.as_f64().filter(|f| n.is_f64() && f.fract() == 0.0 && f.abs() < 9e15) {
+                    *v = json!(f as i64);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(as_stored),
+            serde_json::Value::Object(m) => m.values_mut().for_each(as_stored),
+            _ => {}
+        }
+    }
+    fn node_as_stored(n: &mut Composed) {
+        n.attributes.values_mut().for_each(as_stored);
+        n.children.iter_mut().for_each(node_as_stored);
+    }
+    let mut node = board_report_node();
+    node_as_stored(&mut node);
+    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
+    assert!(report.is_empty() && layer.data.is_empty(), "{:?}", report.changed);
 }

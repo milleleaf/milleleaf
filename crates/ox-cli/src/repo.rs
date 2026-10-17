@@ -113,13 +113,7 @@ pub fn place_pictures(
         if !named.contains(blob.as_str()) || root.join(ox_core::BLOB_DIR).join(hex).exists() {
             continue;
         }
-        let ext = match media_type.as_str() {
-            "image/jpeg" => "jpg",
-            "image/svg+xml" => "svg",
-            "image/x-emf" | "image/emf" => "emf",
-            "image/x-wmf" | "image/wmf" => "wmf",
-            t => t.strip_prefix("image/").unwrap_or("bin"),
-        };
+        let ext = ox_core::ext_for(media_type);
         let rel = format!("{dir}/{hex}.{ext}");
         let p = out.parent().unwrap_or(Path::new("")).join(&rel);
         std::fs::create_dir_all(p.parent().unwrap_or(Path::new(""))).map_err(e)?;

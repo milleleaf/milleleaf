@@ -123,14 +123,36 @@ fn style_id(doc: &Document, name: &str) -> Option<String> {
         .map(|s| s.id.clone())
 }
 
+/// Where pictures' bytes come from, and the document media they become.
+struct Pics<'a> {
+    /// The project (or stack) folder blobs are read from; `None` writes a stand-in carrying the
+    /// blob value (the importer's comparison export, which has no files).
+    assets: Option<&'a std::path::Path>,
+    media: std::collections::BTreeMap<String, Arc<Vec<u8>>>,
+}
+
+impl Pics<'_> {
+    /// The media key for a picture's blob, its bytes read once.
+    fn key(&mut self, blob: &str, media_type: &str, at: &str) -> Result<String, WordError> {
+        // One media part per blob value; the name only has to be unique in the file.
+        let key = format!("image-{}.{}", &ox_core::integrity_of(blob.as_bytes())[7..19], ox_core::ext_for(media_type));
+        if !self.media.contains_key(&key) {
+            let bytes = ox_core::picture_bytes(self.assets, blob).map_err(|e| WordError::MissingAsset(format!("{at}: can't read {blob}: {e}")))?;
+            self.media.insert(key.clone(), Arc::new(bytes));
+        }
+        Ok(key)
+    }
+}
+
 fn paragraph_block(
     doc: &Document,
     node: &Composed,
     lists: &HashMap<String, u32>,
+    pics: &mut Pics,
     report: &mut ExportReport,
 ) -> Result<Paragraph, WordError> {
     let wp = obj(node, "word::paragraph").cloned().unwrap_or_default();
-    let p = para_from(doc, &wp, Some(node), &node.path, lists, report)?;
+    let p = para_from(doc, &wp, Some(node), &node.path, lists, pics, report)?;
     report.paragraphs += 1;
     Ok(p)
 }
@@ -143,6 +165,7 @@ fn para_from(
     node: Option<&Composed>,
     at: &str,
     lists: &HashMap<String, u32>,
+    pics: &mut Pics,
     report: &mut ExportReport,
 ) -> Result<Paragraph, WordError> {
     let style_name = wp.get("style").and_then(Value::as_str).unwrap_or("Normal");
@@ -189,6 +212,33 @@ fn para_from(
         .flatten()
     {
         let Some(r) = run.as_object() else { continue };
+        if let Some(pic) = r.get("picture").and_then(Value::as_object) {
+            let blob = pic.get("blob").and_then(Value::as_str).unwrap_or("");
+            let media_type = pic.get("mediaType").and_then(Value::as_str).unwrap_or_else(|| ox_core::media_type_for(blob));
+            let n = |k: &str| pic.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            let mut crop = [0.0f32; 4];
+            for (i, c) in pic.get("crop").and_then(Value::as_array).into_iter().flatten().take(4).enumerate() {
+                crop[i] = c.as_f64().unwrap_or(0.0) as f32;
+            }
+            let float = match pic.get("float") {
+                Some(f) => serde_json::from_value(f.clone()).unwrap_or_else(|e| {
+                    report.warnings.push(format!("{at}: a picture's placement can't be read ({e}); placed inline"));
+                    Default::default()
+                }),
+                None => Default::default(),
+            };
+            let image = InlineObject::Image {
+                media: pics.key(blob, media_type, at)?,
+                w: n("w"),
+                h: n("h"),
+                alt: pic.get("alt").and_then(Value::as_str).unwrap_or("").to_string(),
+                float,
+                crop,
+                ole: None,
+            };
+            push_obj(&mut p, image)?;
+            continue;
+        }
         let props = char_props(r);
         let text = r.get("text").and_then(Value::as_str).unwrap_or("");
         if let Some(instr) = r.get("docField").and_then(Value::as_str) {
@@ -462,7 +512,14 @@ fn table_block(
 ///
 /// `layers` are the ids of the stack's layers (bottom first), recorded in the file so an import
 /// can say what the export was based on.
-pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportReport), WordError> {
+/// `assets` is the folder pictures' blobs are read from: the project (or stack) folder.
+pub fn export(node: &Composed, layers: &[String], assets: &std::path::Path) -> Result<(Document, ExportReport), WordError> {
+    export_with(node, layers, Some(assets))
+}
+
+/// The export, or (`assets` `None`) the importer's comparison export, with stand-ins for pictures.
+pub(crate) fn export_with(node: &Composed, layers: &[String], assets: Option<&std::path::Path>) -> Result<(Document, ExportReport), WordError> {
+    let mut pics = Pics { assets, media: Default::default() };
     let wd = obj(node, "word::document")
         .ok_or_else(|| WordError::NotADocument(node.path.clone()))?
         .clone();
@@ -518,7 +575,7 @@ pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportRep
         for (which, paras) in set {
             let mut blocks = Vec::new();
             for wp in paras.as_array().into_iter().flatten().filter_map(Value::as_object) {
-                blocks.push(para_block(para_from(&doc, wp, None, &format!("{key}.{which}"), &lists, &mut report)?));
+                blocks.push(para_block(para_from(&doc, wp, None, &format!("{key}.{which}"), &lists, &mut pics, &mut report)?));
             }
             let id = doc.add_part(kind, blocks);
             let hs = match kind {
@@ -546,7 +603,7 @@ pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportRep
     doc.settings.even_odd_headers = wd.get("evenOddHeaders").and_then(Value::as_bool) == Some(true);
     for child in &node.children {
         if child.attributes.contains_key("word::paragraph") {
-            let p = paragraph_block(&doc, child, &lists, &mut report)?;
+            let p = paragraph_block(&doc, child, &lists, &mut pics, &mut report)?;
             doc.body.push(para_block(p));
         } else if child.attributes.contains_key("office::data::table") {
             for b in table_block(&doc, child, text_width, &mut report)? {
@@ -575,5 +632,6 @@ pub fn export(node: &Composed, layers: &[String]) -> Result<(Document, ExportRep
         .push(prop(PROP_REVISION, revision_of(node)));
     doc.custom_props.push(prop(PROP_LAYERS, layers.join(" ")));
     doc.balance_controls();
+    doc.media.extend(pics.media);
     Ok((doc, report))
 }

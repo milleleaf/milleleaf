@@ -103,6 +103,28 @@ pub fn read_blob(root: &Path, blob: &str) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// What an importer's comparison export writes in place of a picture's bytes (it has no files):
+/// these bytes and the blob value, so reading the export back gives the same value
+/// ([`blob_of`]).
+pub const STAND_IN: &[u8] = b"ox-stand-in:";
+
+/// A picture's blob value: the hash of its bytes, or the value a [`STAND_IN`] carries.
+pub fn blob_of(bytes: &[u8]) -> String {
+    match bytes.strip_prefix(STAND_IN) {
+        Some(b) => String::from_utf8_lossy(b).into_owned(),
+        None => integrity_of(bytes),
+    }
+}
+
+/// A picture's bytes for an export: read from `assets` (see [`read_blob`]), or with no
+/// `assets` a [`STAND_IN`].
+pub fn picture_bytes(assets: Option<&Path>, blob: &str) -> std::io::Result<Vec<u8>> {
+    match assets {
+        Some(root) => read_blob(root, blob),
+        None => Ok([STAND_IN, blob.as_bytes()].concat()),
+    }
+}
+
 /// A media type from a file name's extension (pictures and vectors).
 pub fn media_type_for(name: &str) -> &'static str {
     match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
@@ -110,6 +132,33 @@ pub fn media_type_for(name: &str) -> &'static str {
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
         "webp" => "image/webp",
+        "emf" => "image/x-emf",
+        "wmf" => "image/x-wmf",
+        "tif" | "tiff" => "image/tiff",
+        "bmp" => "image/bmp",
         _ => "image/png",
+    }
+}
+
+/// JSON equality with numbers compared by value: a stored layer is canonical JSON (RFC 8785),
+/// which writes `12.0` as `12`, and `serde_json` holds those as different numbers.
+pub fn same(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x == y || x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| same(a, b)),
+        (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))),
+        _ => a == b,
+    }
+}
+
+/// A file extension for a picture's media type (the reverse of [`media_type_for`]).
+pub fn ext_for(media_type: &str) -> &str {
+    match media_type {
+        "image/jpeg" => "jpg",
+        "image/svg+xml" => "svg",
+        "image/x-emf" | "image/emf" => "emf",
+        "image/x-wmf" | "image/wmf" => "wmf",
+        t => t.strip_prefix("image/").unwrap_or("bin"),
     }
 }

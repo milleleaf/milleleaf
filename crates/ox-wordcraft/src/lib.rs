@@ -42,6 +42,8 @@ pub enum WordError {
     WrongDocument { expected: String, found: String },
     #[error("this file has no {PROP_DOCUMENT} property; it wasn't exported by Milleleaf")]
     NotExported,
+    #[error("missing asset: {0}")]
+    MissingAsset(String),
 }
 
 /// Revision id of a composed node: a hash of its JSON, so an import can tell whether the stack

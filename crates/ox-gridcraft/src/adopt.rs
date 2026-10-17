@@ -2,7 +2,7 @@
 //! `grid::sheet` node and each non-empty cell an `office::data::value` at its `grid::range`, with
 //! its `grid::formula`. Number formats become `currency` / `percent` / `number`. Merged cells,
 //! frozen panes, comments, validation, row and column sizes, cell styles and the file's own names
-//! are carried (`crate::look`); charts and pictures aren't yet, and the report lists what the file had.
+//! and floating pictures are carried (`crate::look`); charts aren't yet, and the report lists what the file had.
 
 use std::collections::BTreeMap;
 
@@ -22,6 +22,10 @@ pub struct AdoptReport {
     pub formulas: usize,
     /// What the file had that the adopted layer doesn't carry.
     pub warnings: Vec<String>,
+    /// The bytes of every picture the layer names, by blob value, with their media type: the
+    /// caller stores the ones its project doesn't have yet.
+    #[serde(skip)]
+    pub pictures: crate::Pictures,
 }
 
 fn format_of(fmt: &str) -> Option<&'static str> {
@@ -85,7 +89,7 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
             nodes.push(Node { path: cell_path, attributes, ..Node::default() });
         }
         let mut gs = Map::from_iter([("name".to_string(), json!(sh.name))]);
-        gs.extend(crate::look::sheet_look(sh));
+        gs.extend(crate::look::sheet_look(sh, &mut report.pictures));
         if let Some(m) = style_maps.get(si).filter(|m| !m.is_empty()) {
             gs.insert("cellStyles".into(), Value::Object(m.clone()));
         }

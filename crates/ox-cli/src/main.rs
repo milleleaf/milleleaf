@@ -178,12 +178,13 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 kind: Some("adopt".into()),
                 ..Default::default()
             };
-            let mut pictures = Default::default();
+            let pictures: ox_gridcraft::Pictures;
             let (mut layer, warnings, summary) = match ext.as_str() {
                 "docx" => {
                     let doc = ox_wordcraft::from_docx(&bytes).map_err(|e| e.to_string())?;
                     let (l, r) = ox_wordcraft::adopt(&doc, &root, stem, header).map_err(|e| e.to_string())?;
                     let n = r.added.len();
+                    pictures = r.pictures;
                     (l, r.warnings, format!("{n} paragraphs and tables"))
                 }
                 "pptx" => {
@@ -196,6 +197,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 "xlsx" => {
                     let wb = ox_gridcraft::from_xlsx(&bytes).map_err(|e| e.to_string())?;
                     let (l, r) = ox_gridcraft::adopt(&wb, &root, stem, header).map_err(|e| e.to_string())?;
+                    pictures = r.pictures;
                     let summary = format!("{} sheets, {} cells, {} formulas", r.sheets, r.cells, r.formulas);
                     (l, r.warnings, summary)
                 }
@@ -337,7 +339,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let node = find(&trees, path)
                 .ok_or_else(|| format!("`{path}` is not in the composed tree"))?;
             let (doc, report) =
-                ox_wordcraft::export(node, &flat.layers).map_err(|e| e.to_string())?;
+                ox_wordcraft::export(node, &flat.layers, &asset_root(&file)).map_err(|e| e.to_string())?;
             let bytes = ox_wordcraft::to_docx(&doc).map_err(|e| e.to_string())?;
             let bytes = to_target(ox_formats::Kind::Document, bytes, &out)?;
             fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -390,14 +392,15 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 base,
                 ..Default::default()
             };
-            let (layer, report) =
+            let (mut layer, report) =
                 ox_wordcraft::import(&node, &doc, header).map_err(|e| e.to_string())?;
+            place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
             for w in collapse(&report.warnings) {
                 eprintln!("warning: {w}");
             }
-            let base = ox_wordcraft::export(&node, &[]).ok().and_then(|(d, _)| ox_wordcraft::to_docx(&d).ok());
+            let base = ox_wordcraft::export(&node, &[], &asset_root(&file)).ok().and_then(|(d, _)| ox_wordcraft::to_docx(&d).ok());
             show_matches(&report.matches, &report, &file_losses(&bytes, base), args)?;
             for c in &report.conflicts {
                 eprintln!("conflict: {}: {}", c.path, c.message);
@@ -423,7 +426,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 .map_err(|e| e.to_string())?;
             let node = find(&trees, path)
                 .ok_or_else(|| format!("`{path}` is not in the composed tree"))?;
-            let (wb, report) = ox_gridcraft::export(node).map_err(|e| e.to_string())?;
+            let (wb, report) = ox_gridcraft::export(node, &asset_root(&file)).map_err(|e| e.to_string())?;
             let bytes = ox_gridcraft::to_xlsx(&wb).map_err(|e| e.to_string())?;
             let bytes = to_target(ox_formats::Kind::Workbook, bytes, &out)?;
             fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -483,8 +486,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ..Default::default()
             };
             let saved_by = ox_formats::saved_by(&bytes);
-            let (layer, report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref())
+            let (mut layer, report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref())
                 .map_err(|e| e.to_string())?;
+            place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
             for w in collapse(&report.warnings) {
@@ -493,7 +497,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             for p in &report.missing {
                 eprintln!("warning: {p}: its named range is gone from the file; left unchanged");
             }
-            let base = ox_gridcraft::export(&node).ok().and_then(|(w, _)| ox_gridcraft::to_xlsx(&w).ok());
+            let base = ox_gridcraft::export(&node, &asset_root(&file)).ok().and_then(|(w, _)| ox_gridcraft::to_xlsx(&w).ok());
             show_matches(&report.matches, &report, &file_losses(&bytes, base), args)?;
             for p in &report.conflicts {
                 eprintln!("conflict: {p}: linked data edited in the workbook; not written back");
