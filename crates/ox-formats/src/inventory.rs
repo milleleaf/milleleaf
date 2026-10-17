@@ -948,7 +948,7 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("cells with a number format", None),
             ("media files", Some("floating pictures are kept; pictures inside cells and other media aren't")),
             ("drawings", Some("floating pictures and charts are kept; shapes aren't")),
-            ("charts", Some("kind, series and the cells they read, title, legend, axis titles, gridlines, data labels on or off, trendlines and series colours are kept (theme colours become fixed RGB); fonts and text formatting, per-point colours, axis scales, manual layout, line dashes and label positions are GridCraft's defaults")),
+            ("charts", Some("a chart keeps its own XML, so all its formatting, while unchanged, when an editor changed it, or when its title, data cells or legend position changed; a change to its kind, series count, colours, labels, gridlines, axis titles or trendlines makes GridCraft redraw it, keeping kind, series and their cells, title, legend, axis titles, gridlines, data labels on or off, trendlines and series colours, while fonts, per-point colours, axis scales, manual layout, line dashes and label positions become its defaults (the export names each one); a chart with shapes on it or an embedded workbook is always redrawn; Excel's chart-style gallery parts aren't kept")),
         ],
         "pptx" => &[
             ("slides", None),

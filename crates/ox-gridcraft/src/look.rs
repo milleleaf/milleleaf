@@ -16,7 +16,7 @@
 //! - `pictures`: `[{blob, mediaType, alt?, at: "B2", dx, dy, w, h, mode?}]`, floating pictures
 //!   (offsets and size in points; `mode` GridCraft's `AnchorMode` when not move-and-size)
 //! - `charts`: `[<GridCraft Chart>]`; their series point at cells (`'Sheet 1'!$B$2:$B$9`), so a
-//!   chart follows its data
+//!   chart follows its data. An adopted chart also has `xml: {blob, was}`, its own XML (`crate::kept`)
 //!
 //! GridCraft's own types are kept as data (its serde form) where they carry many options.
 

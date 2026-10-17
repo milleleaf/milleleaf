@@ -20,6 +20,9 @@ pub struct ExportReport {
     /// is stale until the import of this workbook writes the recomputed value back.
     pub stale_values: Vec<(String, f64, f64)>,
     pub warnings: Vec<String>,
+    /// Each chart's kept XML, in sheet order, when the chart is unchanged since its XML was kept:
+    /// pass it to [`crate::with_kept_charts`] with the written XLSX.
+    pub kept_charts: Vec<Option<Vec<u8>>>,
 }
 
 fn obj<'a>(n: &'a Composed, key: &str) -> Option<&'a Map<String, Value>> {
@@ -269,6 +272,14 @@ pub(crate) fn export_with(node: &Composed, assets: ox_core::PictureSource) -> Re
         }
         if let Some(sh) = wb.sheet_mut(si) {
             crate::look::apply_look(sh, gs, &sheet_node.path, &mut report.warnings, assets)?;
+        }
+        // The same charts apply_look placed, in its order.
+        let charts = gs.get("charts").and_then(Value::as_array).into_iter().flatten();
+        for (i, c) in charts.enumerate() {
+            if let Ok(ch) = serde_json::from_value::<gridcraft_model::Chart>(c.clone()) {
+                let kept = crate::kept::original(c, &ch, assets, &sheet_node.path, i + 1, &mut report.warnings);
+                report.kept_charts.push(kept);
+            }
         }
         crate::look::apply_cell_styles(&mut wb, si, gs.get("cellStyles"), &cell_styles, &sheet_node.path, &mut report.warnings);
         // A sheet whose sizes the model gives (an adopted workbook) keeps them: no auto-fit.

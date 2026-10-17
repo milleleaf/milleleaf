@@ -16,9 +16,11 @@
 mod adopt;
 mod export;
 mod import;
+mod kept;
 mod look;
 
-pub use adopt::{AdoptReport, adopt};
+pub use adopt::{AdoptReport, adopt, adopt_xlsx};
+pub use kept::{keep_charts, with_kept_charts};
 pub use export::{ExportReport, export};
 pub use look::Pictures;
 pub use import::{ImportReport, exported_revision, import, import_saved_by};

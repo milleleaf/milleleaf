@@ -195,8 +195,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                     (l, r.warnings, format!("{n} slides and frames"))
                 }
                 "xlsx" => {
-                    let wb = ox_gridcraft::from_xlsx(&bytes).map_err(|e| e.to_string())?;
-                    let (l, r) = ox_gridcraft::adopt(&wb, &root, stem, header).map_err(|e| e.to_string())?;
+                    let (l, r) = ox_gridcraft::adopt_xlsx(&bytes, &root, stem, header).map_err(|e| e.to_string())?;
                     pictures = r.pictures;
                     let summary = format!("{} sheets, {} cells, {} formulas", r.sheets, r.cells, r.formulas);
                     (l, r.warnings, summary)
@@ -427,7 +426,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let node = find(&trees, path)
                 .ok_or_else(|| format!("`{path}` is not in the composed tree"))?;
             let (wb, report) = ox_gridcraft::export(node, &asset_root(&file)).map_err(|e| e.to_string())?;
-            let bytes = ox_gridcraft::to_xlsx(&wb).map_err(|e| e.to_string())?;
+            let bytes = ox_gridcraft::to_xlsx(&wb).and_then(|b| ox_gridcraft::with_kept_charts(b, &report.kept_charts)).map_err(|e| e.to_string())?;
             let bytes = to_target(ox_formats::Kind::Workbook, bytes, &out)?;
             fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
             for w in collapse(&report.warnings) {
@@ -486,8 +485,10 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ..Default::default()
             };
             let saved_by = ox_formats::saved_by(&bytes);
-            let (mut layer, report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref(), Some(&asset_root(&file)))
+            let (mut layer, mut report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref(), Some(&asset_root(&file)))
                 .map_err(|e| e.to_string())?;
+            // Charts the editor changed keep the editor's own XML (its formatting) too.
+            ox_gridcraft::keep_charts(&mut layer, &bytes, &mut report.pictures, &mut report.warnings);
             place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
@@ -497,7 +498,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             for p in &report.missing {
                 eprintln!("warning: {p}: its named range is gone from the file; left unchanged");
             }
-            let base = ox_gridcraft::export(&node, &asset_root(&file)).ok().and_then(|(w, _)| ox_gridcraft::to_xlsx(&w).ok());
+            let base = ox_gridcraft::export(&node, &asset_root(&file))
+                .ok()
+                .and_then(|(w, r)| ox_gridcraft::to_xlsx(&w).and_then(|b| ox_gridcraft::with_kept_charts(b, &r.kept_charts)).ok());
             show_matches(&report.matches, &report, &file_losses(&bytes, base), args)?;
             for p in &report.conflicts {
                 eprintln!("conflict: {p}: linked data edited in the workbook; not written back");

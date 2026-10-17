@@ -207,6 +207,7 @@ pub fn ext_for(media_type: &str) -> &str {
         "image/svg+xml" => "svg",
         "image/x-emf" | "image/emf" => "emf",
         "image/x-wmf" | "image/wmf" => "wmf",
+        t if t.ends_with("+xml") => "xml",
         t => t.strip_prefix("image/").unwrap_or("bin"),
     }
 }

@@ -282,6 +282,17 @@ pub fn import_saved_by(
                 && crate::look::same_charts(n, w, &wb.theme, libreoffice)
             {
                 now.insert("charts".into(), w.clone());
+            } else if let (Some(Value::Array(n)), Some(Value::Array(w)), Some(Value::Array(old))) = (now.get_mut("charts"), was.get("charts"), old_gs.get("charts"))
+                && n.len() == w.len()
+                && n.len() == old.len()
+            {
+                // Some charts changed: the unchanged ones stay as the model has them (with their own
+                // XML); the changed ones come back as the editor saved them.
+                for i in 0..n.len() {
+                    if crate::look::same_charts(&json!([n[i]]), &json!([w[i]]), &wb.theme, libreoffice) {
+                        n[i] = old[i].clone();
+                    }
+                }
             }
             let mut looked = false;
             for k in crate::look::KEYS {

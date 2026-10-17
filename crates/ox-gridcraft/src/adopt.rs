@@ -130,3 +130,12 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
     }
     Ok((Layer { header, imports: vec![], schemas: Default::default(), data: nodes }, report))
 }
+
+/// [`adopt`] from the file's bytes, also keeping each chart's own XML (see `crate::kept`), so an
+/// unchanged chart exports with its formatting.
+pub fn adopt_xlsx(bytes: &[u8], path: &str, name: &str, header: Header) -> Result<(Layer, AdoptReport), GridError> {
+    let wb = crate::from_xlsx(bytes)?;
+    let (mut layer, mut report) = adopt(&wb, path, name, header)?;
+    crate::kept::keep_charts(&mut layer, bytes, &mut report.pictures, &mut report.warnings);
+    Ok((layer, report))
+}

@@ -485,3 +485,110 @@ fn sheet_charts_come_back_through_xlsx_and_an_edited_one_is_a_change() {
     moved["charts"][0]["series"][0]["values"] = json!("Data!$C$2:$C$4");
     assert!(!crate::look::same_charts(&moved["charts"], &look["charts"], &back.theme, false));
 }
+
+fn xlsx_part(bytes: &[u8], name: &str) -> String {
+    use std::io::Read;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut s = String::new();
+    z.by_name(name).unwrap().read_to_string(&mut s).unwrap();
+    s
+}
+
+#[test]
+fn an_unchanged_chart_exports_its_own_xml_and_a_changed_one_gridcrafts() {
+    use gridcraft_model::{Anchor, AnchorMode, Chart, ChartKind, LegendPos, Series};
+    use std::io::Write;
+    let mut wb = Workbook::new();
+    let sh = wb.sheet_mut(0).unwrap();
+    sh.name = "Data".into();
+    for (r, v) in [3.0, 5.0, 4.0].iter().enumerate() {
+        sh.set_value(CellRef::new(r as u32 + 1, 1), GValue::number(*v));
+    }
+    sh.charts.push(Chart {
+        id: 1,
+        kind: ChartKind::ColumnClustered,
+        anchor: Anchor { cell: CellRef::new(5, 1), dx: 0.0, dy: 0.0, width: 300.0, height: 200.0, mode: AnchorMode::MoveAndSize },
+        title: Some("Totals".into()),
+        series: vec![Series { values: "Data!$B$2:$B$4".into(), ..Series::default() }],
+        legend: LegendPos::Bottom,
+        data_labels: false,
+        gridlines: true,
+        style: 2,
+        x_title: None,
+        y_title: None,
+        source: None,
+        by_rows: false,
+        pivot: None,
+    });
+    // The file's chart carries formatting GridCraft doesn't model: 14 pt text.
+    const MARK: &str = r#"<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>"#;
+    let plain = to_xlsx(&wb).unwrap();
+    let chart = xlsx_part(&plain, "xl/charts/chart1.xml");
+    let marked = chart.replacen("</c:chartSpace>", &format!("{MARK}</c:chartSpace>"), 1);
+    assert_ne!(marked, chart);
+    let file = {
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(plain.as_slice())).unwrap();
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for i in 0..z.len() {
+            let f = z.by_index(i).unwrap();
+            if f.name() == "xl/charts/chart1.xml" {
+                w.start_file(f.name(), zip::write::SimpleFileOptions::default()).unwrap();
+                w.write_all(marked.as_bytes()).unwrap();
+            } else {
+                w.raw_copy_file(f).unwrap();
+            }
+        }
+        w.finish().unwrap().into_inner()
+    };
+
+    // Adopted: the chart's own XML is kept as a blob, stored where an export reads it.
+    let (layer, report) = crate::adopt_xlsx(&file, "adopted-chart", "charts", header()).expect("adopts");
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let root = std::env::temp_dir().join(format!("ox-kept-{}", std::process::id()));
+    let blobs = root.join(ox_core::BLOB_DIR);
+    std::fs::create_dir_all(&blobs).unwrap();
+    for (blob, (_, bytes)) in &report.pictures {
+        std::fs::write(blobs.join(blob.trim_start_matches("sha256-")), bytes).unwrap();
+    }
+    let export_xlsx = |layer: &Layer| {
+        let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+        loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer: layer.clone() });
+        let trees = Composer::new(&ox_core::compose::flatten(&loaded)).compose_all().expect("composes");
+        let (out, r) = export(&node(&trees, "adopted-chart"), &root).expect("exports");
+        let bytes = crate::with_kept_charts(to_xlsx(&out).unwrap(), &r.kept_charts).unwrap();
+        (xlsx_part(&bytes, "xl/charts/chart1.xml"), r.warnings)
+    };
+    let (xml, warnings) = export_xlsx(&layer);
+    assert_eq!(xml, marked, "an unchanged chart is its own XML, byte for byte");
+    assert!(warnings.is_empty(), "{warnings:?}");
+
+    let edit = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut l = layer.clone();
+        let gs = l.data.iter_mut().find_map(|n| n.attributes.get_mut("grid::sheet")).unwrap();
+        f(&mut gs["charts"][0]);
+        l
+    };
+    // Moved and resized: the drawing holds the place, so the chart keeps its XML.
+    let (xml, _) = export_xlsx(&edit(&|c| {
+        c["anchor"]["cell"]["row"] = json!(9);
+        c["anchor"]["width"] = json!(400.0);
+    }));
+    assert_eq!(xml, marked);
+    // Retitled, and its data moved: the changes are made in its own XML, formatting kept.
+    let (xml, warnings) = export_xlsx(&edit(&|c| {
+        c["title"] = json!("New title");
+        c["series"][0]["values"] = json!("Data!$B$3:$B$5");
+        c["legend"] = json!("Right");
+    }));
+    assert!(xml.contains(MARK) && xml.contains(">New title<") && !xml.contains(">Totals<"), "{xml}");
+    assert!(xml.contains("<c:f>Data!$B$3:$B$5</c:f>") && xml.contains(r#"<c:legendPos val="r"/>"#), "{xml}");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    // Its title removed: gone from its XML too.
+    let (xml, _) = export_xlsx(&edit(&|c| c["title"] = json!(null)));
+    assert!(xml.contains(MARK) && !xml.contains("Totals") && !xml.contains("<c:title>"), "{xml}");
+    // A new kind: GridCraft redraws it, and the export says what is lost.
+    let (xml, warnings) = export_xlsx(&edit(&|c| c["kind"] = json!("Line")));
+    assert!(!xml.contains(MARK) && xml.contains("lineChart"));
+    assert!(warnings.iter().any(|w| w.contains("chart 1 was changed")), "{warnings:?}");
+    std::fs::remove_dir_all(&root).ok();
+}

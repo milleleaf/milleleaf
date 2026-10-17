@@ -1650,10 +1650,12 @@ dependencies = [
  "gridcraft-model",
  "gridcraft-xlsx",
  "ox-core",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror",
+ "zip",
 ]
 
 [[package]]
