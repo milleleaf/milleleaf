@@ -117,6 +117,7 @@ fn inventory_counts_real_files_and_lists_losses() {
         assert!(!l.contains(&carried), "{carried}: {l:?}");
     }
     assert!(l.contains(&"charts") && l.contains(&"conditional formats"), "{l:?}");
+    assert!(losses(k, &c, None).iter().any(|l| l.feature == "charts" && l.carried == "partly carried"), "the charts come in, their fine formatting doesn't");
 
     let (k, c) = inventory(&real("briefing.pptx")).unwrap();
     assert_eq!((c["slides"], c["shapes (sp)"], c["shapes without text"], c["notes slide-number fields"]), (28, 59, 1, 28));

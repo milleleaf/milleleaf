@@ -278,6 +278,11 @@ pub fn import_saved_by(
                 .unwrap_or_default();
             let mut now = now;
             crate::look::settle(&mut now, &was, libreoffice);
+            if let (Some(n), Some(w)) = (now.get("charts"), was.get("charts"))
+                && crate::look::same_charts(n, w, &wb.theme, libreoffice)
+            {
+                now.insert("charts".into(), w.clone());
+            }
             let mut looked = false;
             for k in crate::look::KEYS {
                 if k == "cols" {

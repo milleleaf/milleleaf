@@ -152,6 +152,10 @@
             "activeSheet": {
               "dataType": "Integer",
               "optional": true
+            },
+            "theme": {
+              "dataType": "Object",
+              "optional": true
             }
           }
         }
@@ -232,6 +236,10 @@
             },
             "protection": {
               "dataType": "Object",
+              "optional": true
+            },
+            "charts": {
+              "dataType": "Array",
               "optional": true
             },
             "pictures": {

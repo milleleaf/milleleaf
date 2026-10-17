@@ -374,6 +374,10 @@ fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
     let pics: Vec<&serde_json::Value> = node.children.iter().filter_map(|c| c.attributes.get("grid::sheet")?.get("pictures")).flat_map(|p| p.as_array().into_iter().flatten()).collect();
     assert_eq!(pics.len(), 2, "{pics:?}");
     assert!(pics.iter().all(|p| p["blob"].as_str().unwrap().starts_with("sha256-")));
+    // Its nine line and pie charts come in, pointing at their cells.
+    let charts: Vec<&serde_json::Value> = node.children.iter().filter_map(|c| c.attributes.get("grid::sheet")?.get("charts")).flat_map(|p| p.as_array().into_iter().flatten()).collect();
+    assert_eq!(charts.len(), 9);
+    assert_eq!(node.attributes["grid::workbook"]["theme"]["name"], json!("Office 2013 - 2022 Theme"), "its own theme, not GridCraft's");
     // LibreOffice 24.2: recalculated digits, its own row heights, borders, styles, comment authors,
     // header/footer codes… all its rewrites. It drops the structure lock: kept, with a warning.
     let mut lo = real_fixture("finance.libreoffice-resaved.xlsx");
@@ -425,4 +429,59 @@ fn sheet_pictures_come_back_and_a_swapped_one_is_a_change() {
     // An export without the picture's bytes stops, naming it.
     let err = crate::look::apply_look(&mut Sheet::new("S"), &look, "S", &mut vec![], ox_core::PictureSource::Read(std::path::Path::new("/nonexistent"))).unwrap_err();
     assert!(err.to_string().contains(&blob), "{err}");
+}
+
+#[test]
+fn sheet_charts_come_back_through_xlsx_and_an_edited_one_is_a_change() {
+    use gridcraft_model::{Anchor, AnchorMode, Chart, ChartKind, Color, LegendPos, Series};
+    let mut wb = Workbook::new();
+    let sh = wb.sheet_mut(0).unwrap();
+    sh.name = "Data".into();
+    let series = |v: &str, c| Series { name: Some("Data!$B$1".into()), categories: Some("Data!$A$2:$A$4".into()), values: v.into(), color: Some(c), ..Series::default() };
+    sh.charts.push(Chart {
+        id: 1,
+        kind: ChartKind::Line,
+        anchor: Anchor { cell: CellRef::new(5, 1), dx: 0.0, dy: 0.0, width: 300.0, height: 200.0, mode: AnchorMode::MoveAndSize },
+        title: Some("Totals".into()),
+        series: vec![series("Data!$B$2:$B$4", Color::Theme(4, 0)), series("'Gone'!#REF!", Color::Theme(5, 0))],
+        legend: LegendPos::Bottom,
+        data_labels: false,
+        gridlines: true,
+        style: 2,
+        x_title: None,
+        y_title: None,
+        source: None,
+        by_rows: false,
+        pivot: None,
+    });
+    let look = crate::look::sheet_look(&wb.sheets[0], &mut crate::Pictures::new());
+    assert_eq!(look["charts"][0]["series"][0]["values"], json!("Data!$B$2:$B$4"), "a chart points at its cells");
+
+    // Exported, written by GridCraft and read back (theme colours become RGB, `'Gone'!#REF!`
+    // becomes `#REF!`): the same chart.
+    let mut out = Workbook::new();
+    out.sheet_mut(0).unwrap().name = "Data".into();
+    crate::look::apply_look(out.sheet_mut(0).unwrap(), &look, "Data", &mut vec![], ox_core::PictureSource::StandIn(None)).unwrap();
+    let back = from_xlsx(&to_xlsx(&out).unwrap()).unwrap();
+    let now = crate::look::sheet_look(&back.sheets[0], &mut crate::Pictures::new());
+    assert_ne!(now["charts"], look["charts"], "GridCraft rewrites the colours");
+    assert!(crate::look::same_charts(&now["charts"], &look["charts"], &back.theme, false));
+
+    // LibreOffice's rewrites: re-anchored two rows down as move-only, a broken series dropped, a
+    // literal name quoted. No change from LibreOffice; from anyone else they would be.
+    let mut lo = now.clone();
+    lo["charts"][0]["anchor"]["cell"]["row"] = json!(7);
+    lo["charts"][0]["anchor"]["mode"] = json!("MoveOnly");
+    lo["charts"][0]["series"].as_array_mut().unwrap().pop();
+    lo["charts"][0]["series"][0]["name"] = json!("\"Data!$B$1\"");
+    assert!(crate::look::same_charts(&lo["charts"], &look["charts"], &back.theme, true));
+    assert!(!crate::look::same_charts(&lo["charts"], &look["charts"], &back.theme, false));
+
+    // A retitled chart or one pointing at other cells is a change.
+    let mut retitled = now.clone();
+    retitled["charts"][0]["title"] = json!("Totals 2026");
+    assert!(!crate::look::same_charts(&retitled["charts"], &look["charts"], &back.theme, false));
+    let mut moved = now.clone();
+    moved["charts"][0]["series"][0]["values"] = json!("Data!$C$2:$C$4");
+    assert!(!crate::look::same_charts(&moved["charts"], &look["charts"], &back.theme, false));
 }

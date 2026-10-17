@@ -2,7 +2,7 @@
 //! `grid::sheet` node and each non-empty cell an `office::data::value` at its `grid::range`, with
 //! its `grid::formula`. Number formats become `currency` / `percent` / `number`. Merged cells,
 //! frozen panes, comments, validation, row and column sizes, cell styles and the file's own names
-//! and floating pictures are carried (`crate::look`); charts aren't yet, and the report lists what the file had.
+//! floating pictures and charts are carried (`crate::look`).
 
 use std::collections::BTreeMap;
 
@@ -45,7 +45,6 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
     let mut nodes = Vec::new();
     let mut wb_children = BTreeMap::new();
     let mut wb_order = Vec::new();
-    let mut charts = 0;
     let (style_table, style_maps) = crate::look::cell_styles(wb);
     for (si, sh) in wb.sheets.iter().enumerate() {
         report.sheets += 1;
@@ -100,7 +99,6 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
             order: Some(sheet_order),
             ..Node::default()
         });
-        charts += sh.charts.len();
     }
     nodes.insert(
         0,
@@ -126,9 +124,6 @@ pub fn adopt(wb: &Workbook, path: &str, name: &str, header: Header) -> Result<(L
             ..Node::default()
         },
     );
-    if charts > 0 {
-        report.warnings.push(format!("{charts} chart(s) aren't carried yet"));
-    }
     let mut header = header;
     if header.ox_version.is_empty() {
         header.ox_version = OX_VERSION.into();

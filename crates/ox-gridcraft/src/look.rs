@@ -15,11 +15,13 @@
 //!   printed header and footer), when not the default
 //! - `pictures`: `[{blob, mediaType, alt?, at: "B2", dx, dy, w, h, mode?}]`, floating pictures
 //!   (offsets and size in points; `mode` GridCraft's `AnchorMode` when not move-and-size)
+//! - `charts`: `[<GridCraft Chart>]`; their series point at cells (`'Sheet 1'!$B$2:$B$9`), so a
+//!   chart follows its data
 //!
 //! GridCraft's own types are kept as data (its serde form) where they carry many options.
 
 use gridcraft_core::{CellRef, RangeRef};
-use gridcraft_model::{Anchor, AnchorMode, BorderLine, BorderStyle, Borders, Color, Comment, DefinedName, Image, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Visibility, Workbook};
+use gridcraft_model::{Anchor, AnchorMode, Chart, BorderLine, BorderStyle, Borders, Color, Comment, DefinedName, Image, LineInfo, PrintSettings, Sheet, Style, StyleId, Validation, Visibility, Workbook};
 use serde_json::{Map, Value, json};
 
 use crate::NAME_PREFIX;
@@ -33,8 +35,8 @@ fn line(l: &LineInfo) -> Option<Value> {
     serde_json::to_value(l).ok()
 }
 
-pub(crate) const KEYS: [&str; 11] =
-    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection", "pictures"];
+pub(crate) const KEYS: [&str; 12] =
+    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection", "pictures", "charts"];
 
 /// Pictures by blob value: (media type, bytes).
 pub type Pictures = std::collections::BTreeMap<String, (String, Vec<u8>)>;
@@ -67,6 +69,9 @@ pub(crate) fn sheet_look(sh: &Sheet, pics: &mut Pictures) -> Map<String, Value> 
         .collect();
     if !pictures.is_empty() {
         m.insert("pictures".into(), Value::Array(pictures));
+    }
+    if !sh.charts.is_empty() {
+        m.insert("charts".into(), json!(sh.charts));
     }
     if !sh.merges.is_empty() {
         m.insert("merges".into(), json!(sh.merges.iter().map(|r| r.a1()).collect::<Vec<_>>()));
@@ -169,6 +174,12 @@ pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warn
             alt: p.get("alt").and_then(Value::as_str).unwrap_or("").to_string(),
             data,
         });
+    }
+    for (i, c) in gs.get("charts").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        match serde_json::from_value::<Chart>(c.clone()) {
+            Ok(c) => sh.charts.push(c),
+            Err(e) => warnings.push(format!("{at}: chart {} can't be read ({e}); skipped", i + 1)),
+        }
     }
     let mut bad = |what: &str, v: &dyn std::fmt::Display| warnings.push(format!("{at}: {what} `{v}` can't be read; skipped"));
     for r in gs.get("merges").and_then(Value::as_array).into_iter().flatten() {
@@ -522,6 +533,11 @@ pub(crate) fn workbook_look(wb: &Workbook) -> Map<String, Value> {
     if wb.active_sheet != 0 {
         m.insert("activeSheet".into(), json!(wb.active_sheet));
     }
+    // The workbook's theme (its colours and fonts), when not GridCraft's own: themed fills, fonts
+    // and chart colours mean those colours.
+    if wb.theme != gridcraft_model::Theme::default() {
+        m.insert("theme".into(), json!(wb.theme));
+    }
     m
 }
 
@@ -537,6 +553,12 @@ pub(crate) fn apply_workbook_look(wb: &mut Workbook, gw: &Map<String, Value>, wa
     }
     if let Some(a) = gw.get("activeSheet").and_then(Value::as_u64) {
         wb.active_sheet = (a as usize).min(wb.sheets.len().saturating_sub(1));
+    }
+    if let Some(t) = gw.get("theme") {
+        match serde_json::from_value(t.clone()) {
+            Ok(t) => wb.theme = t,
+            Err(e) => warnings.push(format!("the workbook's theme can't be read ({e}); GridCraft's is used")),
+        }
     }
 }
 
@@ -737,4 +759,47 @@ pub(crate) fn settle(now: &mut Map<String, Value>, was: &Map<String, Value>, lib
 /// A formula that refers to another workbook: `[1]Sheet!A1`, `'[2]My sheet'!B2`.
 pub(crate) fn external_ref(f: &str) -> bool {
     f.split('[').skip(1).any(|r| r.split(']').next().is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())))
+}
+
+/// Whether a sheet's charts read back from an editor are the ones Milleleaf wrote. What isn't an
+/// edit (seen on the real workbook's nine charts):
+/// - GridCraft writes theme colours as RGB, and LibreOffice spells out an automatic one;
+/// - GridCraft drops the sheet before `#REF!`; LibreOffice drops a series that only reads `#REF!`
+///   and quotes a literal series name;
+/// - every editor places a chart by its own row heights and column widths: Excel moves the size by a
+///   few points, LibreOffice re-anchors it up to two rows away and stores it as move-only.
+/// `theme` is the editor's workbook's.
+pub(crate) fn same_charts(now: &Value, was: &Value, theme: &gridcraft_model::Theme, libreoffice: bool) -> bool {
+    let (Ok(now), Ok(was)) = (serde_json::from_value::<Vec<Chart>>(now.clone()), serde_json::from_value::<Vec<Chart>>(was.clone())) else {
+        return false;
+    };
+    let refs = |s: &str| if let Some(i) = s.find("!#REF!") { s[i + 1..].to_string() } else { s.to_string() };
+    let rgb = |c: &Option<Color>| c.as_ref().and_then(|c| c.resolve(theme));
+    let close = |a: f32, b: f32| (a - b).abs() <= (b.abs() * 0.05).max(5.0);
+    let series = |c: &Chart| -> Vec<gridcraft_model::Series> {
+        c.series.iter().filter(|s| !(libreoffice && refs(&s.values) == "#REF!")).cloned().collect()
+    };
+    now.len() == was.len()
+        && now.iter().zip(&was).all(|(n, w)| {
+            let (na, wa) = (&n.anchor, &w.anchor);
+            let placed = na.cell.col == wa.cell.col
+                && (na.cell.row == wa.cell.row || libreoffice && na.cell.row.abs_diff(wa.cell.row) <= 2)
+                && (na.mode == wa.mode || libreoffice)
+                && close(na.width, wa.width)
+                && close(na.height, wa.height);
+            let (ns, ws) = (series(n), series(w));
+            let same_series = ns.len() == ws.len()
+                && ns.iter().zip(&ws).all(|(a, b)| {
+                    let name = |s: &gridcraft_model::Series| s.name.as_deref().map(|n| refs(n.trim_matches('"')));
+                    name(a) == name(b)
+                        && a.categories.as_deref().map(refs) == b.categories.as_deref().map(refs)
+                        && refs(&a.values) == refs(&b.values)
+                        && (b.color.is_none() || rgb(&a.color) == rgb(&b.color))
+                        && (a.secondary, a.kind, a.smooth, &a.trendlines, &a.bubble_sizes) == (b.secondary, b.kind, b.smooth, &b.trendlines, &b.bubble_sizes)
+                });
+            fn rest(c: &Chart) -> impl PartialEq + '_ {
+                (c.kind, &c.title, c.legend, c.data_labels, c.gridlines, &c.x_title, &c.y_title, c.by_rows, &c.pivot)
+            }
+            placed && same_series && rest(n) == rest(w)
+        })
 }
