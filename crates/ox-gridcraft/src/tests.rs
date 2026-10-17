@@ -378,14 +378,14 @@ fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
     // header/footer codes… all its rewrites. It drops the structure lock: kept, with a warning.
     let mut lo = real_fixture("finance.libreoffice-resaved.xlsx");
     let (layer, report) =
-        crate::import_saved_by(&node, &mut lo, header(), Some("LibreOffice/24.2.7.2$Linux_X86_64")).expect("imports");
+        crate::import_saved_by(&node, &mut lo, header(), Some("LibreOffice/24.2.7.2$Linux_X86_64"), None).expect("imports");
     assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
     assert!(report.warnings.iter().any(|w| w.contains("structure lock")), "{:?}", report.warnings);
 
     // Excel 16 (Mac): sheet Output's left margin set to 1 in and its Standard Width to 12. Exactly
     // that comes back; Excel's own rewrites (row heights, default width, trailing spaces) don't.
     let mut xl = real_fixture("finance.msoffice-margins.xlsx");
-    let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel")).expect("imports");
+    let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel"), None).expect("imports");
     assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
     let gs = &layer.data[0].attributes["grid::sheet"];
     assert_eq!(gs["name"], "Output");
@@ -407,7 +407,7 @@ fn sheet_pictures_come_back_and_a_swapped_one_is_a_change() {
 
     // The importer's comparison export has no files: a stand-in reads back as the same value.
     let mut back = Sheet::new("S");
-    crate::look::apply_look(&mut back, &look, "S", &mut vec![], None).unwrap();
+    crate::look::apply_look(&mut back, &look, "S", &mut vec![], ox_core::PictureSource::StandIn(None)).unwrap();
     let mut stand_in = crate::Pictures::new();
     assert_eq!(crate::look::sheet_look(&back, &mut stand_in)["pictures"], look["pictures"]);
     assert!(stand_in.is_empty(), "a stand-in isn't a picture to store");
@@ -423,6 +423,6 @@ fn sheet_pictures_come_back_and_a_swapped_one_is_a_change() {
     assert_ne!(swapped["pictures"], look["pictures"]);
 
     // An export without the picture's bytes stops, naming it.
-    let err = crate::look::apply_look(&mut Sheet::new("S"), &look, "S", &mut vec![], Some(std::path::Path::new("/nonexistent"))).unwrap_err();
+    let err = crate::look::apply_look(&mut Sheet::new("S"), &look, "S", &mut vec![], ox_core::PictureSource::Read(std::path::Path::new("/nonexistent"))).unwrap_err();
     assert!(err.to_string().contains(&blob), "{err}");
 }

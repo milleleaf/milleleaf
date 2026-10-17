@@ -533,3 +533,44 @@ fn real_deck_pictures_come_in_and_a_swapped_one_is_a_change() {
     assert!(layer.data.iter().all(|n| n.attributes["deck::picture"]["blob"] == json!(blob)), "{:?}", layer.data);
     assert_eq!(report.pictures[&blob].1, swapped);
 }
+
+#[test]
+fn a_stack_files_picture_is_compared_by_the_hash_of_its_file() {
+    // A stack file names its pictures by path (nothing is stored by hash until a commit).
+    let mut node = briefing_node();
+    let dir = std::env::temp_dir().join(format!("ox-deck-pics-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("pics")).unwrap();
+    let mut named = 0;
+    let mut distinct = std::collections::BTreeSet::new();
+    for f in node.children.iter_mut().flat_map(|s| s.children.iter_mut()) {
+        if let Some(p) = f.attributes.get_mut("deck::picture") {
+            let blob = p["blob"].as_str().unwrap().trim_start_matches("sha256-").to_string();
+            let p_rel = format!("pics/{blob}.bin");
+            if named == 0 {
+                // Only the first one's file is there; the rest can't be read.
+                let p = real_fixture("briefing.msoffice-resaved.pptx");
+                let bytes = p.media.iter().find(|m| ox_core::integrity_of(&m.data) == format!("sha256-{blob}")).expect("its bytes").data.clone();
+                std::fs::write(dir.join(&p_rel), &*bytes).unwrap();
+            }
+            distinct.insert(p_rel.clone());
+            p["blob"] = json!(p_rel);
+            named += 1;
+        }
+    }
+    let resaved = real_fixture("briefing.msoffice-resaved.pptx");
+    let (layer, report) = crate::import_in(&node, &resaved, header(), Some(&dir)).expect("imports");
+    assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
+    // One warning per picture that can't be read (the readable one's file may be shared).
+    let readable = distinct.iter().filter(|p| dir.join(p).exists()).count();
+    assert_eq!(report.warnings.iter().filter(|w| w.contains("can't be read")).count(), distinct.len() - readable, "{:?}", report.warnings);
+    assert!(named > distinct.len(), "the deck shows some pictures more than once");
+
+    // Swap the readable one's bytes in the file: one change, by hash.
+    let mut swapped = resaved.clone();
+    let first = node.children.iter().flat_map(|s| &s.children).find(|f| f.attributes.contains_key("deck::picture")).unwrap();
+    let on_disk = std::fs::read(dir.join(first.attributes["deck::picture"]["blob"].as_str().unwrap())).unwrap();
+    swapped.media.iter_mut().filter(|m| *m.data == on_disk).for_each(|m| m.data = std::sync::Arc::new(b"another picture".to_vec()));
+    let (_, report) = crate::import_in(&node, &swapped, header(), Some(&dir)).expect("imports");
+    assert!(report.changed.contains(&first.path), "{:?}", report.changed);
+    std::fs::remove_dir_all(&dir).ok();
+}

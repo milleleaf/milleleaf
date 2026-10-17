@@ -393,7 +393,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ..Default::default()
             };
             let (mut layer, report) =
-                ox_wordcraft::import(&node, &doc, header).map_err(|e| e.to_string())?;
+                ox_wordcraft::import_in(&node, &doc, header, Some(&asset_root(&file))).map_err(|e| e.to_string())?;
             place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;
@@ -486,7 +486,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ..Default::default()
             };
             let saved_by = ox_formats::saved_by(&bytes);
-            let (mut layer, report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref())
+            let (mut layer, report) = ox_gridcraft::import_saved_by(&node, &mut wb, header, saved_by.as_deref(), Some(&asset_root(&file)))
                 .map_err(|e| e.to_string())?;
             place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
@@ -574,7 +574,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ..Default::default()
             };
             let (mut layer, report) =
-                ox_deckcraft::import(&node, &p, header).map_err(|e| e.to_string())?;
+                ox_deckcraft::import_in(&node, &p, header, Some(&asset_root(&file))).map_err(|e| e.to_string())?;
             place_pictures(&mut layer, &report.pictures, &out, &asset_root(&file))?;
             let text = serde_json::to_string_pretty(&layer).unwrap_or_default();
             fs::write(&out, text + "\n").map_err(|e| format!("{}: {e}", out.display()))?;

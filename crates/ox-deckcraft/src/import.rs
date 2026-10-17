@@ -521,6 +521,17 @@ pub fn import(
     edited: &Presentation,
     header: Header,
 ) -> Result<(Layer, ImportReport), DeckError> {
+    import_in(deck, edited, header, None)
+}
+
+/// [`import`], with the folder a stack's pictures are read from when they're still named by a
+/// path (a stack file's, not stored by hash): they're compared by the hash of that file.
+pub fn import_in(
+    deck: &Composed,
+    edited: &Presentation,
+    header: Header,
+    assets: Option<&std::path::Path>,
+) -> Result<(Layer, ImportReport), DeckError> {
     let found = keyword(edited, KEY_DECK).ok_or(DeckError::NotExported)?;
     if found != deck.path {
         return Err(DeckError::WrongDeck {
@@ -528,7 +539,7 @@ pub fn import(
             found,
         });
     }
-    import_into(deck, edited, header, false)
+    import_into(deck, edited, header, false, assets)
 }
 
 /// Brings a presentation Milleleaf didn't make into a project: it is imported into an empty
@@ -553,7 +564,7 @@ pub fn adopt(
         provenance: Default::default(),
         children: vec![],
     };
-    let (mut layer, report) = import_into(&empty, edited, header, true)?;
+    let (mut layer, report) = import_into(&empty, edited, header, true, None)?;
     match layer.data.iter_mut().find(|n| n.path == path) {
         Some(n) => {
             n.attributes.insert("deck::deck".into(), attr);
@@ -575,8 +586,12 @@ fn import_into(
     edited: &Presentation,
     header: Header,
     adopting: bool,
+    assets: Option<&std::path::Path>,
 ) -> Result<(Layer, ImportReport), DeckError> {
     let mut report = ImportReport::default();
+    for b in ox_core::unreadable_pictures(deck, assets) {
+        report.warnings.push(format!("picture `{b}` can't be read, so it isn't compared: the stack's picture stays"));
+    }
     if !adopting && keyword(edited, KEY_REVISION).as_deref() != Some(revision_of(deck).as_str()) {
         report.stale = true;
         report.warnings.push("the deck changed in the stack since this file was exported; review the edit layer before stacking it".into());
@@ -932,10 +947,13 @@ fn import_into(
                             }
                         }
                     } else if let Some(old) = obj(fr, "deck::picture") {
-                        // ponytail: a stack whose picture is still a path (not committed, so not
-                        // stored by hash) can't tell a swapped picture; commit stores it by hash.
-                        if let Some(mut new) = picture(edited, sh, si, &mut report) {
-                            if old.get("blob").and_then(Value::as_str).is_some_and(|b| !b.starts_with("sha256-")) {
+                        // A picture still named by a path (a stack file's) is compared by the hash
+                        // of that file; one that can't be read stays as it is (warned above).
+                        let old_blob = old.get("blob").and_then(Value::as_str).unwrap_or("");
+                        let old_hash = ox_core::resolve_blob(assets, old_blob);
+                        if let (Some(mut new), Some(old_hash)) = (picture(edited, sh, si, &mut report), old_hash) {
+                            if new["blob"] == json!(old_hash) {
+                                // The same picture: keep how the stack names it.
                                 new.insert("blob".into(), old["blob"].clone());
                                 match old.get("mediaType") {
                                     Some(t) => new.insert("mediaType".into(), t.clone()),

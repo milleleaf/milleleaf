@@ -116,13 +116,61 @@ pub fn blob_of(bytes: &[u8]) -> String {
     }
 }
 
-/// A picture's bytes for an export: read from `assets` (see [`read_blob`]), or with no
-/// `assets` a [`STAND_IN`].
-pub fn picture_bytes(assets: Option<&Path>, blob: &str) -> std::io::Result<Vec<u8>> {
-    match assets {
-        Some(root) => read_blob(root, blob),
-        None => Ok([STAND_IN, blob.as_bytes()].concat()),
+/// Where an export gets pictures' bytes.
+#[derive(Clone, Copy, Debug)]
+pub enum PictureSource<'a> {
+    /// The project (or stack) folder: bytes read with [`read_blob`].
+    Read(&'a Path),
+    /// An importer's comparison export: a [`STAND_IN`] carrying the picture's hash (a picture
+    /// still named by a path is read from this folder and hashed, see [`resolve_blob`]).
+    StandIn(Option<&'a Path>),
+}
+
+/// A picture's bytes for an export (see [`PictureSource`]).
+pub fn picture_bytes(src: PictureSource, blob: &str) -> std::io::Result<Vec<u8>> {
+    match src {
+        PictureSource::Read(root) => read_blob(root, blob),
+        PictureSource::StandIn(root) => {
+            Ok([STAND_IN, resolve_blob(root, blob).as_deref().unwrap_or(blob).as_bytes()].concat())
+        }
     }
+}
+
+/// A picture's hash value: `blob` itself when it is one (`sha256-…`), else the hash of the file
+/// it names, read from `root` (a stack file's pictures, not yet stored by hash). `None` when
+/// that file can't be read.
+pub fn resolve_blob(root: Option<&Path>, blob: &str) -> Option<String> {
+    if blob.starts_with("sha256-") {
+        return Some(blob.to_string());
+    }
+    std::fs::read(root?.join(blob)).ok().map(|b| integrity_of(&b))
+}
+
+/// The pictures in `node` (any `{"blob": path}` value, at any depth) named by a path that can't
+/// be read from `root`: an importer can't compare them by hash, so it says so.
+pub fn unreadable_pictures(node: &crate::Composed, root: Option<&Path>) -> Vec<String> {
+    fn walk(v: &serde_json::Value, root: Option<&Path>, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let Some(b) = m.get("blob").and_then(serde_json::Value::as_str)
+                    && resolve_blob(root, b).is_none()
+                    && !out.iter().any(|x| x == b)
+                {
+                    out.push(b.to_string());
+                }
+                m.values().for_each(|x| walk(x, root, out));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, root, out)),
+            _ => {}
+        }
+    }
+    fn visit(n: &crate::Composed, root: Option<&Path>, out: &mut Vec<String>) {
+        n.attributes.values().for_each(|v| walk(v, root, out));
+        n.children.iter().for_each(|c| visit(c, root, out));
+    }
+    let mut out = Vec::new();
+    visit(node, root, &mut out);
+    out
 }
 
 /// A media type from a file name's extension (pictures and vectors).

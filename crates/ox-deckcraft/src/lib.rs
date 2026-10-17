@@ -19,7 +19,7 @@ mod export;
 mod import;
 
 pub use export::{ExportReport, export};
-pub use import::{ImportReport, adopt, exported_revision, import};
+pub use import::{ImportReport, adopt, exported_revision, import, import_in};
 
 use sha2::{Digest, Sha256};
 

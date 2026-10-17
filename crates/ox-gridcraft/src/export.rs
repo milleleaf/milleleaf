@@ -198,11 +198,11 @@ fn write_value(
 /// Builds a GridCraft workbook from a composed `grid::workbook` node, recalculated.
 /// `assets` is the folder pictures' blobs are read from: the project (or stack) folder.
 pub fn export(node: &Composed, assets: &std::path::Path) -> Result<(Workbook, ExportReport), GridError> {
-    export_with(node, Some(assets))
+    export_with(node, ox_core::PictureSource::Read(assets))
 }
 
-/// The export, or (`assets` `None`) the importer's comparison export, with stand-ins for pictures.
-pub(crate) fn export_with(node: &Composed, assets: Option<&std::path::Path>) -> Result<(Workbook, ExportReport), GridError> {
+/// The export, or the importer's comparison export (stand-ins for pictures).
+pub(crate) fn export_with(node: &Composed, assets: ox_core::PictureSource) -> Result<(Workbook, ExportReport), GridError> {
     let gw = obj(node, "grid::workbook")
         .ok_or_else(|| GridError::NotAWorkbook(node.path.clone()))?
         .clone();

@@ -150,9 +150,9 @@ pub(crate) fn sheet_look(sh: &Sheet, pics: &mut Pictures) -> Map<String, Value> 
 }
 
 /// Applies `grid::sheet`'s look attributes to a sheet; what can't be read is a warning. Pictures'
-/// bytes come from `assets` (a stand-in without; see `ox_core::picture_bytes`); a missing one is
-/// an error, since a workbook with a hole in it is worse than none.
-pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warnings: &mut Vec<String>, assets: Option<&std::path::Path>) -> Result<(), crate::GridError> {
+/// bytes come from `assets` (see `ox_core::PictureSource`); a missing one is an error, since a
+/// workbook with a hole in it is worse than none.
+pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warnings: &mut Vec<String>, assets: ox_core::PictureSource) -> Result<(), crate::GridError> {
     for (i, p) in gs.get("pictures").and_then(Value::as_array).into_iter().flatten().enumerate() {
         let blob = p.get("blob").and_then(Value::as_str).unwrap_or("");
         let data = ox_core::picture_bytes(assets, blob).map_err(|e| crate::GridError::MissingAsset(format!("{at}: can't read {blob}: {e}")))?;

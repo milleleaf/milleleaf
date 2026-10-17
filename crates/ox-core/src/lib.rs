@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 pub use compose::{Composed, Composer, Effective, Flat, Provenance};
 pub use matching::{Confidence, Match};
 pub use model::{Header, Import, Layer, Node, Purge, Sealed};
-pub use stack::{BLOB_DIR, LoadedLayer, STAND_IN, blob_of, ext_for, picture_bytes, integrity_of, load_stack, media_type_for, read_blob, same};
+pub use stack::{BLOB_DIR, LoadedLayer, PictureSource, STAND_IN, blob_of, ext_for, picture_bytes, integrity_of, resolve_blob, unreadable_pictures, load_stack, media_type_for, read_blob, same};
 pub use validate::{Issue, Level, validate};
 
 #[derive(Debug, thiserror::Error)]

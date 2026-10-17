@@ -191,16 +191,19 @@ pub fn import(
     wb: &mut Workbook,
     header: Header,
 ) -> Result<(Layer, ImportReport), GridError> {
-    import_saved_by(node, wb, header, None)
+    import_saved_by(node, wb, header, None, None)
 }
 
 /// [`import`], knowing which application saved the file (`docProps/app.xml`): LibreOffice's own
 /// rewrites that look like edits (its fitted row heights, its default sizes) aren't taken as edits.
+/// `assets`: the folder a stack's pictures are read from when they're still named by a path (a
+/// stack file's, not stored by hash), so they're compared by the hash of that file.
 pub fn import_saved_by(
     node: &Composed,
     wb: &mut Workbook,
     header: Header,
     saved_by: Option<&str>,
+    assets: Option<&std::path::Path>,
 ) -> Result<(Layer, ImportReport), GridError> {
     let libreoffice = saved_by.is_some_and(|a| a.starts_with("LibreOffice"));
     let found = string_name(wb, NAME_WORKBOOK).ok_or(GridError::NotExported)?;
@@ -211,6 +214,9 @@ pub fn import_saved_by(
         });
     }
     let mut report = ImportReport::default();
+    for b in ox_core::unreadable_pictures(node, assets) {
+        report.warnings.push(format!("picture `{b}` can't be read, so it's compared by its path and may come back as changed"));
+    }
     if string_name(wb, NAME_REVISION).as_deref() != Some(revision_of(node).as_str()) {
         report.stale = true;
         report.warnings.push("the workbook changed in the stack since this file was exported; review the edit layer before stacking it".into());
@@ -219,7 +225,7 @@ pub fn import_saved_by(
     // What Milleleaf's own export writes for this node, read back the same way: a sheet's look
     // or a defined name that differs from it was changed in Excel (column widths Milleleaf fitted
     // itself don't come back as edits).
-    let base = crate::export::export_with(node, None)
+    let base = crate::export::export_with(node, ox_core::PictureSource::StandIn(assets))
         .ok()
         .and_then(|(b, _)| crate::to_xlsx(&b).ok())
         .and_then(|x| crate::from_xlsx(&x).ok());
@@ -442,7 +448,7 @@ pub fn import_saved_by(
     let expected = if nodes.is_empty() {
         base.clone()
     } else {
-        crate::export::export_with(&with_edits(node, &nodes), None)
+        crate::export::export_with(&with_edits(node, &nodes), ox_core::PictureSource::StandIn(assets))
             .ok()
             .and_then(|(b, _)| crate::to_xlsx(&b).ok())
             .and_then(|x| crate::from_xlsx(&x).ok())

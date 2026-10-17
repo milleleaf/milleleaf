@@ -125,9 +125,7 @@ fn style_id(doc: &Document, name: &str) -> Option<String> {
 
 /// Where pictures' bytes come from, and the document media they become.
 struct Pics<'a> {
-    /// The project (or stack) folder blobs are read from; `None` writes a stand-in carrying the
-    /// blob value (the importer's comparison export, which has no files).
-    assets: Option<&'a std::path::Path>,
+    assets: ox_core::PictureSource<'a>,
     media: std::collections::BTreeMap<String, Arc<Vec<u8>>>,
 }
 
@@ -514,11 +512,11 @@ fn table_block(
 /// can say what the export was based on.
 /// `assets` is the folder pictures' blobs are read from: the project (or stack) folder.
 pub fn export(node: &Composed, layers: &[String], assets: &std::path::Path) -> Result<(Document, ExportReport), WordError> {
-    export_with(node, layers, Some(assets))
+    export_with(node, layers, ox_core::PictureSource::Read(assets))
 }
 
-/// The export, or (`assets` `None`) the importer's comparison export, with stand-ins for pictures.
-pub(crate) fn export_with(node: &Composed, layers: &[String], assets: Option<&std::path::Path>) -> Result<(Document, ExportReport), WordError> {
+/// The export, or the importer's comparison export (stand-ins for pictures).
+pub(crate) fn export_with(node: &Composed, layers: &[String], assets: ox_core::PictureSource) -> Result<(Document, ExportReport), WordError> {
     let mut pics = Pics { assets, media: Default::default() };
     let wd = obj(node, "word::document")
         .ok_or_else(|| WordError::NotADocument(node.path.clone()))?

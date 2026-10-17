@@ -15,7 +15,7 @@ mod export;
 mod import;
 
 pub use export::{ExportReport, export, page_size};
-pub use import::{Conflict, ImportReport, adopt, exported_revision, import};
+pub use import::{Conflict, ImportReport, adopt, exported_revision, import, import_in};
 
 use sha2::{Digest, Sha256};
 

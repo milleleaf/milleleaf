@@ -814,6 +814,17 @@ pub fn import(
     edited: &Document,
     header: Header,
 ) -> Result<(Layer, ImportReport), WordError> {
+    import_in(node, edited, header, None)
+}
+
+/// [`import`], with the folder a stack's pictures are read from when they're still named by a
+/// path (a stack file's, not stored by hash): they're compared by the hash of that file.
+pub fn import_in(
+    node: &Composed,
+    edited: &Document,
+    header: Header,
+    assets: Option<&std::path::Path>,
+) -> Result<(Layer, ImportReport), WordError> {
     let found = custom_prop(edited, PROP_DOCUMENT).ok_or(WordError::NotExported)?;
     if found != node.path {
         return Err(WordError::WrongDocument {
@@ -821,7 +832,7 @@ pub fn import(
             found: found.to_string(),
         });
     }
-    import_into(node, edited, header, false)
+    import_into(node, edited, header, false, assets)
 }
 
 /// Brings a document Milleleaf didn't make into a project: it is imported into an empty
@@ -840,7 +851,7 @@ pub fn adopt(
         provenance: Default::default(),
         children: vec![],
     };
-    let (mut layer, report) = import_into(&empty, edited, header, true)?;
+    let (mut layer, report) = import_into(&empty, edited, header, true, None)?;
     match layer.data.iter_mut().find(|n| n.path == path) {
         Some(n) => {
             let wd = n.attributes.entry("word::document").or_insert_with(|| json!({}));
@@ -863,8 +874,12 @@ fn import_into(
     edited: &Document,
     header: Header,
     adopting: bool,
+    assets: Option<&std::path::Path>,
 ) -> Result<(Layer, ImportReport), WordError> {
     let mut report = ImportReport::default();
+    for b in ox_core::unreadable_pictures(node, assets) {
+        report.warnings.push(format!("picture `{b}` can't be read, so it's compared by its path and may come back as changed"));
+    }
     if !adopting && custom_prop(edited, PROP_REVISION) != Some(revision_of(node).as_str()) {
         report.stale = true;
         report.warnings.push("the document changed in the stack since this file was exported; review the edit layer before stacking it".into());
@@ -874,7 +889,7 @@ fn import_into(
         node.children.iter().map(|c| (c.path.as_str(), c)).collect();
     // What Milleleaf's own export writes for this node, read back the same way: page setup,
     // styles and tables' looks are carried when the file's differ from it.
-    let ours_doc = crate::export::export_with(node, &[], None)
+    let ours_doc = crate::export::export_with(node, &[], ox_core::PictureSource::StandIn(assets))
         .ok()
         .and_then(|(d, _)| crate::from_docx(&crate::to_docx(&d).ok()?).ok());
     let mut used_names: BTreeSet<String> = node
