@@ -932,7 +932,7 @@ fn time_stamp_services_and_opentimestamps_proofs_beside_signature_files() {
                            {"kind": "opentimestamps", "calendars": ["https://a.example", "https://b.example"]}],
               "bitcoinHeaders": [{"kind": "explorers", "urls": ["https://x.example/api"]},
                                  {"kind": "bitcoind", "url": "http://127.0.0.1:8332", "cookieFile": "/n/.cookie"},
-                                 {"kind": "light-client", "peers": 8}]}}"#,
+                                 {"kind": "light-client", "file": "/h/headers.bin"}, {"kind": "light-client"}]}}"#,
     )
     .unwrap();
     let ts = s.policy().unwrap().timestamps.unwrap();
@@ -946,7 +946,8 @@ fn time_stamp_services_and_opentimestamps_proofs_beside_signature_files() {
     );
     let h = ts.headers();
     assert!(matches!(&h[1], HeaderSource::Bitcoind { cookie_file, .. } if cookie_file == "/n/.cookie"));
-    assert!(matches!(&h[2], HeaderSource::LightClient(m) if m["peers"] == 8));
+    assert_eq!(h[2], HeaderSource::LightClient { file: Some("/h/headers.bin".into()) });
+    assert_eq!(h[3], HeaderSource::LightClient { file: None });
     assert_eq!(crate::policy::Timestamps::default().headers().len(), 1, "the two explorers by default");
     assert!(crate::policy::Timestamps::default().all().is_empty(), "no default service");
 

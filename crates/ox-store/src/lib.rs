@@ -34,6 +34,7 @@ mod search;
 mod seal;
 mod time;
 pub mod ots;
+pub mod headers;
 pub mod tsp;
 
 pub use history::{BlameEntry, Touch};

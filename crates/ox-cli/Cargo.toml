@@ -26,6 +26,9 @@ zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
 boring = "=5.3.0"
 # Basic auth for a Bitcoin Core node (already in the tree through ox-store).
 base64 = "0.22"
+# Mozilla's root certificates for https where the system has none (Windows; 18 Oct 2026). Data under
+# CDLA-Permissive-2.0; the project notes "Transport".
+webpki-root-certs = "=1.0.9"
 
 [dev-dependencies]
 sha2 = { workspace = true }

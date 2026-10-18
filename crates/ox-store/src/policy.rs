@@ -61,8 +61,12 @@ pub enum HeaderSource {
     /// when a request is made, never printed or copied.
     #[serde(rename_all = "camelCase")]
     Bitcoind { url: String, cookie_file: String },
-    /// Reserved for a BIP 157/158 light client (being spiked); not built.
-    LightClient(serde_json::Map<String, serde_json::Value>),
+    /// The header file `ox-headers sync` keeps (a BIP 157 light client), checked from genesis.
+    /// `file`: its path; absent, the per-user default (`headers::default_file`).
+    LightClient {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        file: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

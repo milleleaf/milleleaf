@@ -5,9 +5,8 @@
 //!
 //! A `.ots` file is untrusted input: depth, item count and lengths are bounded, and anything we
 //! don't support is an error, never a panic. Supported: SHA-256 file digests and the `sha256`,
-//! `append` and `prepend` operations, which is all current calendars use.
-// ponytail: ripemd160 (0x03; only in 2015-era proofs), sha1 (0x02), keccak256 (0x67) and
-// reverse/hexlify (0xf2/0xf3) are refused; add `ripemd` if someone needs an old proof read.
+//! `append` and `prepend` operations, which is all current calendars use, and `ripemd160`, which
+//! 2015-era proofs use. sha1 (0x02), keccak256 (0x67) and reverse/hexlify (0xf2/0xf3) are refused.
 
 use sha2::{Digest, Sha256};
 
@@ -24,6 +23,7 @@ const MAX_URI: usize = 1000;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Sha256,
+    Ripemd160,
     Append(Vec<u8>),
     Prepend(Vec<u8>),
 }
@@ -133,6 +133,7 @@ impl<'a> R<'a> {
                 return Ok(Item::Att(att));
             }
             0x08 => Op::Sha256,
+            0x03 => Op::Ripemd160,
             0xf0 => Op::Append(self.varbytes(MAX_MSG)?.to_vec()),
             0xf1 => Op::Prepend(self.varbytes(MAX_MSG)?.to_vec()),
             t => return Err(format!("unsupported operation 0x{t:02x}")),
@@ -162,6 +163,7 @@ impl Op {
     fn apply(&self, msg: &[u8]) -> Result<Vec<u8>, String> {
         let next = match self {
             Op::Sha256 => Sha256::digest(msg).to_vec(),
+            Op::Ripemd160 => <ripemd::Ripemd160 as ripemd::Digest>::digest(msg).to_vec(),
             Op::Append(a) => [msg, a].concat(),
             Op::Prepend(p) => [p, msg].concat(),
         };
@@ -210,6 +212,7 @@ impl Node {
                 Item::Op(op, next) => {
                     match op {
                         Op::Sha256 => out.push(0x08),
+                        Op::Ripemd160 => out.push(0x03),
                         Op::Append(a) => {
                             out.push(0xf0);
                             put_varbytes(out, a);
@@ -391,12 +394,7 @@ pub fn check_header(header: &[u8], root: &[u8]) -> Result<u32, String> {
         return Err("the block's merkle root isn't the one the proof reaches".into());
     }
     let bits = u32::from_le_bytes(header[72..76].try_into().expect("4 bytes"));
-    let (exp, mant) = ((bits >> 24) as usize, bits & 0x007f_ffff);
-    if !(3..=32).contains(&exp) || bits & 0x0080_0000 != 0 {
-        return Err("the block header's difficulty can't be read".into());
-    }
-    let mut target = [0u8; 32]; // big-endian
-    target[32 - exp..35 - exp].copy_from_slice(&mant.to_be_bytes()[1..4]);
+    let target = crate::headers::target(bits).map_err(|_| "the block header's difficulty can't be read")?;
     let mut hash = sha256d(header);
     hash.reverse();
     if hash > target {
@@ -492,11 +490,29 @@ mod tests {
         assert!(Proof::parse(&head(&fork.repeat(MAX_ITEMS + 1))).unwrap_err().contains("too many"));
         let grow: Vec<u8> = [0xf0, 0x80, 0x20].iter().copied().chain([0; 4096]).collect();
         assert!(Proof::parse(&head(&[grow.as_slice(), &[0x00], &BITCOIN, &[1, 1]].concat())).unwrap_err().contains("4096"));
-        for op in [0x02, 0x03, 0x67, 0xf2, 0xf3] {
+        for op in [0x02, 0x67, 0xf2, 0xf3] {
             assert!(Proof::parse(&head(&[op])).unwrap_err().contains("unsupported"), "op {op:#x}");
         }
         assert!(Proof::parse(&[MAGIC, &[1, 0x02]].concat()).unwrap_err().contains("SHA-256"));
         assert!(Proof::parse(&[good.as_slice(), &[0]].concat()).unwrap_err().contains("trailing"));
+    }
+
+    /// 2015-era proofs hash with RIPEMD-160 along the path. A proof built here (no upstream fixture:
+    /// those are LGPL), checked against the published RIPEMD-160 test vectors.
+    #[test]
+    fn ripemd160_proofs_parse_and_replay() {
+        assert_eq!(hex(&Op::Ripemd160.apply(b"").unwrap()), "9c1185a5c5e9fc54612808977ee8f548b2258d31");
+        assert_eq!(hex(&Op::Ripemd160.apply(b"abc").unwrap()), "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc");
+        let file = b"stamped in 2015";
+        let digest: [u8; 32] = Sha256::digest(file).into();
+        let tail = Node(vec![Item::Op(Op::Sha256, Node(vec![Item::Att(Att::Bitcoin(358_391))]))]);
+        let p = Proof { digest, root: Node(vec![Item::Op(Op::Prepend(vec![1; 4]), Node(vec![Item::Op(Op::Ripemd160, tail)]))]) };
+        let bytes = p.to_bytes();
+        assert_eq!(bytes[MAGIC.len() + 2 + 32 + 6], 0x03);
+        assert_eq!(Proof::parse(&bytes).unwrap(), p);
+        let s = summarize(file, &bytes).unwrap();
+        let ripe = Op::Ripemd160.apply(&[&[1; 4], &digest[..]].concat()).unwrap();
+        assert_eq!(s.bitcoin, [(358_391, Sha256::digest(&ripe).to_vec())]);
     }
 
     #[test]

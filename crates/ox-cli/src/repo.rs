@@ -1,6 +1,7 @@
 //! Revision-store commands (`ox init`, `commit`, `log`, `blame`, `checkpoint`, `verify`, `sign`,
 //! `timestamp`, `key`) and the helpers that let every other command take a project folder.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -9,7 +10,7 @@ use ox_core::render::find;
 use ox_core::{Composed, Composer};
 use ox_core::model::Layer;
 use ox_core::stack::LoadedLayer;
-use ox_store::ots;
+use ox_store::{headers, ots};
 use ox_store::policy::{HeaderSource, Service};
 use ox_store::{CommitOptions, KeyPair, LayerStatus, SigInfo, Store, StoreError};
 
@@ -418,12 +419,10 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
         let Some(sources) = &online else { return format!("in Bitcoin block {height} (not checked here)") };
         checked
             .entry((height, root.to_vec()))
-            .or_insert_with(|| match bitcoin_header(sources, height).and_then(|(h, n)| Ok((ots::check_header(&h, root)?, n))) {
-                Ok((t, n)) => format!(
-                    "existed by {} (Bitcoin block {height}, header from {n} {})",
-                    ox_store::rfc3339(i64::from(t)),
-                    if n == 1 { "source" } else { "sources" }
-                ),
+            .or_insert_with(|| match bitcoin_header(sources, height, &headers::CHECKPOINT)
+                .and_then(|(h, from)| Ok((ots::check_header(&h, root)?, from)))
+            {
+                Ok((t, from)) => format!("existed by {} (Bitcoin block {height}, {from})", ox_store::rfc3339(i64::from(t))),
                 Err(x) => {
                     btc_bad += 1;
                     format!("NOT CONFIRMED in Bitcoin block {height}: {x}")
@@ -725,7 +724,7 @@ fn ok200(url: &str, (status, body): (u16, Vec<u8>)) -> Result<Vec<u8>, String> {
 }
 
 /// One HTTP/1.0 request; returns the status and body. `https://` goes through BoringSSL (already
-/// in `ox` for sealed layers) with the system's CA certificates (`SSL_CERT_FILE` to choose a file).
+/// in `ox` for sealed layers); trust as in `trust`.
 pub(crate) fn http(method: &str, url: &str, headers: &[(&str, &str)], body: &[u8]) -> Result<(u16, Vec<u8>), String> {
     use std::io::{Read, Write};
     let (tls, rest) = match (url.strip_prefix("https://"), url.strip_prefix("http://")) {
@@ -757,8 +756,9 @@ pub(crate) fn http(method: &str, url: &str, headers: &[(&str, &str)], body: &[u8
         s.read_to_end(r).map(|_| ())
     }
     if tls {
-        let tls = boring::ssl::SslConnector::builder(boring::ssl::SslMethod::tls()).map_err(|x| err(&x))?.build();
-        let s = tls.connect(name, c).map_err(|x| err(&format!("TLS: {x}")))?;
+        let cert_file = std::env::var_os("SSL_CERT_FILE").map(PathBuf::from);
+        let system = !cfg!(windows) && (Path::new("/etc/ssl/cert.pem").is_file() || Path::new("/etc/ssl/certs").is_dir());
+        let s = trust(cert_file.as_deref(), system).map_err(|x| err(&x))?.connect(name, c).map_err(|x| err(&format!("TLS: {x}")))?;
         exchange(s, req.as_bytes(), body, &mut r)
     } else {
         exchange(c, req.as_bytes(), body, &mut r)
@@ -771,9 +771,45 @@ pub(crate) fn http(method: &str, url: &str, headers: &[(&str, &str)], body: &[u8
     Ok((status, r[split + 4..].to_vec()))
 }
 
-/// An 80-byte block header that every source agrees on, and how many sources gave it.
-pub(crate) fn bitcoin_header(sources: &[HeaderSource], height: u64) -> Result<(Vec<u8>, usize), String> {
+/// Who `https://` trusts: the certificates in `cert_file` (`SSL_CERT_FILE`) alone when given; else
+/// the system's (`system`: BoringSSL's default paths under /etc/ssl exist); else (Windows, or no
+/// system store) the Mozilla root set bundled in `webpki-root-certs` (CDLA-Permissive-2.0).
+/// Chain and host name checks are BoringSSL's in every case.
+fn trust(cert_file: Option<&Path>, system: bool) -> Result<boring::ssl::SslConnector, String> {
+    use boring::x509::{X509, store::X509StoreBuilder};
+    let mut b = boring::ssl::SslConnector::builder(boring::ssl::SslMethod::tls()).map_err(|x| x.to_string())?;
+    let certs = match cert_file {
+        Some(f) => X509::stack_from_pem(&std::fs::read(f).map_err(|x| format!("SSL_CERT_FILE {}: {x}", f.display()))?)
+            .map_err(|x| format!("SSL_CERT_FILE {}: {x}", f.display()))?,
+        None if system => return Ok(b.build()),
+        None => webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().map(|c| X509::from_der(c)).collect::<Result<_, _>>().map_err(|x| x.to_string())?,
+    };
+    let mut store = X509StoreBuilder::new().map_err(|x| x.to_string())?;
+    for c in certs {
+        store.add_cert(c).map_err(|x| x.to_string())?;
+    }
+    b.set_cert_store(store.build());
+    Ok(b.build())
+}
+
+/// Headers the light client's file holds, checked once per file per run.
+fn light_chain(path: &Path, cp: &headers::Checkpoint) -> Result<std::rc::Rc<(Vec<u8>, headers::Chain)>, String> {
+    thread_local!(static CHAINS: std::cell::RefCell<HashMap<PathBuf, std::rc::Rc<(Vec<u8>, headers::Chain)>>> = Default::default());
+    if let Some(c) = CHAINS.with(|m| m.borrow().get(path).cloned()) {
+        return Ok(c);
+    }
+    let bytes = std::fs::read(path).map_err(|x| format!("light client: no header file at {} ({x}): run `ox-headers sync`", path.display()))?;
+    let chain = headers::check(&bytes, Some(cp)).map_err(|x| format!("light client: {}: {x}", path.display()))?;
+    let c = std::rc::Rc::new((bytes, chain));
+    CHAINS.with(|m| m.borrow_mut().insert(path.to_path_buf(), c.clone()));
+    Ok(c)
+}
+
+/// An 80-byte block header that every source agrees on, and where it came from ("header from …").
+/// `cp`: the checkpoint a light client's chain must contain (`headers::CHECKPOINT`).
+pub(crate) fn bitcoin_header(sources: &[HeaderSource], height: u64, cp: &headers::Checkpoint) -> Result<(Vec<u8>, String), String> {
     let mut got: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut light = None;
     for src in sources {
         match src {
             HeaderSource::Explorers { urls } => {
@@ -800,14 +836,30 @@ pub(crate) fn bitcoin_header(sources: &[HeaderSource], height: u64) -> Result<(V
                 }
                 got.push((url.clone(), header));
             }
-            HeaderSource::LightClient(_) => return Err("light-client header source isn't built yet".into()),
+            HeaderSource::LightClient { file } => {
+                let path = file.as_ref().map(PathBuf::from).or_else(headers::default_file).ok_or("light client: no app-data directory; give the source a `file`")?;
+                let c = light_chain(&path, cp)?;
+                if height > c.1.height {
+                    return Err(format!("light client: {} reaches block {}, not {height} yet: run `ox-headers sync`", path.display(), c.1.height));
+                }
+                let at = height as usize * 80;
+                light = Some(c.1.height);
+                got.push((format!("the light client ({})", path.display()), c.0[at..at + 80].to_vec()));
+            }
         }
     }
     let Some((first, header)) = got.first() else { return Err("no Bitcoin header sources chosen".into()) };
     if let Some((other, _)) = got.iter().find(|(_, h)| h != header) {
         return Err(format!("header sources disagree at block {height}: {first} and {other} gave different headers"));
     }
-    Ok((header.clone(), got.len()))
+    let others = got.len() - usize::from(light.is_some());
+    let s = |n: usize| if n == 1 { "" } else { "s" };
+    let from = match light {
+        Some(tip) if others == 0 => format!("header from the light client (synced to {tip})"),
+        Some(tip) => format!("header from the light client (synced to {tip}) and {others} other source{}", s(others)),
+        None => format!("header from {others} source{}", s(others)),
+    };
+    Ok((header.clone(), from))
 }
 
 /// A Bitcoin Core JSON-RPC call, authenticated with the node's cookie file. The cookie is a
@@ -1043,10 +1095,14 @@ mod tests {
 
     /// An Esplora-like explorer serving `h` at height 912095.
     fn explorer(h: Vec<u8>) -> String {
+        explorer_at(912_095, h)
+    }
+
+    fn explorer_at(height: u64, h: Vec<u8>) -> String {
         serve(Arc::new(move |_, p, _, _| {
             let hash = ots::block_hash(&h);
             match p {
-                "/api/block-height/912095" => (200, hash.into_bytes()),
+                p if p == format!("/api/block-height/{height}") => (200, hash.into_bytes()),
                 p if p == format!("/api/block/{hash}/header") => (200, ots::hex(&h).into_bytes()),
                 _ => (404, vec![]),
             }
@@ -1079,27 +1135,136 @@ mod tests {
         let (a, b, bad) = (explorer(h.clone()), explorer(h.clone()), explorer(other.clone()));
         let ex = |urls: &[&String]| HeaderSource::Explorers { urls: urls.iter().map(|u| u.to_string()).collect() };
 
-        assert_eq!(bitcoin_header(&[ex(&[&a, &b])], 912_095).unwrap(), (h.clone(), 2));
-        let err = bitcoin_header(&[ex(&[&a, &bad])], 912_095).unwrap_err();
+        let get = |src: &[HeaderSource]| bitcoin_header(src, 912_095, &headers::CHECKPOINT);
+        assert_eq!(get(&[ex(&[&a, &b])]).unwrap(), (h.clone(), "header from 2 sources".into()));
+        let err = get(&[ex(&[&a, &bad])]).unwrap_err();
         assert!(err.contains("disagree") && err.contains(&a) && err.contains(&bad), "{err}");
 
         let d = tmp("cookie");
         let cookie = d.join(".cookie");
         std::fs::write(&cookie, "__cookie__:s3cret-value\n").unwrap();
         let node = |h: Vec<u8>, c: &str| HeaderSource::Bitcoind { url: bitcoind(h, c), cookie_file: cookie.display().to_string() };
-        assert_eq!(bitcoin_header(&[node(h.clone(), "__cookie__:s3cret-value")], 912_095).unwrap(), (h.clone(), 1));
-        assert_eq!(bitcoin_header(&[node(h.clone(), "__cookie__:s3cret-value"), ex(&[&a])], 912_095).unwrap().1, 2);
-        let err = bitcoin_header(&[node(h.clone(), "__cookie__:other")], 912_095).unwrap_err();
+        assert_eq!(get(&[node(h.clone(), "__cookie__:s3cret-value")]).unwrap(), (h.clone(), "header from 1 source".into()));
+        assert_eq!(get(&[node(h.clone(), "__cookie__:s3cret-value"), ex(&[&a])]).unwrap().1, "header from 2 sources");
+        let err = get(&[node(h.clone(), "__cookie__:other")]).unwrap_err();
         assert!(err.contains("refused the credentials") && !err.contains("s3cret"), "{err}");
-        let err = bitcoin_header(&[node(other, "__cookie__:s3cret-value"), ex(&[&a])], 912_095).unwrap_err();
+        let err = get(&[node(other, "__cookie__:s3cret-value"), ex(&[&a])]).unwrap_err();
         assert!(err.contains("disagree"), "{err}");
         std::fs::remove_file(&cookie).unwrap();
-        let err = bitcoin_header(&[node(h.clone(), "x")], 912_095).unwrap_err();
+        let err = get(&[node(h.clone(), "x")]).unwrap_err();
         assert!(err.contains("cookie file"), "{err}");
+        assert!(get(&[]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
-        let lc = HeaderSource::LightClient(Default::default());
-        assert!(bitcoin_header(&[lc], 912_095).unwrap_err().contains("isn't built yet"));
-        assert!(bitcoin_header(&[], 912_095).is_err());
+    /// The light client's header file: checked from genesis against a checkpoint, then read at the
+    /// proof's height; with other sources, all must agree. Fixture: the first 2101 real headers.
+    #[test]
+    fn bitcoin_headers_from_the_light_clients_file() {
+        let real = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../ox-store/testdata/headers/first-2101.bin")).unwrap();
+        let cp = headers::Checkpoint {
+            height: 2100,
+            hash: "00000000d5092034c3a92473d42f28e3fd279f0652e2d5b0049c7d40fcbc990b",
+            time: 1_233_136_967,
+            work: "0000000000000000000000000000000000000000000000000000083508350835",
+        };
+        let d = tmp("light");
+        let f = d.join("bitcoin-headers.bin");
+        std::fs::write(&f, &real).unwrap();
+        let lc = |f: &Path| HeaderSource::LightClient { file: Some(f.display().to_string()) };
+        let at = |h: u64| real[h as usize * 80..h as usize * 80 + 80].to_vec();
+
+        let (h, from) = bitcoin_header(&[lc(&f)], 2000, &cp).unwrap();
+        assert_eq!((h, from.as_str()), (at(2000), "header from the light client (synced to 2100)"));
+        let err = bitcoin_header(&[lc(&f)], 2101, &cp).unwrap_err();
+        assert!(err.contains("reaches block 2100") && err.contains("ox-headers sync"), "{err}");
+        // With explorers: all must agree.
+        let (good, bad) = (explorer_at(1500, at(1500)), explorer_at(1500, at(1499)));
+        let ex = |u: &String| HeaderSource::Explorers { urls: vec![u.clone()] };
+        assert_eq!(bitcoin_header(&[lc(&f), ex(&good)], 1500, &cp).unwrap().1, "header from the light client (synced to 2100) and 1 other source");
+        assert!(bitcoin_header(&[lc(&f), ex(&bad)], 1500, &cp).unwrap_err().contains("disagree"));
+        // Missing, stale against the checkpoint, or broken: refused with the reason.
+        let err = bitcoin_header(&[lc(&d.join("none.bin"))], 1, &cp).unwrap_err();
+        assert!(err.contains("no header file") && err.contains("ox-headers sync"), "{err}");
+        let short = d.join("short.bin");
+        std::fs::write(&short, &real[..80 * 2000]).unwrap();
+        assert!(bitcoin_header(&[lc(&short)], 1, &cp).unwrap_err().contains("below the release checkpoint"));
+        let broken = d.join("broken.bin");
+        let mut b = real.clone();
+        b[700 * 80 + 10] ^= 1;
+        std::fs::write(&broken, &b).unwrap();
+        assert!(bitcoin_header(&[lc(&broken)], 1, &cp).unwrap_err().contains("block 700 doesn't link"));
+        // The release checkpoint is far above this fixture: the real verify refuses it.
+        let fresh = d.join("fresh.bin");
+        std::fs::write(&fresh, &real).unwrap();
+        assert!(bitcoin_header(&[lc(&fresh)], 1, &headers::CHECKPOINT).unwrap_err().contains("below the release checkpoint"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A local TLS server whose certificate comes from a test CA: refused against the bundled roots
+    /// and against a CA file of another name, accepted with the test CA as `SSL_CERT_FILE`.
+    #[test]
+    fn https_trust_bundled_roots_or_ssl_cert_file() {
+        use boring::{asn1::Asn1Time, bn::BigNum, ec::{EcGroup, EcKey}, hash::MessageDigest, nid::Nid, pkey::{PKey, Private}};
+        use boring::ssl::{SslAcceptor, SslMethod};
+        use boring::x509::{X509, X509NameBuilder, extension::{BasicConstraints, SubjectAlternativeName}};
+        let key = || PKey::from_ec_key(EcKey::generate(&EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap()).unwrap()).unwrap();
+        let cert = |cn: &str, k: &PKey<Private>, ca: Option<(&X509, &PKey<Private>)>| {
+            let mut n = X509NameBuilder::new().unwrap();
+            n.append_entry_by_nid(Nid::COMMONNAME, cn).unwrap();
+            let n = n.build();
+            let mut b = X509::builder().unwrap();
+            b.set_version(2).unwrap();
+            b.set_serial_number(&BigNum::from_u32(if ca.is_some() { 2 } else { 1 }).unwrap().to_asn1_integer().unwrap()).unwrap();
+            b.set_subject_name(&n).unwrap();
+            b.set_issuer_name(ca.map_or(&*n, |(c, _)| c.subject_name())).unwrap();
+            b.set_pubkey(k).unwrap();
+            b.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+            b.set_not_after(&Asn1Time::days_from_now(2).unwrap()).unwrap();
+            match ca {
+                None => b.append_extension(&BasicConstraints::new().critical().ca().build().unwrap()).unwrap(),
+                Some((c, _)) => {
+                    let san = SubjectAlternativeName::new().dns("localhost").build(&b.x509v3_context(Some(&**c), None)).unwrap();
+                    b.append_extension(&san).unwrap();
+                }
+            }
+            b.sign(ca.map_or(k, |(_, ck)| ck), MessageDigest::sha256()).unwrap();
+            b.build()
+        };
+        let (ca_key, server_key) = (key(), key());
+        let ca = cert("ox test CA", &ca_key, None);
+        let server = cert("localhost", &server_key, Some((&ca, &ca_key)));
+        let other_ca = cert("another CA", &key(), None);
+        let mut acc = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls()).unwrap();
+        acc.set_private_key(&server_key).unwrap();
+        acc.set_certificate(&server).unwrap();
+        let acc = acc.build();
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for c in l.incoming().flatten() {
+                if let Ok(mut s) = acc.accept(c) {
+                    let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\nhello");
+                    let _ = s.shutdown();
+                }
+            }
+        });
+        let d = tmp("tls");
+        let (ca_file, other_file) = (d.join("ca.pem"), d.join("other.pem"));
+        std::fs::write(&ca_file, ca.to_pem().unwrap()).unwrap();
+        std::fs::write(&other_file, other_ca.to_pem().unwrap()).unwrap();
+        let get = |file: Option<&Path>, system: bool, name: &str| -> Result<String, String> {
+            let mut s = trust(file, system)?.connect(name, std::net::TcpStream::connect(addr).unwrap()).map_err(|x| x.to_string())?;
+            let mut out = String::new();
+            s.read_to_string(&mut out).map_err(|x| x.to_string())?;
+            Ok(out)
+        };
+        assert!(webpki_root_certs::TLS_SERVER_ROOT_CERTS.len() > 100);
+        assert!(get(None, false, "localhost").is_err(), "the bundled roots don't know the test CA");
+        assert!(get(Some(&other_file), true, "localhost").is_err(), "another CA");
+        assert!(get(Some(&ca_file), false, "localhost").unwrap().ends_with("hello"));
+        assert!(get(Some(&ca_file), false, "127.0.0.2").is_err(), "the host name is checked");
+        assert!(trust(Some(&d.join("missing.pem")), true).unwrap_err().contains("SSL_CERT_FILE"));
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -1109,6 +1274,26 @@ mod tests {
     #[ignore = "network: contacts mempool.space and blockstream.info"]
     fn the_default_explorers_over_https() {
         let sources = ox_store::policy::Timestamps::default().headers();
-        assert_eq!(bitcoin_header(&sources, 912_095).unwrap(), (header(), 2));
+        assert_eq!(bitcoin_header(&sources, 912_095, &headers::CHECKPOINT).unwrap(), (header(), "header from 2 sources".into()));
+    }
+
+    /// The real confirmed fixture proof (block 971959) against a header file `ox-headers sync` made
+    /// (`OX_HEADERS_FILE`), alone and with the default explorers: by hand, never in CI.
+    #[test]
+    #[ignore = "needs a synced header file (OX_HEADERS_FILE); the second half contacts the explorers"]
+    fn the_fixture_proof_against_a_synced_light_client() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ox-store/testdata/ots");
+        let s = ots::summarize(&std::fs::read(dir.join("random32.bin")).unwrap(), &std::fs::read(dir.join("random32.bin.ots")).unwrap()).unwrap();
+        let (height, root) = s.bitcoin.iter().find(|(h, _)| *h == 971_959).unwrap();
+        let lc = HeaderSource::LightClient { file: Some(std::env::var("OX_HEADERS_FILE").unwrap()) };
+        let mut sources = vec![lc];
+        for _ in 0..2 {
+            let t = std::time::Instant::now();
+            let (h, from) = bitcoin_header(&sources, *height, &headers::CHECKPOINT).unwrap();
+            let time = ots::check_header(&h, root).unwrap();
+            eprintln!("existed by {} (Bitcoin block {height}, {from}) in {:?}", ox_store::rfc3339(i64::from(time)), t.elapsed());
+            assert!(from.starts_with("header from the light client (synced to "), "{from}");
+            sources.extend(ox_store::policy::Timestamps::default().headers());
+        }
     }
 }

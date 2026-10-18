@@ -25,6 +25,8 @@ fips205 = { version = "=0.4.1", default-features = false, features = ["slh_dsa_s
 rand_core = { version = "=0.6.4", default-features = false }
 # RFC 3161 time-stamp requests and responses: our own types over `der` (a final release), no `cms`.
 der = { version = "=0.8.2", features = ["alloc", "derive", "oid"] }
+# RIPEMD-160 for 2015-era OpenTimestamps proofs (18 Oct 2026); digest 0.11, already in the tree.
+ripemd = { version = "=0.2.0", default-features = false }
 
 [dev-dependencies]
 # RustCrypto SLH-DSA, a release candidate: only to cross-check fips205 in the tests.
