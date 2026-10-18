@@ -7,20 +7,55 @@
 //! path validation, so `verify` says "TSA signature not checked". TSA tokens are RSA or ECDSA
 //! signatures: they need renewing (RFC 4998 evidence records) before those can be forged.
 
-use cms::content_info::ContentInfo;
-use cms::signed_data::SignedData;
-use cms::spki::AlgorithmIdentifierOwned;
 use der::asn1::{ObjectIdentifier, OctetString, Uint};
-use der::{Any, Decode, Encode, Sequence, Tagged};
+use der::{Any, Decode, Encode, Reader, Sequence, SliceReader, Tagged};
 use sha2::{Digest, Sha256};
 
 const SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.1");
 const SIGNED_DATA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.7.2");
 const TST_INFO: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.1.4");
 
+// Our own ASN.1 types (no release-candidate `cms` crate): only the parts of
+// RFC 5652 and RFC 3161 a time-stamp check reads. The rest of SignedData is skipped unread.
+#[derive(Sequence)]
+struct AlgorithmIdentifier {
+    oid: ObjectIdentifier,
+    parameters: Option<Any>,
+}
+
+#[derive(Sequence)]
+struct ContentInfo {
+    content_type: ObjectIdentifier,
+    #[asn1(context_specific = "0", tag_mode = "EXPLICIT")]
+    content: Any,
+}
+
+#[derive(Sequence)]
+struct EncapsulatedContentInfo {
+    econtent_type: ObjectIdentifier,
+    #[asn1(context_specific = "0", tag_mode = "EXPLICIT", optional = "true")]
+    econtent: Option<OctetString>,
+}
+
+/// SignedData's `encapContentInfo`: version and digest algorithms read past, certificates, CRLs
+/// and signer infos skipped (the TSA's signature isn't checked here).
+fn encapsulated(signed_data: &Any) -> der::Result<EncapsulatedContentInfo> {
+    let bytes = signed_data.to_der()?;
+    let mut r = SliceReader::new(&bytes)?;
+    r.sequence(|r| {
+        let _version: u8 = r.decode()?;
+        let _digest_algorithms: Any = r.decode()?;
+        let e: EncapsulatedContentInfo = r.decode()?;
+        while !r.is_finished() {
+            let _rest: Any = r.decode()?;
+        }
+        Ok(e)
+    })
+}
+
 #[derive(Sequence)]
 struct MessageImprint {
-    hash_algorithm: AlgorithmIdentifierOwned,
+    hash_algorithm: AlgorithmIdentifier,
     hashed_message: OctetString,
 }
 
@@ -68,7 +103,7 @@ struct TstInfo {
     #[asn1(context_specific = "0", tag_mode = "EXPLICIT", optional = "true")]
     tsa: Option<Any>,
     #[asn1(context_specific = "1", tag_mode = "IMPLICIT", optional = "true")]
-    extensions: Option<cms::cert::x509::ext::Extensions>,
+    extensions: Option<Vec<Any>>,
 }
 
 /// A DER `TimeStampReq` for `data` (SHA-256 imprint, a random nonce, the TSA's certificate asked
@@ -87,7 +122,7 @@ pub fn request(data: &[u8]) -> Result<(Vec<u8>, [u8; 8]), String> {
 
 fn imprint(data: &[u8]) -> MessageImprint {
     MessageImprint {
-        hash_algorithm: AlgorithmIdentifierOwned { oid: SHA256, parameters: None },
+        hash_algorithm: AlgorithmIdentifier { oid: SHA256, parameters: None },
         hashed_message: OctetString::new(Sha256::digest(data).to_vec()).expect("digest"),
     }
 }
@@ -112,16 +147,12 @@ pub fn check(response: &[u8], data: &[u8]) -> Result<Stamp, String> {
     if token.content_type != SIGNED_DATA {
         return Err("the token isn't CMS SignedData".into());
     }
-    let sd: SignedData = token.content.decode_as().map_err(|e| format!("token: {e}"))?;
-    if sd.encap_content_info.econtent_type != TST_INFO {
+    let encap = encapsulated(&token.content).map_err(|e| format!("token: {e}"))?;
+    if encap.econtent_type != TST_INFO {
         return Err("the token doesn't hold a TSTInfo".into());
     }
-    let tst = sd
-        .encap_content_info
+    let tst = encap
         .econtent
-        .ok_or("the token has no TSTInfo")?
-        .decode_as::<OctetString>()
-        .ok()
         .and_then(|o| TstInfo::from_der(o.as_bytes()).ok())
         .ok_or("the token's TSTInfo can't be read")?;
     let want = imprint(data);

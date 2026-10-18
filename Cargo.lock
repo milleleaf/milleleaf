@@ -340,18 +340,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
-name = "cms"
-version = "0.3.0-rc.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a7e16fb99a745fd8c7327eeb7deb9f667c03320f4f61d23c1927a55813b4466"
-dependencies = [
- "const-oid 0.10.2",
- "der 0.8.2",
- "spki 0.8.1",
- "x509-cert",
-]
-
-[[package]]
 name = "color"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -709,7 +697,6 @@ checksum = "a878c850e9e421b20262e9b41f9c860e4785fa07541c266b62ff9d1ef998a80a"
 dependencies = [
  "const-oid 0.10.2",
  "der_derive",
- "flagset",
  "zeroize",
 ]
 
@@ -861,12 +848,6 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
-
-[[package]]
-name = "flagset"
-version = "0.4.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flate2"
@@ -1766,7 +1747,6 @@ name = "ox-store"
 version = "0.1.0"
 dependencies = [
  "base64",
- "cms",
  "der 0.8.2",
  "ed25519-dalek",
  "getrandom 0.2.17",
@@ -3082,17 +3062,6 @@ dependencies = [
  "curve25519-dalek 5.0.0",
  "rand_core 0.10.1",
  "zeroize",
-]
-
-[[package]]
-name = "x509-cert"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "105ef4642d9cb137ef83d623d0e4bf08b8adf69e9918ca904a174adb6d3d038b"
-dependencies = [
- "const-oid 0.10.2",
- "der 0.8.2",
- "spki 0.8.1",
 ]
 
 [[package]]

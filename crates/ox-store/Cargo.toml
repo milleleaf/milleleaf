@@ -20,8 +20,7 @@ serde_json_canonicalizer = "=0.3.2"
 # RustCrypto, pure Rust, never independently audited (their READMEs say so).
 ml-dsa = { version = "=0.1.1", default-features = false, features = ["alloc"] }
 slh-dsa = "=0.2.0-rc.5"
-# RFC 3161 time-stamp requests and responses (parsing only; no network here).
-cms = { version = "=0.3.0-rc.0", default-features = false }
+# RFC 3161 time-stamp requests and responses: our own types over `der` (a final release), no `cms`.
 der = { version = "=0.8.2", features = ["alloc", "derive", "oid"] }
 
 [target.'cfg(unix)'.dependencies]
