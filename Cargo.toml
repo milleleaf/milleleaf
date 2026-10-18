@@ -26,3 +26,24 @@ thiserror = "2"
 # workspace does; WordCraft's PDF writer uses the same krilla 0.8.
 [patch.crates-io]
 krilla = { git = "https://github.com/storytold/craft-libs", rev = "82a24b006eefa036b43c09a67fb9a3fbd17ffe63", version = "=0.8.2" }
+
+# Post-quantum signing runs about 30 times slower unoptimised (SLH-DSA: tens of seconds per
+# signature in a debug build), and tests and run.sh sign often: optimise just these crates.
+[profile.dev.package.ml-dsa]
+opt-level = 3
+[profile.dev.package.slh-dsa]
+opt-level = 3
+[profile.dev.package.module-lattice]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.sha3]
+opt-level = 3
+[profile.dev.package.keccak]
+opt-level = 3
+[profile.dev.package.shake]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3
+[profile.dev.package.hybrid-array]
+opt-level = 3

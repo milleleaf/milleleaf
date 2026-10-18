@@ -150,7 +150,7 @@ node -e '
 ' "$TMP"
 rm -rf "$TMP"
 
-echo; echo "== 15. Revision store: commit by compare-and-swap, blame, checkpoint, signatures, sealed layers"
+echo; echo "== 15. Revision store: commit by compare-and-swap, blame, checkpoint, signatures, sealed layers, post-quantum signatures"
 TMP=$(mktemp -d)
 export OX_KEYS="$TMP/keys"                       # a throwaway key, not yours
 $OX init "$TMP/proj" --from project.ox.json
@@ -213,6 +213,58 @@ $OX compose "$P2" --out "$TMP/sealed.json" 2> /dev/null
 if grep -q "sealed demo text" "$TMP/sealed.json"; then echo "still readable after its key was destroyed"; exit 1; fi
 $OX verify "$P2" 2> /dev/null | grep "key destroyed"
 echo "checked: a sealed layer opens for its recipient only, and destroying its key shreds it"
+#    post-quantum signatures (plan decision 5, 18 Oct 2026): every signature is Ed25519 + ML-DSA-65, an
+#    owner's or an --archive one adds SLH-DSA; --require applies .ox/policy.json (default: Ed25519 + ML-DSA-65)
+P3="$TMP/proj3"
+$OX init "$P3" --from project.ox.json > /dev/null
+$OX key new pq "$P3" > /dev/null
+for L in $($OX verify "$P3" 2> /dev/null | cut -c1-12); do $OX sign "$P3" "$L" --key pq > /dev/null; done
+FIRST=$($OX verify "$P3" 2> /dev/null | sed -n 1p | cut -c1-12)
+$OX sign "$P3" "$FIRST" --key pq --archive > /dev/null
+$OX verify "$P3" --require > "$TMP/v.txt" || { cat "$TMP/v.txt"; echo "--require refused hybrid signatures"; exit 1; }
+sed -n 1,2p "$TMP/v.txt"
+grep -q "signed by pq (hybrid+slh-dsa)" "$TMP/v.txt" && grep -q "signed by pq (hybrid)" "$TMP/v.txt" \
+  || { echo "expected hybrid and hybrid+slh-dsa signatures"; exit 1; }
+echo "checked: Ed25519 + ML-DSA-65 on every signature, SLH-DSA with --archive, accepted by --require"
+#    a key made before post-quantum keys existed signs Ed25519 only ("classical only"): accepted with a
+#    warning until the policy's classicalOnlyUntil (default 2035-01-01) …
+$OX key new legacy > /dev/null
+node -e 'const fs = require("fs"), f = process.argv[1], k = JSON.parse(fs.readFileSync(f));
+  delete k.mldsa65; delete k.slhdsa; fs.writeFileSync(f, JSON.stringify(k, null, 2))' "$OX_KEYS/legacy.key"
+$OX key add "$P3" legacy "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).public' "$OX_KEYS/legacy.key")" > /dev/null
+$OX commit "$P3" grid-edit.ox.json --sign --key legacy 2> /dev/null
+LEGACY=$($OX verify "$P3" 2> /dev/null | grep "signed by legacy" | cut -c1-12)
+$OX verify "$P3" --require > "$TMP/v.txt" || { cat "$TMP/v.txt"; echo "--require refused classical only before its date"; exit 1; }
+grep "legacy" "$TMP/v.txt"
+grep -q "warning: legacy: classical only" "$TMP/v.txt" || { echo "expected a classical-only warning"; exit 1; }
+#    … and refused once that date has passed
+cat > "$P3/.ox/policy.json" <<'JSON'
+{"signatures": {"require": ["ed25519", "mldsa65"], "classicalOnlyUntil": "2026-01-01"},
+ "algorithms": {"ed25519": {"until": "2035-01-01"}, "mldsa65": {}, "slhdsa-sha2-192s": {}, "xwing": {}}}
+JSON
+if $OX verify "$P3" --require > "$TMP/v.txt" 2>&1; then echo "expected --require to refuse classical only"; exit 1; fi
+grep "REFUSED" "$TMP/v.txt"
+#    `ox key upgrade` adds the post-quantum keys to the old key file (its Ed25519 key, and so its
+#    identity, is unchanged); signed again, the layer is hybrid and accepted
+$OX key upgrade legacy "$P3" | sed -n 1p
+node -e 'if ((require("fs").statSync(process.argv[1]).mode & 0o777) !== 0o600) { console.error("key file not mode 600"); process.exit(1) }' "$OX_KEYS/legacy.key"
+$OX sign "$P3" "$LEGACY" --key legacy > /dev/null
+$OX verify "$P3" --require > "$TMP/v.txt" 2>&1 || { cat "$TMP/v.txt"; echo "the upgraded key is still refused"; exit 1; }
+echo "checked: an old key is classical only, refused after the policy's date, hybrid after ox key upgrade"
+#    RFC 3161 time-stamps of the signature files, from a local test TSA (openssl ts; never a public one)
+node ../../tools/local-tsa.mjs "$TMP/tsa" > "$TMP/tsa.url" & TSA_PID=$!
+trap 'kill $TSA_PID 2> /dev/null || true' EXIT
+for _ in $(seq 100); do [ -s "$TMP/tsa.url" ] && break; sleep 0.1; done
+$OX timestamp "$P3" "$LEGACY" --tsa "$(head -1 "$TMP/tsa.url")" | sed "s|$TMP|\$TMP|"
+$OX verify "$P3" > "$TMP/v.txt"
+grep "$LEGACY" "$TMP/v.txt"
+grep "$LEGACY" "$TMP/v.txt" | grep -q "timestamped" || { echo "verify doesn't report the time-stamp"; exit 1; }
+#    the TSA's signature and certificate, checked by openssl (ox checks the imprint and time only)
+for f in "$P3"/.ox/sigs/*/*.tsr; do
+  openssl ts -verify -data "${f%.tsr}" -in "$f" -CAfile "$TMP/tsa/ca.pem" > /dev/null 2>&1 || { echo "openssl rejects $f"; exit 1; }
+done
+kill $TSA_PID
+echo "checked: every signature file of a layer time-stamped by a local TSA; openssl verifies the tokens"
 $OX validate "$TMP/proj" | tail -1
 #    the store composes exactly like the stack files with the same edits
 $OX compose "$TMP/proj" --out "$TMP/a.json" 2> /dev/null

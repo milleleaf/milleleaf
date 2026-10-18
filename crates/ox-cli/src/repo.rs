@@ -1,5 +1,5 @@
 //! Revision-store commands (`ox init`, `commit`, `log`, `blame`, `checkpoint`, `verify`, `sign`,
-//! `key`) and the helpers that let every other command take a project folder.
+//! `timestamp`, `key`) and the helpers that let every other command take a project folder.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -9,7 +9,7 @@ use ox_core::render::find;
 use ox_core::{Composed, Composer};
 use ox_core::model::Layer;
 use ox_core::stack::LoadedLayer;
-use ox_store::{CommitOptions, KeyPair, LayerStatus, Store, StoreError};
+use ox_store::{CommitOptions, KeyPair, LayerStatus, SigInfo, Store, StoreError};
 
 /// Layers of a stack file, or of a project folder's head.
 pub fn load_any(file: &Path) -> Result<Vec<LoadedLayer>, String> {
@@ -164,8 +164,12 @@ fn key_for(args: &[String]) -> Result<KeyPair, String> {
         .map(String::from)
         .or_else(|| std::env::var("OX_KEY").ok())
         .unwrap_or_else(|| "default".into());
-    KeyPair::load_named(&name)
-        .map_err(|err| format!("{err}\n(make one with `ox key new {name}`, or pass --key NAME)"))
+    let k = KeyPair::load_named(&name)
+        .map_err(|err| format!("{err}\n(make one with `ox key new {name}`, or pass --key NAME)"))?;
+    if k.mldsa_public().is_none() {
+        eprintln!("warning: key {name} has no post-quantum keys, so it signs with Ed25519 only (`ox key upgrade {name}`)");
+    }
+    Ok(k)
 }
 
 pub fn run(
@@ -186,6 +190,7 @@ pub fn run(
         "checkpoint" => checkpoint(file, args),
         "verify" => verify(file, args),
         "sign" => sign(file, pos, args),
+        "timestamp" => timestamp(file, pos, args),
         "purge" => purge(file, pos, args),
         "key" => key(pos),
         _ => return None,
@@ -237,6 +242,7 @@ fn commit(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Stri
         rebase: has(args, "--rebase"),
         author: opt(args, "--author").map(String::from),
         sign: key.as_ref(),
+        archive: has(args, "--archive"),
         // A layer's pictures are found beside the layer file, then at the project root.
         assets: layer_dir.as_deref(),
     };
@@ -371,7 +377,10 @@ fn checkpoint(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
 fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
     let s = Store::open(dir).map_err(e)?;
     let require = has(args, "--require");
-    let (mut bad, mut unsigned, mut untrusted) = (0, 0, 0);
+    let policy = if require { Some(s.policy().map_err(e)?) } else { None };
+    let now = ox_store::now_rfc3339();
+    let pq_listed = s.pq_listed();
+    let (mut bad, mut refused, mut untrusted) = (0, 0, 0);
     for h in s.head_layers().map_err(e)? {
         let id = s.index(&h).map(|i| i.header.id).unwrap_or_default();
         let status = s.verify(&h).map_err(e)?;
@@ -387,26 +396,9 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
                     // Valid, but only by keys the project doesn't list: anyone can make a key.
                     untrusted += 1;
                 }
-                signatures
-                    .iter()
-                    .map(|g| {
-                        let who = match &g.known_as {
-                            Some(n) => n.clone(),
-                            None => format!("unknown key {} (says {})", g.key_id, g.claimed),
-                        };
-                        if g.valid {
-                            format!("signed by {who}")
-                        } else {
-                            format!("INVALID signature ({who})")
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ")
+                describe(signatures)
             }
-            LayerStatus::Unsigned => {
-                unsigned += 1;
-                "unsigned".into()
-            }
+            LayerStatus::Unsigned => "unsigned".into(),
             LayerStatus::Purged { mode, by, at, reason } => format!(
                 "purged{} by {by} on {at}{}",
                 if mode == "key" { " (key destroyed)" } else { "" },
@@ -425,22 +417,134 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
             _ => text,
         };
         println!("{}  {:<44} {text}", short(&h), id);
+        if let Some(policy) = &policy {
+            let sigs: &[SigInfo] = match &status {
+                LayerStatus::Signed { signatures } | LayerStatus::Invalid { signatures } => signatures,
+                LayerStatus::Unsigned => &[],
+                _ => continue,
+            };
+            let v = policy.check(sigs, &now, &pq_listed);
+            for w in &v.warnings {
+                println!("              warning: {w}");
+            }
+            for r in &v.refused {
+                println!("              REFUSED by policy: {r}");
+            }
+            refused += usize::from(!v.refused.is_empty());
+        }
     }
     for problem in s.verify_blobs().map_err(e)? {
         bad += 1;
         println!("BLOB  {problem}");
     }
-    if untrusted > 0 {
+    if untrusted > 0 && !require {
         eprintln!(
             "note: {untrusted} layer(s) signed only by keys this project doesn't list \
-             (`ox key add` to trust one); `--require` counts them as unsigned"
+             (`ox key add` to trust one); `--require` refuses them"
         );
     }
-    Ok(if bad > 0 || (require && unsigned + untrusted > 0) {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    })
+    if require && refused > 0 {
+        eprintln!("ox: {refused} layer(s) don't meet the signature policy ({})", if s.dir.join("policy.json").exists() { ".ox/policy.json" } else { "the built-in default" });
+    }
+    Ok(if bad > 0 || refused > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
+}
+
+/// "signed by sam (hybrid+slh-dsa, timestamped …); INVALID mldsa65 signature (…)".
+fn describe(sigs: &[SigInfo]) -> String {
+    let who = |g: &SigInfo| match &g.known_as {
+        Some(n) => n.clone(),
+        None => format!("unknown {} key {} (says {})", if g.alg.is_empty() { "?" } else { &g.alg }, g.key_id, g.claimed),
+    };
+    let mut by: Vec<(String, Vec<&SigInfo>)> = Vec::new();
+    for g in sigs.iter().filter(|g| g.valid) {
+        let w = who(g);
+        match by.iter_mut().find(|(n, _)| *n == w) {
+            Some((_, v)) => v.push(g),
+            None => by.push((w, vec![g])),
+        }
+    }
+    let mut out: Vec<String> = by
+        .iter()
+        .map(|(w, gs)| {
+            let algs: Vec<&str> = gs.iter().map(|g| g.alg.as_str()).collect();
+            let stamp = gs.iter().filter_map(|g| g.timestamp.as_deref()).min();
+            format!(
+                "signed by {w} ({}{})",
+                ox_store::strength(&algs),
+                stamp.map(|t| format!(", timestamped {t}, TSA signature not checked")).unwrap_or_default()
+            )
+        })
+        .collect();
+    out.extend(sigs.iter().filter(|g| !g.valid).map(|g| {
+        format!(
+            "INVALID {} signature ({}){}",
+            if g.alg.is_empty() { "?" } else { &g.alg },
+            who(g),
+            g.problem.as_ref().map(|p| format!(": {p}")).unwrap_or_default()
+        )
+    }));
+    out.join("; ")
+}
+
+/// Time-stamps every signature file of a layer with an RFC 3161 TSA; keeps each token beside its
+/// file (`<file>.tsr`).
+fn timestamp(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String> {
+    let s = Store::open(dir).map_err(e)?;
+    let h = s.resolve(pos.get(2).ok_or("`timestamp` needs a layer hash")?).map_err(e)?;
+    let url = match opt(args, "--tsa") {
+        Some(u) => u.to_string(),
+        None => s
+            .policy()
+            .map_err(e)?
+            .timestamps
+            .and_then(|t| t.tsa)
+            .ok_or("no time-stamp authority: pass --tsa URL or set timestamps.tsa in .ox/policy.json (there is no default)")?,
+    };
+    let files = s.signature_files(&h);
+    if files.is_empty() {
+        return Err(format!("{} is unsigned; sign it first", short(&h)));
+    }
+    for f in files {
+        let data = std::fs::read(&f).map_err(|x| format!("{}: {x}", f.display()))?;
+        let (req, nonce) = ox_store::tsp::request(&data).map_err(e)?;
+        let resp = http_post(&url, "application/timestamp-query", &req)?;
+        let stamp = ox_store::tsp::check(&resp, &data).map_err(|x| format!("{url}: {x}"))?;
+        let ours: Vec<u8> = nonce.iter().copied().skip_while(|b| *b == 0).collect();
+        if stamp.nonce.as_deref() != Some(ours.as_slice()) {
+            return Err(format!("{url}: the response doesn't carry our nonce (a replayed or unrelated token)"));
+        }
+        let t = ox_store::tsr_of(&f);
+        std::fs::write(&t, &resp).map_err(|x| format!("{}: {x}", t.display()))?;
+        println!("ox: timestamped {} at {} → {}", f.file_name().unwrap_or_default().to_string_lossy(), stamp.at, t.display());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// POSTs `body` over plain HTTP/1.0 and returns the response body.
+// ponytail: http:// only. A time-stamp token is signed, so transport security adds no integrity;
+// add a TLS client when a TSA the maintainer chooses serves https only.
+fn http_post(url: &str, content_type: &str, body: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Write};
+    let rest = url.strip_prefix("http://").ok_or_else(|| format!("{url}: only http:// time-stamp URLs are supported"))?;
+    let (host, path) = match rest.split_once('/') {
+        Some((h, p)) => (h, format!("/{p}")),
+        None => (rest, "/".to_string()),
+    };
+    let addr = if host.contains(':') { host.to_string() } else { format!("{host}:80") };
+    let err = |x: std::io::Error| format!("{url}: {x}");
+    let mut c = std::net::TcpStream::connect(&addr).map_err(err)?;
+    c.set_read_timeout(Some(std::time::Duration::from_secs(30))).map_err(err)?;
+    write!(c, "POST {path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).map_err(err)?;
+    c.write_all(body).map_err(err)?;
+    let mut r = Vec::new();
+    c.read_to_end(&mut r).map_err(err)?;
+    let split = r.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| format!("{url}: not an HTTP response"))?;
+    let head = String::from_utf8_lossy(&r[..split]);
+    let status = head.lines().next().unwrap_or_default();
+    if status.split_whitespace().nth(1) != Some("200") {
+        return Err(format!("{url}: {status}"));
+    }
+    Ok(r[split + 4..].to_vec())
 }
 
 /// Deletes a layer's content, keeping its hash; the purge record replicates like a layer.
@@ -466,9 +570,22 @@ fn sign(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String
         .resolve(pos.get(2).ok_or("`sign` needs a layer hash")?)
         .map_err(e)?;
     let k = key_for(args)?;
-    let p = s.sign(&h, &k).map_err(e)?;
-    println!("ox: signed {} as {} → {}", short(&h), k.name, p.display());
+    for p in s.sign(&h, &k, has(args, "--archive")).map_err(e)? {
+        println!("ox: signed {} as {} → {}", short(&h), k.name, p.display());
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Adds every public key of `k` to a project.
+fn add_all(s: &Store, k: &KeyPair) -> Result<(), String> {
+    s.add_key(&k.name, &k.public()).map_err(e)?;
+    if let Some(x) = k.xwing_public() {
+        s.add_xwing_key(&k.name, &x).map_err(e)?;
+    }
+    for p in [k.mldsa_public(), k.slh_public()].into_iter().flatten() {
+        s.add_pq_key(&k.name, &p).map_err(e)?;
+    }
+    Ok(())
 }
 
 fn key(pos: &[&String]) -> Result<ExitCode, String> {
@@ -478,25 +595,44 @@ fn key(pos: &[&String]) -> Result<ExitCode, String> {
             let k = KeyPair::generate(name).map_err(e)?;
             let p = k.save(&KeyPair::dir()).map_err(e)?;
             println!("ox: new key {name} → {}", p.display());
-            println!("{}", k.public());
-            let xw = k.xwing_public().unwrap_or_default();
-            println!("{xw}");
+            for public in k.publics() {
+                println!("{public}");
+            }
             if let Some(dir) = pos.get(3) {
-                let s = Store::open(Path::new(dir.as_str())).map_err(e)?;
-                let q = s.add_key(name, &k.public()).map_err(e)?;
-                s.add_xwing_key(name, &xw).map_err(e)?;
-                println!("ox: the project knows it ({}, and its X-Wing key for sealed layers)", q.display());
+                add_all(&Store::open(Path::new(dir.as_str())).map_err(e)?, &k)?;
+                println!("ox: the project knows it (Ed25519, ML-DSA-65 and SLH-DSA for signatures, X-Wing for sealed layers)");
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Some("upgrade") => {
+            let name = pos.get(2).map(|n| n.to_string()).or_else(|| std::env::var("OX_KEY").ok()).unwrap_or_else(|| "default".into());
+            let (k, added) = KeyPair::upgrade(&KeyPair::dir().join(format!("{name}.key"))).map_err(e)?;
+            if added.is_empty() {
+                println!("ox: key {name} already has every key; nothing changed");
+            } else {
+                println!("ox: added {} to key {name} (its existing keys are unchanged)", added.join(", "));
+            }
+            for public in k.publics() {
+                println!("{public}");
+            }
+            if let Some(dir) = pos.get(3) {
+                add_all(&Store::open(Path::new(dir.as_str())).map_err(e)?, &k)?;
+                println!("ox: the project knows its new keys");
             }
             Ok(ExitCode::SUCCESS)
         }
         Some("add") => {
             let (Some(dir), Some(name), Some(public)) = (pos.get(2), pos.get(3), pos.get(4)) else {
-                return Err("usage: ox key add <dir> <name> <ed25519:…> [<xwing:…>]".into());
+                return Err("usage: ox key add <dir> <name> <ed25519:…> [<xwing:…>] [<mldsa65:…>] [<slhdsa-…:…>]".into());
             };
             let s = Store::open(Path::new(dir.as_str())).map_err(e)?;
             let p = s.add_key(name, public).map_err(e)?;
-            if let Some(xw) = pos.get(5) {
-                s.add_xwing_key(name, xw).map_err(e)?;
+            for extra in &pos[5..] {
+                if extra.starts_with("xwing:") {
+                    s.add_xwing_key(name, extra).map_err(e)?;
+                } else {
+                    s.add_pq_key(name, extra).map_err(e)?;
+                }
             }
             println!("ox: the project knows {name} ({})", p.display());
             Ok(ExitCode::SUCCESS)
@@ -510,6 +646,6 @@ fn key(pos: &[&String]) -> Result<ExitCode, String> {
             println!("ox: {name} is {role} in this project");
             Ok(ExitCode::SUCCESS)
         }
-        _ => Err("usage: ox key new <name> [<dir>] | ox key add <dir> <name> <ed25519:…> [<xwing:…>] | ox key role <dir> <name> <role>".into()),
+        _ => Err("usage: ox key new <name> [<dir>] | ox key upgrade [<name>] [<dir>] | ox key add <dir> <name> <ed25519:…> [<other keys>…] | ox key role <dir> <name> <role>".into()),
     }
 }

@@ -19,8 +19,8 @@ USAGE:
 
   ox init     <dir> [--from STACK.ox.json]        start a revision store (.ox/), optionally with
                                                   every layer of an existing stack committed
-  ox commit   <dir> <LAYER.ox.json> [--expect HASH] [--rebase] [--sign [--key NAME]] [--seal-to A,B]
-                                                  append a layer; refused if the head moved since
+  ox commit   <dir> <LAYER.ox.json> [--expect HASH] [--rebase] [--sign [--key NAME] [--archive]]
+              [--seal-to A,B]                     append a layer; refused if the head moved since
                                                   HASH (or the layer's header.base); --seal-to
                                                   encrypts it so only A and B can compose it
   ox head     <dir>                               the current stack hash
@@ -28,15 +28,24 @@ USAGE:
   ox blame    <dir> <node> [<attribute>]          each value, the links it came through, and
                                                   every layer that set it
   ox checkpoint <dir> [--keep N] [--author NAME]  flatten all but the top N layers (default 1)
-  ox verify   <dir> [--require]                   hash and signatures of every layer in the head
+  ox verify   <dir> [--require]                   hash and signatures of every layer in the head;
+                                                  --require: refuse what .ox/policy.json (or the
+                                                  default: Ed25519 + ML-DSA-65) doesn't accept
   ox purge    <dir> <layer> [--reason TEXT] [--key NAME] [--key-destroy]
                  delete a layer's content, keep its hash; signed by an owner or approver;
                  --key-destroy (sealed layers): destroy its content key in every copy instead
   ox key role <dir> <name> <owner|approver|editor|viewer>
-  ox sign     <dir> <layer-hash> [--key NAME]     add a detached signature
-  ox key new  <name> [<dir>]                      new Ed25519 + X-Wing key in ~/.config/ox/keys
-                                                  (or $OX_KEYS); with <dir>, the project knows it
-  ox key add  <dir> <name> <ed25519:…> [<xwing:…>]  the project knows someone else's key
+  ox sign     <dir> <layer-hash> [--key NAME] [--archive]
+                 add detached signatures: Ed25519 + ML-DSA-65, and SLH-DSA for owners and
+                 approvers (or with --archive)
+  ox timestamp <dir> <layer-hash> [--tsa URL]     RFC 3161 time-stamp of each signature file
+                                                  (URL, or timestamps.tsa in .ox/policy.json)
+  ox key new  <name> [<dir>]                      new key (Ed25519, X-Wing, ML-DSA-65, SLH-DSA) in
+                                                  ~/.config/ox/keys (or $OX_KEYS); with <dir>,
+                                                  the project knows it
+  ox key upgrade [<name>] [<dir>]                 add the post-quantum keys an older key lacks
+  ox key add  <dir> <name> <ed25519:…> [<xwing:…>] [<mldsa65:…>] [<slhdsa-…:…>]
+                                                  the project knows someone else's keys
 
   ox layers   <stack.ox.json>                     list the stack, bottom layer first
   ox validate <stack.ox.json>                     check schemas, references and composition
@@ -109,7 +118,7 @@ fn positional(args: &[String]) -> Vec<&String> {
         }
         if matches!(
             a.as_str(),
-            "--out" | "--author" | "--id" | "--expect" | "--key" | "--keep" | "--from" | "--report"
+            "--out" | "--author" | "--id" | "--expect" | "--key" | "--keep" | "--from" | "--report" | "--tsa"
         ) {
             skip = true;
             continue;

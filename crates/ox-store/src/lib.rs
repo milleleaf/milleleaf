@@ -8,8 +8,11 @@
 //!   layers/<sha256>.json      every layer ever committed, immutable, named by its hash
 //!   stacks/<sha256>.json      one per commit: imports the previous stack + the new layer
 //!   index/<sha256>.json       per layer, written once: header + which nodes and keys it touches
-//!   sigs/<sha256>/<key>.json  detached Ed25519 signatures (optional)
-//!   keys/<name>.pub           public keys the project knows (`.xwing`: X-Wing keys, `.role`: roles)
+//!   sigs/<sha256>/<key>.json  detached signatures (optional): Ed25519; `<key>.mldsa65.json` and
+//!                             `<key>.slhdsa.json` beside it; `<file>.tsr` an RFC 3161 time-stamp
+//!   keys/<name>.pub           public keys the project knows (`.xwing`: X-Wing keys, `.mldsa65`,
+//!                             `.slhdsa`: post-quantum signing keys, `.role`: roles)
+//!   policy.json               which signatures `ox verify --require` requires (optional)
 //!   blobs/<sha256>            assets, and the ciphertext of sealed layers
 //!   wraps/<key id>/<name>.json  a sealed layer's content key wrapped to one recipient (deletable)
 //!   purged/<sha256>.json      purges carried out here
@@ -22,11 +25,16 @@
 
 mod history;
 mod keys;
+pub mod policy;
+pub mod pq;
 mod seal;
 mod time;
+pub mod tsp;
 
 pub use history::{BlameEntry, Touch};
-pub use keys::{KeyPair, LayerStatus, SigInfo, Signature};
+pub use keys::{KeyPair, LayerStatus, SigInfo, Signature, strength, tsr_of};
+pub use policy::Policy;
+pub use time::now_rfc3339;
 pub use seal::{Opened, SealInfo};
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -185,6 +193,8 @@ pub struct CommitOptions<'a> {
     /// Author of the commit (the stack); defaults to the layer's author.
     pub author: Option<String>,
     pub sign: Option<&'a KeyPair>,
+    /// Sign with SLH-DSA too, whatever the signer's role (`--archive`).
+    pub archive: bool,
     /// Where `{"blob": path}` values are read from before they're stored by hash; defaults to the
     /// project root (a stack file's folder for `import_stack`).
     pub assets: Option<&'a Path>,
@@ -545,7 +555,7 @@ impl Store {
         // A purge record only counts when an owner or approver signed it, here or where it came from.
         if !layer.header.purges.is_empty() {
             if let Some(k) = opts.sign {
-                self.sign(&hash, k)?;
+                self.sign(&hash, k, opts.archive)?;
             }
             if !self.signed_by_role(&hash, &keys::MAY_PURGE)? {
                 return Err(StoreError::NotAllowed(format!(
@@ -624,7 +634,7 @@ impl Store {
         }
         let mut signed = false;
         if let Some(k) = opts.sign {
-            self.sign(&hash, k)?;
+            self.sign(&hash, k, opts.archive)?;
             signed = true;
         }
         // A purge record, made here or received from another copy of the project: carry it out.

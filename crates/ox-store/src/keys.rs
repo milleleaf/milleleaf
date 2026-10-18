@@ -1,9 +1,12 @@
-//! Detached Ed25519 signatures on layers.
+//! Detached signatures on layers: Ed25519, plus ML-DSA-65 and SLH-DSA (plan decision 5, 18 Oct 2026).
 //!
 //! A layer's name is the hash of its unsigned bytes; a signature is a separate file
 //! (`.ox/sigs/<layer hash>/<key id>.json`) over that hash, so signing never changes a layer and
-//! one layer can carry several signatures (author, reviewer). The project lists the keys it
-//! knows in `.ox/keys/<name>.pub`.
+//! one layer can carry several signatures (author, reviewer). A person's post-quantum signatures sit
+//! beside their Ed25519 one as `<key id>.mldsa65.json` and `<key id>.slhdsa.json` (the key id is the
+//! Ed25519 one, naming the person); each says its `alg`. Two independent signatures, not a
+//! composite. The project lists the keys it knows in `.ox/keys/<name>.pub` (Ed25519),
+//! `<name>.mldsa65` and `<name>.slhdsa`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,7 +17,8 @@ use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{Result, Store, StoreError, hash_of, io, time};
+use crate::pq::{self, ED25519, MLDSA65, SLH};
+use crate::{Result, Store, StoreError, hash_of, io, time, tsp};
 
 const CONTEXT: &[u8] = b"Milleleaf layer signature v1\n";
 
@@ -22,6 +26,9 @@ const CONTEXT: &[u8] = b"Milleleaf layer signature v1\n";
 pub const ROLES: [&str; 4] = ["owner", "approver", "editor", "viewer"];
 /// Who may purge (plan M1.5 item 7).
 pub const MAY_PURGE: [&str; 2] = ["owner", "approver"];
+/// Whose signatures also get SLH-DSA, a hash-based algorithm that doesn't share ML-DSA's lattice
+/// assumptions; anyone else with `--archive`.
+pub const ARCHIVE_ROLES: [&str; 2] = ["owner", "approver"];
 
 /// A person's signing key. Stored at `<keys dir>/<name>.key` (mode 600), never in the project.
 #[derive(Debug, Clone)]
@@ -31,6 +38,10 @@ pub struct KeyPair {
     /// X-Wing seed for opening sealed layers (plan M1.5 item 7, mode B). `None` in key files made
     /// before sealing existed; such a key signs but can't open.
     xwing: Option<ox_seal::Seed>,
+    /// ML-DSA-65 seed; `None` in key files made before 18 Oct 2026 (`ox key upgrade` adds it).
+    mldsa: Option<pq::MlSeed>,
+    /// SLH-DSA private key (FIPS 205 encoding); `None` likewise.
+    slh: Option<Vec<u8>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -42,17 +53,65 @@ struct KeyFile {
     /// base64 X-Wing seed (32 bytes); absent in older key files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     xwing: Option<String>,
+    /// base64 ML-DSA-65 seed (32 bytes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mldsa65: Option<String>,
+    /// `<SLH>:<base64 private key>`, so a key of another parameter set is never misread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    slhdsa: Option<String>,
 }
 
 impl KeyPair {
     pub fn generate(name: &str) -> Result<KeyPair> {
-        let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed).map_err(|e| StoreError::Key(e.to_string()))?;
-        Ok(KeyPair {
-            name: name.into(),
-            key: SigningKey::from_bytes(&seed),
-            xwing: Some(ox_seal::random32().map_err(|e| StoreError::Key(e.to_string()))?),
-        })
+        let mut k = KeyPair { name: name.into(), key: SigningKey::from_bytes(&random32()?), xwing: None, mldsa: None, slh: None };
+        k.fill()?;
+        Ok(k)
+    }
+
+    /// Adds whatever this key lacks (X-Wing, ML-DSA, SLH-DSA); keeps what it has. Returns what it added.
+    fn fill(&mut self) -> Result<Vec<&'static str>> {
+        let mut added = Vec::new();
+        if self.xwing.is_none() {
+            self.xwing = Some(random32()?);
+            added.push("xwing");
+        }
+        if self.mldsa.is_none() {
+            self.mldsa = Some(random32()?);
+            added.push(MLDSA65);
+        }
+        if self.slh.is_none() {
+            self.slh = Some(pq::slh_generate().ok_or_else(|| StoreError::Key("no randomness".into()))?);
+            added.push(SLH);
+        }
+        Ok(added)
+    }
+
+    /// `mldsa65:<base64>` of the 1952-byte ML-DSA-65 public key, if this key has one.
+    pub fn mldsa_public(&self) -> Option<String> {
+        self.mldsa.map(|s| format!("{MLDSA65}:{}", B64.encode(pq::mldsa_public(&s))))
+    }
+
+    /// `slhdsa-sha2-192s:<base64>` (the parameter set in `pq::SLH`), if this key has one.
+    pub fn slh_public(&self) -> Option<String> {
+        Some(format!("{SLH}:{}", B64.encode(pq::slh_public(self.slh.as_ref()?)?)))
+    }
+
+    /// Every public key this key has: Ed25519 first, then X-Wing, ML-DSA, SLH-DSA.
+    pub fn publics(&self) -> Vec<String> {
+        [Some(self.public()), self.xwing_public(), self.mldsa_public(), self.slh_public()].into_iter().flatten().collect()
+    }
+
+    /// Adds the post-quantum keys an older key file lacks (`ox key upgrade`). Existing seeds are
+    /// never replaced; the file keeps mode 600.
+    pub fn upgrade(path: &Path) -> Result<(KeyPair, Vec<&'static str>)> {
+        let mut k = KeyPair::load(path)?;
+        let added = k.fill()?;
+        if !added.is_empty() {
+            let tmp = path.with_extension("key.tmp");
+            k.write(&tmp)?;
+            io(path, fs::rename(&tmp, path))?;
+        }
+        Ok((k, added))
     }
 
     /// `xwing:<base64>` of the 1216-byte X-Wing public key, if this key can open sealed layers.
@@ -104,25 +163,32 @@ impl KeyPair {
                 p.display()
             )));
         }
+        self.write(&p)?;
+        Ok(p)
+    }
+
+    fn write(&self, p: &Path) -> Result<()> {
         let kf = KeyFile {
             name: self.name.clone(),
             secret: B64.encode(self.key.to_bytes()),
             public: self.public(),
             xwing: self.xwing.map(|s| B64.encode(s)),
+            mldsa65: self.mldsa.map(|s| B64.encode(s)),
+            slhdsa: self.slh.as_ref().map(|s| format!("{SLH}:{}", B64.encode(s))),
         };
         io(
-            &p,
-            fs::write(&p, serde_json::to_vec_pretty(&kf).expect("json")),
+            p,
+            fs::write(p, serde_json::to_vec_pretty(&kf).expect("json")),
         )?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             io(
-                &p,
-                fs::set_permissions(&p, fs::Permissions::from_mode(0o600)),
+                p,
+                fs::set_permissions(p, fs::Permissions::from_mode(0o600)),
             )?;
         }
-        Ok(p)
+        Ok(())
     }
 
     pub fn load(path: &Path) -> Result<KeyPair> {
@@ -134,19 +200,33 @@ impl KeyPair {
             .ok()
             .and_then(|v| v.try_into().ok())
             .ok_or_else(|| StoreError::Key(format!("{}: bad secret", path.display())))?;
-        let xwing = match &kf.xwing {
-            None => None,
-            Some(x) => Some(
-                B64.decode(x)
-                    .ok()
-                    .and_then(|v| v.try_into().ok())
-                    .ok_or_else(|| StoreError::Key(format!("{}: bad xwing seed", path.display())))?,
-            ),
+        let seed32 = |v: &Option<String>, what: &str| -> Result<Option<[u8; 32]>> {
+            v.as_ref()
+                .map(|x| {
+                    B64.decode(x)
+                        .ok()
+                        .and_then(|v| v.try_into().ok())
+                        .ok_or_else(|| StoreError::Key(format!("{}: bad {what} seed", path.display())))
+                })
+                .transpose()
         };
+        let slh = kf
+            .slhdsa
+            .as_ref()
+            .map(|x| {
+                x.strip_prefix(SLH)
+                    .and_then(|x| x.strip_prefix(':'))
+                    .and_then(|x| B64.decode(x).ok())
+                    .filter(|b| pq::slh_public(b).is_some())
+                    .ok_or_else(|| StoreError::Key(format!("{}: its SLH-DSA key isn't {SLH}", path.display())))
+            })
+            .transpose()?;
         Ok(KeyPair {
+            xwing: seed32(&kf.xwing, "xwing")?,
+            mldsa: seed32(&kf.mldsa65, "ML-DSA")?,
+            slh,
             name: kf.name,
             key: SigningKey::from_bytes(&seed),
-            xwing,
         })
     }
 
@@ -154,6 +234,10 @@ impl KeyPair {
     pub fn load_named(name: &str) -> Result<KeyPair> {
         KeyPair::load(&KeyPair::dir().join(format!("{name}.key")))
     }
+}
+
+fn random32() -> Result<[u8; 32]> {
+    ox_seal::random32().map_err(|e| StoreError::Key(e.to_string()))
 }
 
 fn public_string(k: &VerifyingKey) -> String {
@@ -174,13 +258,53 @@ pub(crate) fn parse_xwing(s: &str) -> Option<Vec<u8>> {
     (b.len() == 1216).then_some(b)
 }
 
-/// First 16 hex characters of the key's SHA-256: names the signature file.
+/// First 16 hex characters of the key's SHA-256: an Ed25519 key's names the signature files.
 fn key_id(k: &VerifyingKey) -> String {
-    Sha256::digest(k.to_bytes())
+    id_of(&k.to_bytes())
+}
+
+fn id_of(public: &[u8]) -> String {
+    Sha256::digest(public)
         .iter()
         .take(8)
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// The bytes of an `<alg>:<base64>` public key.
+fn decode_public(alg: &str, s: &str) -> Option<Vec<u8>> {
+    B64.decode(s.trim().strip_prefix(alg)?.strip_prefix(':')?).ok()
+}
+
+/// Checks a signature of `alg` over the layer message. `None`: an algorithm this build doesn't know.
+fn check(alg: &str, public: &str, sig: &str, msg: &[u8]) -> Option<(bool, String)> {
+    let (Some(key), Ok(sig)) = (decode_public(alg, public), B64.decode(sig)) else {
+        return [ED25519, MLDSA65, SLH].contains(&alg).then(|| (false, String::new()));
+    };
+    let id = id_of(&key);
+    let ok = match alg {
+        ED25519 => <[u8; 32]>::try_from(key.as_slice())
+            .ok()
+            .and_then(|b| VerifyingKey::from_bytes(&b).ok())
+            .zip(ed25519_dalek::Signature::from_slice(&sig).ok())
+            .is_some_and(|(vk, s)| vk.verify(msg, &s).is_ok()),
+        MLDSA65 => pq::mldsa_verify(&key, &[], msg, &sig),
+        SLH => pq::slh_verify(&key, &[], msg, &sig),
+        _ => return None,
+    };
+    Some((ok, id))
+}
+
+/// How strong one signer's valid signatures are together: `hybrid` (Ed25519 + ML-DSA),
+/// `hybrid+slh-dsa`, `classical only` (Ed25519 alone), else the algorithms listed.
+pub fn strength(algs: &[&str]) -> String {
+    let has = |a| algs.contains(&a);
+    match (has(ED25519), has(MLDSA65), has(SLH)) {
+        (true, true, true) => "hybrid+slh-dsa".into(),
+        (true, true, false) => "hybrid".into(),
+        (true, false, false) if algs.len() == 1 => "classical only".into(),
+        _ => algs.join(" + "),
+    }
 }
 
 fn message(layer_hash: &str) -> Vec<u8> {
@@ -192,9 +316,12 @@ fn message(layer_hash: &str) -> Vec<u8> {
 /// A signature file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Signature {
+    /// `mldsa65` or `slhdsa-sha2-192s`; absent means Ed25519 (every file before 18 Oct 2026).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alg: Option<String>,
     /// `sha256-<hex>` of the layer signed.
     pub layer: String,
-    /// `ed25519:<base64>` public key.
+    /// `<alg>:<base64>` public key.
     pub key: String,
     /// The name the signer gave; trusted only if the project knows the key.
     pub signer: String,
@@ -208,7 +335,12 @@ pub struct SigInfo {
     pub known_as: Option<String>,
     pub claimed: String,
     pub key_id: String,
+    pub alg: String,
     pub valid: bool,
+    /// The RFC 3161 time (`<sigfile>.tsr`) when the token stamps this file; TSA signature not checked.
+    pub timestamp: Option<String>,
+    /// Why it isn't valid, when that's more than a failed signature check.
+    pub problem: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -297,13 +429,38 @@ impl Store {
         })
     }
 
+    /// Adds a person's ML-DSA-65 (`mldsa65:…`) or SLH-DSA (`slhdsa-…:…`) public key
+    /// (`.ox/keys/<name>.mldsa65` / `.slhdsa`).
+    pub fn add_pq_key(&self, name: &str, public: &str) -> Result<PathBuf> {
+        let ext = match public.split(':').next() {
+            Some(MLDSA65) if decode_public(MLDSA65, public).is_some_and(|b| b.len() == 1952) => "mldsa65",
+            Some(SLH) if decode_public(SLH, public).is_some_and(|b| b.len() == 2 * pq::slh_n()) => "slhdsa",
+            _ => {
+                return Err(StoreError::Key(format!(
+                    "not an ML-DSA-65 ({MLDSA65}:…) or SLH-DSA ({SLH}:…) public key: {}…",
+                    &public[..public.len().min(24)]
+                )));
+            }
+        };
+        let d = self.dir.join("keys");
+        io(&d, fs::create_dir_all(&d))?;
+        let p = d.join(format!("{name}.{ext}"));
+        io(&p, fs::write(&p, format!("{}\n", public.trim())))?;
+        Ok(p)
+    }
+
     /// Public keys the project knows: (name, `ed25519:…`).
     pub fn known_keys(&self) -> Vec<(String, String)> {
+        self.known("pub")
+    }
+
+    /// Public keys of one kind (`.ox/keys/<name>.<ext>`): (name, key).
+    pub(crate) fn known(&self, ext: &str) -> Vec<(String, String)> {
         let mut out = Vec::new();
         if let Ok(rd) = fs::read_dir(self.dir.join("keys")) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_string();
-                if let Some(name) = n.strip_suffix(".pub")
+                if let Some(name) = n.strip_suffix(&format!(".{ext}"))
                     && let Ok(s) = fs::read_to_string(e.path())
                 {
                     out.push((name.to_string(), s.trim().to_string()));
@@ -314,8 +471,10 @@ impl Store {
         out
     }
 
-    /// Signs a stored layer; writes `.ox/sigs/<hash>/<key id>.json`.
-    pub fn sign(&self, layer_hash: &str, key: &KeyPair) -> Result<PathBuf> {
+    /// Signs a stored layer: `.ox/sigs/<hash>/<key id>.json` (Ed25519), `<key id>.mldsa65.json`
+    /// when the key has ML-DSA, and `<key id>.slhdsa.json` when it has SLH-DSA and either `archive`
+    /// is set or the project lists the signer as owner or approver. Returns the files written.
+    pub fn sign(&self, layer_hash: &str, key: &KeyPair, archive: bool) -> Result<Vec<PathBuf>> {
         let bytes = {
             let p = self.dir.join("layers").join(format!("{layer_hash}.json"));
             io(&p, fs::read(&p))?
@@ -327,25 +486,48 @@ impl Store {
                 actual,
             });
         }
-        let sig = key.key.sign(&message(layer_hash));
-        let s = Signature {
-            layer: format!("sha256-{layer_hash}"),
-            key: key.public(),
-            signer: key.name.clone(),
-            signature: B64.encode(sig.to_bytes()),
-            at: time::now_rfc3339(),
-        };
+        let msg = message(layer_hash);
+        let role = self.known_keys().into_iter().find(|(_, k)| *k == key.public()).map(|(n, _)| self.role(&n));
+        let slh = archive || role.is_some_and(|r| ARCHIVE_ROLES.contains(&r.as_str()));
+        let mut sigs = vec![(None, key.public(), key.key.sign(&msg).to_bytes().to_vec())];
+        if let (Some(seed), Some(public)) = (&key.mldsa, key.mldsa_public()) {
+            // Hedged signing (FIPS 204 recommends it): fresh randomness per signature.
+            let sig = pq::mldsa_sign(pq::mldsa_key(seed).expanded_key(), &[], &msg, &random32()?).expect("empty context");
+            sigs.push((Some(MLDSA65), public, sig));
+        }
+        if let (true, Some(sk), Some(public)) = (slh, &key.slh, key.slh_public()) {
+            let mut rand = vec![0u8; pq::slh_n()];
+            getrandom::getrandom(&mut rand).map_err(|e| StoreError::Key(e.to_string()))?;
+            let sig = pq::slh_sign(sk, &[], &msg, Some(&rand)).ok_or_else(|| StoreError::Key("SLH-DSA signing failed".into()))?;
+            sigs.push((Some(SLH), public, sig));
+        }
         let d = self.dir.join("sigs").join(layer_hash);
         io(&d, fs::create_dir_all(&d))?;
-        let p = d.join(format!("{}.json", key.id()));
-        io(
-            &p,
-            fs::write(&p, serde_json::to_vec_pretty(&s).expect("json")),
-        )?;
-        Ok(p)
+        let at = time::now_rfc3339();
+        let mut out = Vec::new();
+        for (alg, public, sig) in sigs {
+            let s = Signature {
+                alg: alg.map(String::from),
+                layer: format!("sha256-{layer_hash}"),
+                key: public,
+                signer: key.name.clone(),
+                signature: B64.encode(sig),
+                at: at.clone(),
+            };
+            let p = d.join(match alg {
+                None => format!("{}.json", key.id()),
+                Some(SLH) => format!("{}.slhdsa.json", key.id()),
+                Some(a) => format!("{}.{a}.json", key.id()),
+            });
+            io(&p, fs::write(&p, serde_json::to_vec_pretty(&s).expect("json")))?;
+            // A time-stamp of the file it replaced no longer matches.
+            let _ = fs::remove_file(tsr_of(&p));
+            out.push(p);
+        }
+        Ok(out)
     }
 
-    /// Checks one stored layer: its hash, then every signature on it.
+    /// Checks one stored layer: its hash, then every signature on it (and any time-stamp beside it).
     pub fn verify(&self, layer_hash: &str) -> Result<LayerStatus> {
         let p = self.dir.join("layers").join(format!("{layer_hash}.json"));
         // Mode A removes the file; mode B keeps the (now unreadable) layer.
@@ -359,42 +541,56 @@ impl Store {
         if actual != layer_hash {
             return Ok(LayerStatus::Tampered { actual });
         }
-        let known = self.known_keys();
+        let known: Vec<(&str, Vec<(String, String)>)> =
+            [(ED25519, "pub"), (MLDSA65, "mldsa65"), (SLH, "slhdsa")].into_iter().map(|(a, ext)| (a, self.known(ext))).collect();
+        let msg = message(layer_hash);
         let mut sigs = Vec::new();
-        if let Ok(rd) = fs::read_dir(self.dir.join("sigs").join(layer_hash)) {
-            let mut files: Vec<_> = rd.flatten().map(|e| e.path()).collect();
-            files.sort();
-            for f in files {
-                let Ok(s) = fs::read(&f)
-                    .map_err(|_| ())
-                    .and_then(|b| serde_json::from_slice::<Signature>(&b).map_err(|_| ()))
-                else {
-                    sigs.push(SigInfo {
-                        known_as: None,
-                        claimed: f.display().to_string(),
-                        key_id: String::new(),
-                        valid: false,
-                    });
-                    continue;
-                };
-                let vk = parse_public(&s.key);
-                let valid = s.layer == format!("sha256-{layer_hash}")
-                    && vk.is_some_and(|vk| {
-                        B64.decode(&s.signature)
-                            .ok()
-                            .and_then(|b| ed25519_dalek::Signature::from_slice(&b).ok())
-                            .is_some_and(|sig| vk.verify(&message(layer_hash), &sig).is_ok())
-                    });
+        for f in self.signature_files(layer_hash) {
+            let raw = fs::read(&f).unwrap_or_default();
+            let Ok(s) = serde_json::from_slice::<Signature>(&raw) else {
                 sigs.push(SigInfo {
-                    known_as: known
-                        .iter()
-                        .find(|(_, k)| *k == s.key.trim())
-                        .map(|(n, _)| n.clone()),
-                    claimed: s.signer,
-                    key_id: vk.map(|k| key_id(&k)).unwrap_or_default(),
-                    valid,
+                    known_as: None,
+                    claimed: f.display().to_string(),
+                    key_id: String::new(),
+                    alg: String::new(),
+                    valid: false,
+                    timestamp: None,
+                    problem: Some("not a signature file".into()),
                 });
+                continue;
+            };
+            let alg = s.alg.clone().unwrap_or_else(|| ED25519.into());
+            let mut info = SigInfo {
+                known_as: None,
+                claimed: s.signer.clone(),
+                key_id: String::new(),
+                alg: alg.clone(),
+                valid: false,
+                timestamp: None,
+                problem: None,
+            };
+            match check(&alg, &s.key, &s.signature, &msg) {
+                None => info.problem = Some(format!("unknown algorithm `{alg}`; not accepted")),
+                Some((ok, id)) => {
+                    info.valid = ok && s.layer == format!("sha256-{layer_hash}");
+                    info.key_id = id;
+                    info.known_as = known
+                        .iter()
+                        .find(|(a, _)| *a == alg)
+                        .and_then(|(_, ks)| ks.iter().find(|(_, k)| *k == s.key.trim()))
+                        .map(|(n, _)| n.clone());
+                }
             }
+            if let Ok(token) = fs::read(tsr_of(&f)) {
+                match tsp::check(&token, &raw) {
+                    Ok(stamp) => info.timestamp = Some(stamp.at),
+                    Err(why) => {
+                        info.valid = false;
+                        info.problem = Some(format!("time-stamp: {why}"));
+                    }
+                }
+            }
+            sigs.push(info);
         }
         Ok(if sigs.is_empty() {
             LayerStatus::Unsigned
@@ -404,4 +600,24 @@ impl Store {
             LayerStatus::Signed { signatures: sigs }
         })
     }
+
+    /// The signature files of a layer (`.ox/sigs/<hash>/*.json`).
+    pub fn signature_files(&self, layer_hash: &str) -> Vec<PathBuf> {
+        let mut files: Vec<PathBuf> = fs::read_dir(self.dir.join("sigs").join(layer_hash))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|f| f.extension().is_some_and(|x| x == "json"))
+            .collect();
+        files.sort();
+        files
+    }
+}
+
+/// Where an RFC 3161 time-stamp of a signature file is kept: `<file>.tsr`.
+pub fn tsr_of(sigfile: &Path) -> PathBuf {
+    let mut s = sigfile.as_os_str().to_owned();
+    s.push(".tsr");
+    PathBuf::from(s)
 }

@@ -7,7 +7,7 @@ use ox_core::compose::{Composer, Flat};
 use ox_core::model::{Header, Layer, Node};
 use serde_json::{Value, json};
 
-use crate::{CommitOptions, KeyPair, LayerStatus, Store, StoreError};
+use crate::{CommitOptions, KeyPair, LayerStatus, SigInfo, Store, StoreError, strength, tsr_of};
 
 const TABLE: &str = "3f1c2a90-0000-4c1e-9a00-000000000012";
 const TOTAL: &str = "3f1c2a90-0000-4c1e-9a00-000000000013";
@@ -383,7 +383,7 @@ fn signatures_are_detached_and_checked() {
     ));
 
     // An unknown key's signature verifies but isn't trusted by name.
-    s.sign(&before[1], &stranger).unwrap();
+    s.sign(&before[1], &stranger, false).unwrap();
     match s.verify(&before[1]).unwrap() {
         LayerStatus::Signed { signatures } => {
             assert_eq!(signatures[0].known_as, None);
@@ -716,4 +716,147 @@ fn sealed_layers_open_only_for_recipients_and_a_key_purge_shreds_every_copy() {
     // A wrap that turns up later (an old backup) doesn't reopen it.
     copy_dir(&backup.0, &s2.dir.join("wraps").join(&sealed.key));
     assert!(matches!(s2a.open_layer(&c.layer).unwrap().1, crate::Opened::Locked(_)));
+}
+
+#[test]
+fn hybrid_signatures_old_keys_upgrade_and_policy() {
+    use crate::pq::{MLDSA65, SLH};
+    let t = TempDir::new("pq");
+    let s = hello(&t);
+    let owner = KeyPair::generate("owner").unwrap();
+    let editor = KeyPair::generate("editor").unwrap();
+    for k in [&owner, &editor] {
+        s.add_key(&k.name, &k.public()).unwrap();
+        s.add_pq_key(&k.name, &k.mldsa_public().unwrap()).unwrap();
+        s.add_pq_key(&k.name, &k.slh_public().unwrap()).unwrap();
+    }
+    s.set_role("owner", "owner").unwrap();
+    let layers = s.head_layers().unwrap();
+    let signed = |h: &str| match s.verify(h).unwrap() {
+        LayerStatus::Signed { signatures } => signatures,
+        other => panic!("{other:?}"),
+    };
+    let strength_of = |sigs: &[SigInfo], who: &str| {
+        strength(&sigs.iter().filter(|g| g.valid && g.known_as.as_deref() == Some(who)).map(|g| g.alg.as_str()).collect::<Vec<_>>())
+    };
+
+    // An editor signs Ed25519 + ML-DSA; an owner adds SLH-DSA; anyone does with `archive`.
+    assert_eq!(s.sign(&layers[0], &editor, false).unwrap().len(), 2);
+    assert_eq!(strength_of(&signed(&layers[0]), "editor"), "hybrid");
+    assert_eq!(s.sign(&layers[1], &owner, false).unwrap().len(), 3);
+    assert_eq!(strength_of(&signed(&layers[1]), "owner"), "hybrid+slh-dsa");
+    s.sign(&layers[2], &editor, true).unwrap();
+    assert_eq!(strength_of(&signed(&layers[2]), "editor"), "hybrid+slh-dsa");
+    // The Ed25519 file keeps its old form (no `alg`), so an older ox reads it as before.
+    let ed = fs::read_to_string(s.dir.join("sigs").join(&layers[0]).join(format!("{}.json", editor.id()))).unwrap();
+    assert!(!ed.contains("\"alg\""), "{ed}");
+    let policy = s.policy().unwrap();
+    let now = "2026-10-18T00:00:00Z";
+    for h in &layers[..3] {
+        let v = policy.check(&signed(h), now, &s.pq_listed());
+        assert!(v.refused.is_empty() && v.warnings.is_empty(), "{v:?}");
+    }
+
+    // A key made before 18 Oct 2026 (Ed25519 and X-Wing only) still signs: `classical only`,
+    // accepted with a warning until 2035, refused from then.
+    let keys = t.0.join("keys");
+    let path = KeyPair::generate("old").unwrap().save(&keys).unwrap();
+    let mut kf: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    kf.as_object_mut().unwrap().retain(|k, _| ["name", "secret", "public", "xwing"].contains(&k.as_str()));
+    fs::write(&path, serde_json::to_vec_pretty(&kf).unwrap()).unwrap();
+    let old = KeyPair::load(&path).unwrap();
+    assert!(old.mldsa_public().is_none() && old.slh_public().is_none());
+    s.add_key("old", &old.public()).unwrap();
+    assert_eq!(s.sign(&layers[3], &old, false).unwrap().len(), 1);
+    let sigs = signed(&layers[3]);
+    assert_eq!(strength_of(&sigs, "old"), "classical only");
+    let v = policy.check(&sigs, now, &s.pq_listed());
+    assert!(v.refused.is_empty() && v.warnings.len() == 1, "{v:?}");
+    let v = policy.check(&sigs, "2035-01-01T00:00:00Z", &s.pq_listed());
+    assert!(v.refused.iter().any(|r| r.starts_with("old:")), "{v:?}");
+
+    // `upgrade` adds the post-quantum keys, keeps the others and mode 600; a second run changes nothing.
+    let (up, added) = KeyPair::upgrade(&path).unwrap();
+    assert_eq!(added, vec![MLDSA65, SLH]);
+    assert_eq!((up.public(), up.xwing_public()), (old.public(), old.xwing_public()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+    let (again, added) = KeyPair::upgrade(&path).unwrap();
+    assert!(added.is_empty());
+    assert_eq!((again.mldsa_public(), again.slh_public()), (up.mldsa_public(), up.slh_public()));
+    s.add_pq_key("old", &up.mldsa_public().unwrap()).unwrap();
+    s.sign(&layers[3], &up, false).unwrap();
+    let sigs = signed(&layers[3]);
+    assert_eq!(strength_of(&sigs, "old"), "hybrid");
+    assert!(policy.check(&sigs, now, &s.pq_listed()).warnings.is_empty());
+    // Once the project lists their ML-DSA key, Ed25519 alone is refused even before 2035: deleting
+    // the ML-DSA file must not downgrade the layer.
+    fs::remove_file(s.dir.join("sigs").join(&layers[3]).join(format!("{}.mldsa65.json", up.id()))).unwrap();
+    let v = policy.check(&signed(&layers[3]), now, &s.pq_listed());
+    assert!(v.warnings.is_empty() && v.refused.iter().any(|r| r.starts_with("old: no valid mldsa65")), "{v:?}");
+
+    // Refused: a signer the project doesn't list, an unsigned layer, algorithms the policy
+    // doesn't allow or no longer trusts.
+    s.sign(&layers[0], &KeyPair::generate("stranger").unwrap(), false).unwrap();
+    assert!(policy.check(&signed(&layers[0]), now, &s.pq_listed()).refused.iter().any(|r| r.contains("stranger")));
+    assert_eq!(policy.check(&[], now, &s.pq_listed()).refused, vec!["unsigned"]);
+    fs::write(
+        s.dir.join("policy.json"),
+        r#"{"signatures":{"require":["mldsa65"]},"algorithms":{"mldsa65":{"until":"2026-01-01"}}}"#,
+    )
+    .unwrap();
+    let v = s.policy().unwrap().check(&signed(&layers[1]), now, &s.pq_listed());
+    assert!(v.refused.iter().any(|r| r.contains("ed25519 isn't")), "{v:?}");
+    assert!(v.refused.iter().any(|r| r.contains("mldsa65 is no longer trusted")), "{v:?}");
+
+    // A changed ML-DSA signature fails; an algorithm this build doesn't know is reported, not accepted.
+    let ml = s.dir.join("sigs").join(&layers[1]).join(format!("{}.mldsa65.json", owner.id()));
+    let mut sig: Value = serde_json::from_slice(&fs::read(&ml).unwrap()).unwrap();
+    let b = sig["signature"].as_str().unwrap().to_string();
+    sig["signature"] = json!(format!("{}{}", if b.starts_with('A') { "B" } else { "A" }, &b[1..]));
+    fs::write(&ml, serde_json::to_vec(&sig).unwrap()).unwrap();
+    sig["alg"] = json!("falcon512");
+    fs::write(ml.with_file_name("x.falcon512.json"), serde_json::to_vec(&sig).unwrap()).unwrap();
+    match s.verify(&layers[1]).unwrap() {
+        LayerStatus::Invalid { signatures } => {
+            assert!(signatures.iter().any(|g| g.alg == MLDSA65 && !g.valid && g.problem.is_none()));
+            assert!(signatures.iter().any(|g| g.alg == "falcon512" && !g.valid && g.problem.as_deref().is_some_and(|p| p.contains("unknown algorithm"))));
+            assert!(signatures.iter().filter(|g| g.valid).count() >= 2, "the owner's Ed25519 and SLH-DSA still verify");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_time_stamp_token_is_checked_against_its_signature_file() {
+    use sha2::Digest;
+    // An `openssl ts -reply` response (tools/local-tsa.mjs, 18 Oct 2026) for signed.json.
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/tsa");
+    let data = fs::read(dir.join("signed.json")).unwrap();
+    let resp = fs::read(dir.join("response.tsr")).unwrap();
+    assert_eq!(crate::tsp::check(&resp, &data).unwrap().at, "2026-10-18T06:00:04Z");
+    assert!(crate::tsp::check(&resp, b"other bytes").unwrap_err().contains("imprint"));
+    assert!(crate::tsp::check(&resp[..200], &data).is_err());
+    let (req, _) = crate::tsp::request(&data).unwrap();
+    assert!(req.windows(32).any(|w| w == sha2::Sha256::digest(&data).as_slice()));
+
+    // In a store: a token for other bytes makes the signature invalid; signing again drops it.
+    let t = TempDir::new("tsr");
+    let s = hello(&t);
+    let k = KeyPair::generate("sam").unwrap();
+    let h = s.head_layers().unwrap()[0].clone();
+    let files = s.sign(&h, &k, false).unwrap();
+    fs::write(tsr_of(&files[0]), &resp).unwrap();
+    match s.verify(&h).unwrap() {
+        LayerStatus::Invalid { signatures } => {
+            assert!(signatures.iter().any(|g| g.problem.as_deref().is_some_and(|p| p.starts_with("time-stamp"))))
+        }
+        other => panic!("{other:?}"),
+    }
+    s.sign(&h, &k, false).unwrap();
+    assert!(!tsr_of(&files[0]).exists());
+    assert!(matches!(s.verify(&h).unwrap(), LayerStatus::Signed { .. }));
 }

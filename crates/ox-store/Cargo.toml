@@ -16,6 +16,13 @@ ed25519-dalek = "2"
 getrandom = "0.2"
 base64 = "0.22"
 serde_json_canonicalizer = "=0.3.2"
+# Post-quantum signatures (plan decision 5, 18 Oct 2026).
+# RustCrypto, pure Rust, never independently audited (their READMEs say so).
+ml-dsa = { version = "=0.1.1", default-features = false, features = ["alloc"] }
+slh-dsa = "=0.2.0-rc.5"
+# RFC 3161 time-stamp requests and responses (parsing only; no network here).
+cms = { version = "=0.3.0-rc.0", default-features = false }
+der = { version = "=0.8.2", features = ["alloc", "derive", "oid"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
