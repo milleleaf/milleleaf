@@ -192,6 +192,7 @@ pub fn run(
         "sign" => sign(file, pos, args),
         "timestamp" => timestamp(file, pos, args),
         "purge" => purge(file, pos, args),
+        "search" => search(file, pos, args),
         "key" => key(pos),
         _ => return None,
     };
@@ -273,6 +274,32 @@ fn commit(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, Stri
         }
         Err(err) => Err(e(err)),
     }
+}
+
+/// Exit 1 when nothing matched, as grep does.
+fn search(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String> {
+    let s = Store::open(dir).map_err(e)?;
+    let query = pos.iter().skip(2).map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
+    if query.trim().is_empty() {
+        return Err("`search` needs words to look for".into());
+    }
+    let found = if has(args, "--history") { s.search_history(&query) } else { s.search_head(&query) }.map_err(e)?;
+    if has(args, "--json") {
+        println!("{}", serde_json::to_string_pretty(&found).unwrap_or_default());
+    } else {
+        for h in &found.hits {
+            let at = match (&h.hash, &h.at) {
+                (Some(hash), Some(at)) => format!("{}  {at}  ", short(hash)),
+                _ => String::new(),
+            };
+            println!("{at}{}  {}  {}\n    {}", h.path, h.attribute, h.layer, h.text);
+        }
+        for l in &found.locked {
+            eprintln!("note: layer {} is sealed and no key here opens it; not searched", short(l));
+        }
+        eprintln!("ox: {} match(es)", found.hits.len());
+    }
+    Ok(if found.hits.is_empty() { ExitCode::from(1) } else { ExitCode::SUCCESS })
 }
 
 fn log(dir: &Path, pos: &[&String]) -> Result<ExitCode, String> {

@@ -20,3 +20,4 @@ ox-store = { workspace = true }
 ox-formats = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }

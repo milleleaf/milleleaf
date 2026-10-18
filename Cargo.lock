@@ -1656,6 +1656,7 @@ dependencies = [
  "ox-wordcraft",
  "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

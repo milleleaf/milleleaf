@@ -143,7 +143,7 @@ impl Store {
     }
 
     /// The content key, if a key in `self.keys` matches one of the layer's wraps.
-    fn content_key(&self, key_id: &str) -> Option<[u8; 32]> {
+    pub(crate) fn content_key(&self, key_id: &str) -> Option<[u8; 32]> {
         let mine: Vec<(String, KeyPair)> = KeyPair::all_in(&self.keys)
             .into_iter()
             .filter_map(|k| Some((fingerprint(&ox_seal::public_key(k.xwing_seed()?)), k)))

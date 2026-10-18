@@ -6,6 +6,7 @@
 //! the project notes.
 
 pub mod compose;
+pub mod doclang;
 pub mod matching;
 pub mod model;
 pub mod render;

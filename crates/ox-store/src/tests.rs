@@ -860,3 +860,59 @@ fn a_time_stamp_token_is_checked_against_its_signature_file() {
     assert!(!tsr_of(&files[0]).exists());
     assert!(matches!(s.verify(&h).unwrap(), LayerStatus::Signed { .. }));
 }
+
+#[test]
+fn search_finds_what_the_project_says_now_its_history_and_sealed_text_only_for_recipients() {
+    let t = TempDir::new("search");
+    let (ka, none) = (TempDir::new("search-keys-alice"), TempDir::new("search-keys-none"));
+    let s = hello(&t);
+    let alice = KeyPair::generate("alice").unwrap();
+    let owner = KeyPair::generate("owner").unwrap();
+    alice.save(&ka.0).unwrap();
+    for k in [&alice, &owner] {
+        s.add_key(&k.name, &k.public()).unwrap();
+        s.add_xwing_key(&k.name, &k.xwing_public().unwrap()).unwrap();
+    }
+    s.set_role("owner", "owner").unwrap();
+    let as_ = |keys: &Path| {
+        let mut x = Store::open(&t.0).unwrap();
+        x.keys = keys.to_path_buf();
+        x
+    };
+    let notes = |f: crate::Found| f.hits.into_iter().filter(|h| h.attribute.starts_with("test::")).collect::<Vec<_>>();
+    const NODE: &str = "3f1c2a90-0000-4c1e-9a00-000000000023";
+
+    assert!(!s.search_head("Adelaide").unwrap().hits.is_empty(), "the example's own table");
+    s.commit(&layer("v1", vec![(NODE, "test::note", json!("draft budget for the 香港 office"))]), CommitOptions::default()).unwrap();
+    s.commit(&layer("v2", vec![(NODE, "test::note", json!("final budget"))]), CommitOptions::default()).unwrap();
+    // The head says "final budget"; the draft is only in the history.
+    let now = notes(s.search_head("BUDGET").unwrap());
+    assert_eq!((now.len(), now[0].layer.as_str(), now[0].path.as_str()), (1, "v2", NODE));
+    assert!(notes(s.search_head("draft").unwrap()).is_empty());
+    let past = notes(s.search_history("draft budget").unwrap());
+    assert_eq!(past.iter().map(|h| h.layer.as_str()).collect::<Vec<_>>(), ["v1"]);
+    assert!(past[0].hash.is_some() && past[0].text.contains("香港"));
+    assert_eq!(notes(s.search_history("香港").unwrap()).len(), 1);
+    assert!(notes(s.search_history("港香").unwrap()).is_empty(), "CJK as written");
+
+    // A sealed layer: found by its recipient, now and in the history; its index on disk is encrypted.
+    let c = s
+        .commit(&layer("pay", vec![(NODE, "test::secret", json!("salary 123456"))]), CommitOptions { seal_to: &["alice".to_string()], ..CommitOptions::default() })
+        .unwrap();
+    let sa = as_(&ka.0);
+    assert_eq!(notes(sa.search_head("salary").unwrap()).len(), 1);
+    assert_eq!(notes(sa.search_history("salary").unwrap()).len(), 1);
+    let cache = s.dir.join("cache").join("search").join(format!("{}.json", c.layer));
+    assert!(cache.exists());
+    assert!(!has_text(&s.dir, "salary"), "a sealed layer's text on disk");
+    assert_eq!(notes(sa.search_history("salary").unwrap()).len(), 1, "from the encrypted cache");
+    // Anyone else: no hits, and the history says which layer it couldn't look in.
+    let so = as_(&none.0);
+    assert!(notes(so.search_head("salary").unwrap()).is_empty());
+    let f = so.search_history("salary").unwrap();
+    assert!(f.hits.is_empty() && f.locked == vec![c.layer.clone()], "{f:?}");
+    // A key purge shreds the index with the layer.
+    s.purge_mode(&c.layer, &owner, None, "key").unwrap();
+    assert!(!cache.exists());
+    assert!(notes(sa.search_history("salary").unwrap()).is_empty());
+}

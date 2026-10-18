@@ -28,6 +28,9 @@ USAGE:
   ox blame    <dir> <node> [<attribute>]          each value, the links it came through, and
                                                   every layer that set it
   ox checkpoint <dir> [--keep N] [--author NAME]  flatten all but the top N layers (default 1)
+  ox search   <dir> <words…> [--history] [--json]
+                 find text in what the project says now (composed, sealed layers opened with
+                 your keys); --history: in every stored layer, superseded values too
   ox verify   <dir> [--require]                   hash and signatures of every layer in the head;
                                                   --require: refuse what .ox/policy.json (or the
                                                   default: Ed25519 + ML-DSA-65) doesn't accept
@@ -53,6 +56,9 @@ USAGE:
                                                   print the composed tree as JSON
   ox get      <stack.ox.json> <path>              one node, inherits expanded, with provenance
   ox render   <stack.ox.json> <path> --out FILE   HTML view of a deck::deck or word::document node
+  ox doclang-export <stack.ox.json> [<path>] --out FILE.dclg|FILE.dclx
+                 the composed project (or one node) as DocLang 0.8, for AI tools; .dclx
+                 packs the pictures too. One-way
   ox adopt    <FILE.docx|.xlsx|.pptx> --out LAYER.ox.json [--report FILE] [--path ID]
                  bring in a file Milleleaf didn't make; lists what isn't carried
   ox docx-export <stack.ox.json> <document-path> --out FILE.docx
@@ -333,6 +339,61 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 ));
             };
             emit(&html, out.as_deref())?;
+            Ok(ExitCode::SUCCESS)
+        }
+        "doclang-export" => {
+            let out = out.ok_or("`doclang-export` needs --out FILE.dclg or FILE.dclx")?;
+            let flat = open(&file).map_err(|e| e.to_string())?;
+            let mut trees = Composer::new(&flat).compose_all().map_err(|e| e.to_string())?;
+            if let Some(path) = pos.get(2) {
+                let node = find(&trees, path).ok_or_else(|| format!("`{path}` is not in the composed tree"))?;
+                trees = vec![node.clone()];
+            }
+            fn strip(n: &mut ox_core::Composed) {
+                n.provenance.clear();
+                n.children.iter_mut().for_each(strip);
+            }
+            trees.iter_mut().for_each(strip);
+            // document_hash: the composed snapshot this export was made from.
+            let hash = ox_core::stack::integrity_of(serde_json::to_string(&trees).unwrap_or_default().as_bytes());
+            let hex = hash.trim_start_matches("sha256-");
+            let generator = format!("ox {}", env!("CARGO_PKG_VERSION"));
+            let (xml, blobs) = ox_core::doclang::to_doclang(&trees, &generator, Some(hex), &|b| b.to_string());
+            if out.extension().is_some_and(|e| e == "dclx") {
+                // Annex B package: pictures go in assets/, named by their hash.
+                let root = asset_root(&file);
+                let mut assets = std::collections::BTreeMap::new();
+                for b in &blobs {
+                    let bytes = ox_core::stack::read_blob(&root, b).map_err(|e| format!("picture {b}: {e}"))?;
+                    let name = format!("assets/{}.{}", ox_core::stack::integrity_of(&bytes).trim_start_matches("sha256-"), ox_core::doclang::picture_ext(&bytes));
+                    assets.insert(b.clone(), (name, bytes));
+                }
+                let (xml, _) = ox_core::doclang::to_doclang(&trees, &generator, Some(hex), &|b| assets[b].0.clone());
+                let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+                let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+                let mut parts = vec![
+                    ("[Content_Types].xml".to_string(), ox_core::doclang::CONTENT_TYPES.as_bytes().to_vec()),
+                    ("_rels/.rels".to_string(), ox_core::doclang::RELS.as_bytes().to_vec()),
+                    ("document.xml".to_string(), xml.into_bytes()),
+                ];
+                parts.extend(assets.into_values());
+                for (name, bytes) in parts {
+                    z.start_file(name, opts).map_err(|e| e.to_string())?;
+                    std::io::Write::write_all(&mut z, &bytes).map_err(|e| e.to_string())?;
+                }
+                let bytes = z.finish().map_err(|e| e.to_string())?.into_inner();
+                fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
+            } else {
+                if !blobs.is_empty() {
+                    eprintln!("warning: {} picture(s) named by Milleleaf blob, not included: use --out FILE.dclx to carry them", blobs.len());
+                }
+                fs::write(&out, xml).map_err(|e| format!("{}: {e}", out.display()))?;
+            }
+            eprintln!(
+                "ox: DocLang {} → {} (one-way: styles, formulas, reviews and provenance ride only as <custom> JSON)",
+                ox_core::doclang::VERSION,
+                out.display()
+            );
             Ok(ExitCode::SUCCESS)
         }
         "docx-export" => {

@@ -208,6 +208,12 @@ if grep -rq "sealed demo text" "$P2/.ox"; then echo "a sealed layer's plaintext 
 $OX compose "$P2" --out "$TMP/sealed.json" 2> /dev/null
 grep -q "sealed demo text" "$TMP/sealed.json" || { echo "the recipient can't open the sealed layer"; exit 1; }
 if grep -rq "sealed demo text" "$P2/.ox"; then echo "opening a sealed layer left its plaintext on disk"; exit 1; fi
+#    ox search: the recipient finds the sealed text, now and in the history; its search index stays encrypted
+$OX search "$P2" sealed demo 2> /dev/null | head -2
+$OX search "$P2" sealed demo --history > /dev/null 2>&1 || { echo "--history doesn't find the sealed text"; exit 1; }
+if grep -rq "demo" "$P2/.ox/cache/search"; then echo "a sealed layer's search index is plaintext"; exit 1; fi
+if OX_KEYS="$TMP/nokeys" $OX search "$P2" sealed demo > /dev/null 2>&1; then echo "search found sealed text without a key"; exit 1; fi
+echo "checked: ox search finds sealed text for its recipient only, and its index on disk is encrypted"
 $OX purge "$P2" "$SEALED" --key owner --key-destroy --reason demo
 $OX compose "$P2" --out "$TMP/sealed.json" 2> /dev/null
 if grep -q "sealed demo text" "$TMP/sealed.json"; then echo "still readable after its key was destroyed"; exit 1; fi
@@ -318,3 +324,23 @@ OUT=$(mktemp)
 # each filter must have run a test (a filter that matches nothing passes with 0)
 [ "$(grep -cE 'test result: ok\. [1-9]' "$OUT")" -ge 3 ] || { cat "$OUT"; echo "a real-file test didn't run"; exit 1; }
 grep -E 'test result: ok\. [1-9]' "$OUT"; rm -f "$OUT"
+
+echo; echo "== 19. DocLang (M2.7): the composed project for AI tools, checked by the official validator"
+#    one-way: content in DocLang elements, the rest as <custom> JSON; .dclx packs the pictures
+TMP=$(mktemp -d)
+$OX doclang-export with-edits.ox.json --out "$TMP/pack.dclg" 2>&1 | grep -v "^ox:" || true
+$OX doclang-export with-edits.ox.json --out "$TMP/pack.dclx"
+python3 -c 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print("dclx:", ", ".join(sorted(z.namelist()))); open(sys.argv[2],"wb").write(z.read("document.xml"))' "$TMP/pack.dclx" "$TMP/document.xml"
+if command -v doclang >/dev/null; then
+  for f in pack.dclg document.xml; do
+    doclang validate "$TMP/$f" > "$TMP/v.txt" 2>&1 || { cat "$TMP/v.txt"; echo "DocLang validation failed: $f"; exit 1; }
+    echo "$f: $(grep -E 'VALIDATION' "$TMP/v.txt")"
+  done
+  # the validator does fail: a table with a short row is refused
+  sed 's|<nl/></table>|<fcel/>x<nl/><ecel/><nl/></table>|' "$TMP/pack.dclg" > "$TMP/bad.dclg"
+  if doclang validate "$TMP/bad.dclg" > /dev/null 2>&1; then echo "expected the validator to refuse a broken table"; exit 1; fi
+  echo "checked: the validator refuses a non-rectangular table"
+else
+  echo "doclang not installed here: export written, not validated (the CI image has it)"
+fi
+rm -rf "$TMP"

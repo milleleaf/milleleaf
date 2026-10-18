@@ -16,7 +16,8 @@
 //!   blobs/<sha256>            assets, and the ciphertext of sealed layers
 //!   wraps/<key id>/<name>.json  a sealed layer's content key wrapped to one recipient (deletable)
 //!   purged/<sha256>.json      purges carried out here
-//!   cache/                    derived, safe to delete (flattened stacks)
+//!   cache/                    derived, safe to delete (flattened stacks; search/<sha256>.json:
+//!                             a layer's search index, sealed layers' encrypted to their content key)
 //! ```
 //!
 //! Files are only ever added (except `HEAD` and the cache), so the folder works under git and
@@ -27,6 +28,7 @@ mod history;
 mod keys;
 pub mod policy;
 pub mod pq;
+mod search;
 mod seal;
 mod time;
 pub mod tsp;
@@ -36,6 +38,7 @@ pub use keys::{KeyPair, LayerStatus, SigInfo, Signature, strength, tsr_of};
 pub use policy::Policy;
 pub use time::now_rfc3339;
 pub use seal::{Opened, SealInfo};
+pub use search::{Found, Hit};
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
