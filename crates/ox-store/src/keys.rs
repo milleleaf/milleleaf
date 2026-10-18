@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::pq::{self, ED25519, MLDSA65, SLH};
-use crate::{Result, Store, StoreError, hash_of, io, time, tsp};
+use crate::{Result, Store, StoreError, hash_of, io, ots, time, tsp};
 
 const CONTEXT: &[u8] = b"Milleleaf layer signature v1\n";
 
@@ -337,8 +337,11 @@ pub struct SigInfo {
     pub key_id: String,
     pub alg: String,
     pub valid: bool,
-    /// The RFC 3161 time (`<sigfile>.tsr`) when the token stamps this file; TSA signature not checked.
+    /// The earliest RFC 3161 time (`<sigfile>.tsr`, `.2.tsr`, …) of tokens that stamp this file;
+    /// TSA signatures not checked.
     pub timestamp: Option<String>,
+    /// What `<sigfile>.ots` (OpenTimestamps) says, offline: pending calendars and Bitcoin blocks.
+    pub ots: Option<ots::Summary>,
     /// Why it isn't valid, when that's more than a failed signature check.
     pub problem: Option<String>,
 }
@@ -521,7 +524,9 @@ impl Store {
             });
             io(&p, fs::write(&p, serde_json::to_vec_pretty(&s).expect("json")))?;
             // A time-stamp of the file it replaced no longer matches.
-            let _ = fs::remove_file(tsr_of(&p));
+            for t in tsr_paths(&p).into_iter().chain([ots_of(&p)]) {
+                let _ = fs::remove_file(t);
+            }
             out.push(p);
         }
         Ok(out)
@@ -555,6 +560,7 @@ impl Store {
                     alg: String::new(),
                     valid: false,
                     timestamp: None,
+                    ots: None,
                     problem: Some("not a signature file".into()),
                 });
                 continue;
@@ -567,6 +573,7 @@ impl Store {
                 alg: alg.clone(),
                 valid: false,
                 timestamp: None,
+                ots: None,
                 problem: None,
             };
             match check(&alg, &s.key, &s.signature, &msg) {
@@ -581,12 +588,21 @@ impl Store {
                         .map(|(n, _)| n.clone());
                 }
             }
-            if let Ok(token) = fs::read(tsr_of(&f)) {
-                match tsp::check(&token, &raw) {
-                    Ok(stamp) => info.timestamp = Some(stamp.at),
+            for t in tsr_paths(&f) {
+                match fs::read(&t).map_err(|e| e.to_string()).and_then(|token| tsp::check(&token, &raw)) {
+                    Ok(stamp) => info.timestamp = info.timestamp.take().into_iter().chain([stamp.at]).min(),
                     Err(why) => {
                         info.valid = false;
                         info.problem = Some(format!("time-stamp: {why}"));
+                    }
+                }
+            }
+            if let Ok(proof) = fs::read(ots_of(&f)) {
+                match ots::summarize(&raw, &proof) {
+                    Ok(s) => info.ots = Some(s),
+                    Err(why) => {
+                        info.valid = false;
+                        info.problem = Some(format!("OpenTimestamps proof: {why}"));
                     }
                 }
             }
@@ -615,9 +631,22 @@ impl Store {
     }
 }
 
-/// Where an RFC 3161 time-stamp of a signature file is kept: `<file>.tsr`.
-pub fn tsr_of(sigfile: &Path) -> PathBuf {
+/// Where an RFC 3161 time-stamp of a signature file is kept: `<file>.tsr` for the first TSA,
+/// `<file>.<n>.tsr` for the n-th (n from 2).
+pub fn tsr_of(sigfile: &Path, n: usize) -> PathBuf {
     let mut s = sigfile.as_os_str().to_owned();
-    s.push(".tsr");
+    s.push(if n <= 1 { ".tsr".to_string() } else { format!(".{n}.tsr") });
+    PathBuf::from(s)
+}
+
+/// The RFC 3161 time-stamps kept beside a signature file, in order (they are numbered without gaps).
+pub fn tsr_paths(sigfile: &Path) -> Vec<PathBuf> {
+    (1..).map(|n| tsr_of(sigfile, n)).take_while(|t| t.exists()).collect()
+}
+
+/// Where the OpenTimestamps proof of a signature file is kept: `<file>.ots` (one for all calendars).
+pub fn ots_of(sigfile: &Path) -> PathBuf {
+    let mut s = sigfile.as_os_str().to_owned();
+    s.push(".ots");
     PathBuf::from(s)
 }

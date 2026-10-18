@@ -21,3 +21,11 @@ ox-formats = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
+# TLS for https time-stamp calendars and Bitcoin header sources: the BoringSSL that ox-seal already
+# links (same pin, no new crate in the tree).
+boring = "=5.3.0"
+# Basic auth for a Bitcoin Core node (already in the tree through ox-store).
+base64 = "0.22"
+
+[dev-dependencies]
+sha2 = { workspace = true }

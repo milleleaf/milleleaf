@@ -849,7 +849,7 @@ fn a_time_stamp_token_is_checked_against_its_signature_file() {
     let k = KeyPair::generate("sam").unwrap();
     let h = s.head_layers().unwrap()[0].clone();
     let files = s.sign(&h, &k, false).unwrap();
-    fs::write(tsr_of(&files[0]), &resp).unwrap();
+    fs::write(tsr_of(&files[0], 1), &resp).unwrap();
     match s.verify(&h).unwrap() {
         LayerStatus::Invalid { signatures } => {
             assert!(signatures.iter().any(|g| g.problem.as_deref().is_some_and(|p| p.starts_with("time-stamp"))))
@@ -857,7 +857,7 @@ fn a_time_stamp_token_is_checked_against_its_signature_file() {
         other => panic!("{other:?}"),
     }
     s.sign(&h, &k, false).unwrap();
-    assert!(!tsr_of(&files[0]).exists());
+    assert!(!tsr_of(&files[0], 1).exists());
     assert!(matches!(s.verify(&h).unwrap(), LayerStatus::Signed { .. }));
 }
 
@@ -915,4 +915,64 @@ fn search_finds_what_the_project_says_now_its_history_and_sealed_text_only_for_r
     s.purge_mode(&c.layer, &owner, None, "key").unwrap();
     assert!(!cache.exists());
     assert!(notes(sa.search_history("salary").unwrap()).is_empty());
+}
+
+#[test]
+fn time_stamp_services_and_opentimestamps_proofs_beside_signature_files() {
+    use crate::ots::{Att, Item, Node, Op, Proof};
+    use crate::policy::{HeaderSource, Service};
+    // The policy lists the services the user chose; the older `tsa` still counts as one.
+    let t = TempDir::new("ots");
+    let s = hello(&t);
+    fs::write(
+        s.dir.join("policy.json"),
+        r#"{"signatures": {"require": ["ed25519"]}, "algorithms": {"ed25519": {}},
+            "timestamps": {"tsa": "http://old.example/tsa",
+              "services": [{"kind": "rfc3161", "url": "http://tsa.example"},
+                           {"kind": "opentimestamps", "calendars": ["https://a.example", "https://b.example"]}],
+              "bitcoinHeaders": [{"kind": "explorers", "urls": ["https://x.example/api"]},
+                                 {"kind": "bitcoind", "url": "http://127.0.0.1:8332", "cookieFile": "/n/.cookie"},
+                                 {"kind": "light-client", "peers": 8}]}}"#,
+    )
+    .unwrap();
+    let ts = s.policy().unwrap().timestamps.unwrap();
+    assert_eq!(
+        ts.all(),
+        [
+            Service::Rfc3161 { url: "http://tsa.example".into() },
+            Service::Opentimestamps { calendars: vec!["https://a.example".into(), "https://b.example".into()] },
+            Service::Rfc3161 { url: "http://old.example/tsa".into() },
+        ]
+    );
+    let h = ts.headers();
+    assert!(matches!(&h[1], HeaderSource::Bitcoind { cookie_file, .. } if cookie_file == "/n/.cookie"));
+    assert!(matches!(&h[2], HeaderSource::LightClient(m) if m["peers"] == 8));
+    assert_eq!(crate::policy::Timestamps::default().headers().len(), 1, "the two explorers by default");
+    assert!(crate::policy::Timestamps::default().all().is_empty(), "no default service");
+
+    // A pending proof beside a signature file is reported; one for other bytes makes it invalid.
+    let k = KeyPair::generate("sam").unwrap();
+    let layer = s.head_layers().unwrap()[0].clone();
+    let files = s.sign(&layer, &k, false).unwrap();
+    let data = fs::read(&files[0]).unwrap();
+    let pending = Node(vec![Item::Op(Op::Append(vec![9; 8]), Node(vec![Item::Att(Att::Pending("https://a.example".into()))]))]);
+    let proof = Proof::stamped(&data, &[1; 16], vec![pending]);
+    fs::write(crate::ots_of(&files[0]), proof.to_bytes()).unwrap();
+    let sigs = |s: &Store| match s.verify(&layer).unwrap() {
+        LayerStatus::Signed { signatures } | LayerStatus::Invalid { signatures } => signatures,
+        other => panic!("{other:?}"),
+    };
+    let got = sigs(&s).into_iter().find_map(|g| g.ots).unwrap();
+    assert_eq!(got.pending, ["https://a.example"]);
+    fs::write(crate::ots_of(&files[0]), Proof::stamped(b"other", &[1; 16], vec![Node(vec![Item::Att(Att::Bitcoin(1))])]).to_bytes()).unwrap();
+    assert!(sigs(&s).iter().any(|g| !g.valid && g.problem.as_deref().is_some_and(|p| p.contains("OpenTimestamps"))));
+    fs::write(crate::ots_of(&files[0]), b"garbage").unwrap();
+    assert!(matches!(s.verify(&layer).unwrap(), LayerStatus::Invalid { .. }));
+    // Several TSAs: `.tsr`, `.2.tsr`, … are all read; signing again removes every stale stamp.
+    fs::write(tsr_of(&files[0], 2), b"x").unwrap();
+    assert_eq!(crate::tsr_paths(&files[0]), Vec::<std::path::PathBuf>::new(), "numbered without gaps: .tsr first");
+    fs::write(tsr_of(&files[0], 1), b"x").unwrap();
+    assert_eq!(crate::tsr_paths(&files[0]).len(), 2);
+    s.sign(&layer, &k, false).unwrap();
+    assert!(!crate::ots_of(&files[0]).exists() && crate::tsr_paths(&files[0]).is_empty() && !tsr_of(&files[0], 2).exists());
 }

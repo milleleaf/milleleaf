@@ -9,6 +9,8 @@ use ox_core::render::find;
 use ox_core::{Composed, Composer};
 use ox_core::model::Layer;
 use ox_core::stack::LoadedLayer;
+use ox_store::ots;
+use ox_store::policy::{HeaderSource, Service};
 use ox_store::{CommitOptions, KeyPair, LayerStatus, SigInfo, Store, StoreError};
 
 /// Layers of a stack file, or of a project folder's head.
@@ -408,6 +410,27 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
     let now = ox_store::now_rfc3339();
     let pq_listed = s.pq_listed();
     let (mut bad, mut refused, mut untrusted) = (0, 0, 0);
+    // OpenTimestamps Bitcoin attestations: offline, only named; --online, checked against a header.
+    let online = has(args, "--online").then(|| s.policy().map(|p| p.timestamps.unwrap_or_default().headers())).transpose().map_err(e)?;
+    let mut checked: std::collections::HashMap<(u64, Vec<u8>), String> = std::collections::HashMap::new();
+    let mut btc_bad = 0;
+    let mut btc = |height: u64, root: &[u8]| -> String {
+        let Some(sources) = &online else { return format!("in Bitcoin block {height} (not checked here)") };
+        checked
+            .entry((height, root.to_vec()))
+            .or_insert_with(|| match bitcoin_header(sources, height).and_then(|(h, n)| Ok((ots::check_header(&h, root)?, n))) {
+                Ok((t, n)) => format!(
+                    "existed by {} (Bitcoin block {height}, header from {n} {})",
+                    ox_store::rfc3339(i64::from(t)),
+                    if n == 1 { "source" } else { "sources" }
+                ),
+                Err(x) => {
+                    btc_bad += 1;
+                    format!("NOT CONFIRMED in Bitcoin block {height}: {x}")
+                }
+            })
+            .clone()
+    };
     for h in s.head_layers().map_err(e)? {
         let id = s.index(&h).map(|i| i.header.id).unwrap_or_default();
         let status = s.verify(&h).map_err(e)?;
@@ -423,7 +446,7 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
                     // Valid, but only by keys the project doesn't list: anyone can make a key.
                     untrusted += 1;
                 }
-                describe(signatures)
+                describe(signatures, &mut btc)
             }
             LayerStatus::Unsigned => "unsigned".into(),
             LayerStatus::Purged { mode, by, at, reason } => format!(
@@ -473,11 +496,14 @@ fn verify(dir: &Path, args: &[String]) -> Result<ExitCode, String> {
     if require && refused > 0 {
         eprintln!("ox: {refused} layer(s) don't meet the signature policy ({})", if s.dir.join("policy.json").exists() { ".ox/policy.json" } else { "the built-in default" });
     }
-    Ok(if bad > 0 || refused > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
+    if btc_bad > 0 {
+        eprintln!("ox: {btc_bad} OpenTimestamps Bitcoin attestation(s) couldn't be confirmed");
+    }
+    Ok(if bad > 0 || refused > 0 || btc_bad > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
 }
 
-/// "signed by sam (hybrid+slh-dsa, timestamped …); INVALID mldsa65 signature (…)".
-fn describe(sigs: &[SigInfo]) -> String {
+/// "signed by sam (hybrid+slh-dsa, timestamped …, OpenTimestamps pending at …); INVALID mldsa65 signature (…)".
+fn describe(sigs: &[SigInfo], btc: &mut impl FnMut(u64, &[u8]) -> String) -> String {
     let who = |g: &SigInfo| match &g.known_as {
         Some(n) => n.clone(),
         None => format!("unknown {} key {} (says {})", if g.alg.is_empty() { "?" } else { &g.alg }, g.key_id, g.claimed),
@@ -495,10 +521,24 @@ fn describe(sigs: &[SigInfo]) -> String {
         .map(|(w, gs)| {
             let algs: Vec<&str> = gs.iter().map(|g| g.alg.as_str()).collect();
             let stamp = gs.iter().filter_map(|g| g.timestamp.as_deref()).min();
+            let mut proofs: Vec<String> = Vec::new();
+            for o in gs.iter().filter_map(|g| g.ots.as_ref()) {
+                let t = if !o.bitcoin.is_empty() {
+                    o.bitcoin.iter().map(|(h, root)| btc(*h, root)).collect::<Vec<_>>().join(", ")
+                } else if !o.pending.is_empty() {
+                    format!("pending at {}", o.pending.join(", "))
+                } else {
+                    "no attestation this ox knows".into()
+                };
+                if !proofs.contains(&t) {
+                    proofs.push(t);
+                }
+            }
             format!(
-                "signed by {w} ({}{})",
+                "signed by {w} ({}{}{})",
                 ox_store::strength(&algs),
-                stamp.map(|t| format!(", timestamped {t}, TSA signature not checked")).unwrap_or_default()
+                stamp.map(|t| format!(", timestamped {t}, TSA signature not checked")).unwrap_or_default(),
+                if proofs.is_empty() { String::new() } else { format!(", OpenTimestamps {}", proofs.join("; ")) }
             )
         })
         .collect();
@@ -513,65 +553,279 @@ fn describe(sigs: &[SigInfo]) -> String {
     out.join("; ")
 }
 
-/// Time-stamps every signature file of a layer with an RFC 3161 TSA; keeps each token beside its
-/// file (`<file>.tsr`).
+/// Time-stamps every signature file of a layer with each service the project chose (or the
+/// command line names): RFC 3161 tokens as `<file>.tsr` (`.2.tsr`, …), OpenTimestamps as
+/// `<file>.ots`. `--upgrade` asks the chosen calendars to complete pending OpenTimestamps proofs.
 fn timestamp(dir: &Path, pos: &[&String], args: &[String]) -> Result<ExitCode, String> {
     let s = Store::open(dir).map_err(e)?;
     let h = s.resolve(pos.get(2).ok_or("`timestamp` needs a layer hash")?).map_err(e)?;
-    let url = match opt(args, "--tsa") {
-        Some(u) => u.to_string(),
-        None => s
-            .policy()
-            .map_err(e)?
-            .timestamps
-            .and_then(|t| t.tsa)
-            .ok_or("no time-stamp authority: pass --tsa URL or set timestamps.tsa in .ox/policy.json (there is no default)")?,
-    };
+    let mut services: Vec<Service> = opts(args, "--tsa").map(|u| Service::Rfc3161 { url: u.into() }).collect();
+    let flags: Vec<String> = opts(args, "--ots").map(String::from).collect();
+    if !flags.is_empty() {
+        services.push(Service::Opentimestamps { calendars: flags });
+    }
+    if services.is_empty() {
+        services = s.policy().map_err(e)?.timestamps.unwrap_or_default().all();
+    }
+    let calendars: Vec<String> = services
+        .iter()
+        .flat_map(|x| match x {
+            Service::Opentimestamps { calendars } => calendars.clone(),
+            Service::Rfc3161 { .. } => vec![],
+        })
+        .collect();
     let files = s.signature_files(&h);
     if files.is_empty() {
         return Err(format!("{} is unsigned; sign it first", short(&h)));
     }
-    for f in files {
-        let data = std::fs::read(&f).map_err(|x| format!("{}: {x}", f.display()))?;
-        let (req, nonce) = ox_store::tsp::request(&data).map_err(e)?;
-        let resp = http_post(&url, "application/timestamp-query", &req)?;
-        let stamp = ox_store::tsp::check(&resp, &data).map_err(|x| format!("{url}: {x}"))?;
-        let ours: Vec<u8> = nonce.iter().copied().skip_while(|b| *b == 0).collect();
-        if stamp.nonce.as_deref() != Some(ours.as_slice()) {
-            return Err(format!("{url}: the response doesn't carry our nonce (a replayed or unrelated token)"));
+    if has(args, "--upgrade") {
+        if calendars.is_empty() {
+            return Err("no OpenTimestamps calendars chosen: pass --ots CALENDAR or list them in .ox/policy.json; \
+                        only calendars you chose are asked, never one named in a proof file"
+                .into());
         }
-        let t = ox_store::tsr_of(&f);
-        std::fs::write(&t, &resp).map_err(|x| format!("{}: {x}", t.display()))?;
-        println!("ox: timestamped {} at {} → {}", f.file_name().unwrap_or_default().to_string_lossy(), stamp.at, t.display());
+        for f in &files {
+            ots_upgrade(f, &calendars)?;
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+    if services.is_empty() {
+        return Err("no time-stamp service chosen (there is no default): pass --tsa URL or --ots CALENDAR, or list them \
+                    in .ox/policy.json, e.g. {\"timestamps\": {\"services\": [{\"kind\": \"rfc3161\", \"url\": \"http://…\"}, \
+                    {\"kind\": \"opentimestamps\", \"calendars\": [\"https://…\"]}]}}"
+            .into());
+    }
+    for f in &files {
+        let data = std::fs::read(f).map_err(|x| format!("{}: {x}", f.display()))?;
+        let mut n = 0;
+        for svc in &services {
+            if let Service::Rfc3161 { url } = svc {
+                n += 1;
+                rfc3161(url, f, &data, n)?;
+            }
+        }
+        if !calendars.is_empty() {
+            ots_stamp(f, &data, &calendars)?;
+        }
     }
     Ok(ExitCode::SUCCESS)
 }
 
-/// POSTs `body` over plain HTTP/1.0 and returns the response body.
-// ponytail: http:// only. A time-stamp token is signed, so transport security adds no integrity;
-// add a TLS client when a TSA the maintainer chooses serves https only.
-fn http_post(url: &str, content_type: &str, body: &[u8]) -> Result<Vec<u8>, String> {
+fn opts<'a>(args: &'a [String], name: &'a str) -> impl Iterator<Item = &'a str> {
+    args.windows(2).filter(move |w| w[0] == name).map(|w| w[1].as_str())
+}
+
+fn name_of(f: &Path) -> String {
+    f.file_name().unwrap_or_default().to_string_lossy().into_owned()
+}
+
+fn rfc3161(url: &str, f: &Path, data: &[u8], n: usize) -> Result<(), String> {
+    let (req, nonce) = ox_store::tsp::request(data).map_err(e)?;
+    let resp = ok200(url, http("POST", url, &[("Content-Type", "application/timestamp-query")], &req)?)?;
+    let stamp = ox_store::tsp::check(&resp, data).map_err(|x| format!("{url}: {x}"))?;
+    let ours: Vec<u8> = nonce.iter().copied().skip_while(|b| *b == 0).collect();
+    if stamp.nonce.as_deref() != Some(ours.as_slice()) {
+        return Err(format!("{url}: the response doesn't carry our nonce (a replayed or unrelated token)"));
+    }
+    let t = ox_store::tsr_of(f, n);
+    std::fs::write(&t, &resp).map_err(|x| format!("{}: {x}", t.display()))?;
+    println!("ox: timestamped {} at {} → {}", name_of(f), stamp.at, t.display());
+    Ok(())
+}
+
+const OTS_ACCEPT: (&str, &str) = ("Accept", "application/vnd.opentimestamps.v1");
+
+/// Sends the file's commitment (its digest with a random nonce, hashed: calendars learn nothing
+/// about it) to each calendar; joins their answers into `<file>.ots`, beside any proof already there.
+fn ots_stamp(f: &Path, data: &[u8], calendars: &[String]) -> Result<(), String> {
+    let nonce = ots::nonce()?;
+    let c = ots::commitment(data, &nonce);
+    let mut answers = Vec::new();
+    for cal in calendars {
+        let url = format!("{}/digest", cal.trim_end_matches('/'));
+        match http("POST", &url, &[OTS_ACCEPT], &c).and_then(|r| ok200(&url, r)).and_then(|b| ots::Node::parse(&b)) {
+            Ok(n) => answers.push(n),
+            Err(x) => eprintln!("warning: OpenTimestamps calendar {cal}: {x}"),
+        }
+    }
+    if answers.is_empty() {
+        return Err(format!("{}: no OpenTimestamps calendar answered", name_of(f)));
+    }
+    let n = answers.len();
+    let mut proof = ots::Proof::stamped(data, &nonce, answers);
+    let p = ox_store::ots_of(f);
+    if let Ok(old) = std::fs::read(&p) {
+        let old = ots::Proof::parse(&old).map_err(|x| format!("{}: {x}", p.display()))?;
+        if old.digest == proof.digest {
+            proof.root.0.splice(0..0, old.root.0);
+        }
+    }
+    write_proof(&p, &proof)?;
+    println!(
+        "ox: stamped {} at {n} OpenTimestamps calendar(s); pending until they reach Bitcoin (hours: `ox timestamp <dir> <layer> --upgrade`) → {}",
+        name_of(f),
+        p.display()
+    );
+    Ok(())
+}
+
+fn write_proof(p: &Path, proof: &ots::Proof) -> Result<(), String> {
+    let bytes = proof.to_bytes();
+    ots::Proof::parse(&bytes).map_err(|x| format!("{}: the new proof wouldn't read back: {x}", p.display()))?;
+    std::fs::write(p, bytes).map_err(|x| format!("{}: {x}", p.display()))
+}
+
+/// Asks the chosen calendars (never a URL read from the proof: it is untrusted input) to complete
+/// each pending attestation, and rewrites `<file>.ots` with what they return.
+fn ots_upgrade(f: &Path, calendars: &[String]) -> Result<(), String> {
+    let p = ox_store::ots_of(f);
+    let Ok(bytes) = std::fs::read(&p) else { return Ok(()) };
+    let data = std::fs::read(f).map_err(|x| format!("{}: {x}", f.display()))?;
+    ots::summarize(&data, &bytes).map_err(|x| format!("{}: {x}", p.display()))?;
+    let mut proof = ots::Proof::parse(&bytes)?;
+    let mut unlisted = Vec::new();
+    let done = proof.upgrade(|uri, msg| {
+        let Some(cal) = calendars.iter().find(|c| c.trim_end_matches('/') == uri.trim_end_matches('/')) else {
+            unlisted.push(uri.chars().filter(|c| !c.is_control()).collect::<String>());
+            return None;
+        };
+        let url = format!("{}/timestamp/{}", cal.trim_end_matches('/'), ots::hex(msg));
+        match http("GET", &url, &[OTS_ACCEPT], &[]) {
+            Ok((200, b)) => ots::Node::parse(&b).map_err(|x| eprintln!("warning: {cal}: {x}")).ok(),
+            Ok((404, _)) => None, // not in Bitcoin yet
+            Ok((st, _)) => {
+                eprintln!("warning: {cal}: HTTP {st}");
+                None
+            }
+            Err(x) => {
+                eprintln!("warning: {x}");
+                None
+            }
+        }
+    })?;
+    if done > 0 {
+        write_proof(&p, &proof)?;
+    }
+    for u in &unlisted {
+        eprintln!("note: {} names calendar {u}, which you didn't choose; not asked", p.display());
+    }
+    let s = ots::summarize(&data, &proof.to_bytes())?;
+    let blocks: Vec<String> = s.bitcoin.iter().map(|(h, _)| h.to_string()).collect();
+    println!(
+        "ox: {}: {done} attestation(s) completed; {}{}",
+        name_of(f),
+        if blocks.is_empty() { String::new() } else { format!("in Bitcoin block {}; ", blocks.join(", ")) },
+        if s.pending.is_empty() { "none pending".to_string() } else { format!("pending at {}", s.pending.join(", ")) }
+    );
+    Ok(())
+}
+
+fn ok200(url: &str, (status, body): (u16, Vec<u8>)) -> Result<Vec<u8>, String> {
+    if status == 200 { Ok(body) } else { Err(format!("{url}: HTTP {status}")) }
+}
+
+/// One HTTP/1.0 request; returns the status and body. `https://` goes through BoringSSL (already
+/// in `ox` for sealed layers) with the system's CA certificates (`SSL_CERT_FILE` to choose a file).
+pub(crate) fn http(method: &str, url: &str, headers: &[(&str, &str)], body: &[u8]) -> Result<(u16, Vec<u8>), String> {
     use std::io::{Read, Write};
-    let rest = url.strip_prefix("http://").ok_or_else(|| format!("{url}: only http:// time-stamp URLs are supported"))?;
+    let (tls, rest) = match (url.strip_prefix("https://"), url.strip_prefix("http://")) {
+        (Some(r), _) => (true, r),
+        (None, Some(r)) => (false, r),
+        _ => return Err(format!("{url}: only http:// and https:// URLs are supported")),
+    };
     let (host, path) = match rest.split_once('/') {
         Some((h, p)) => (h, format!("/{p}")),
         None => (rest, "/".to_string()),
     };
-    let addr = if host.contains(':') { host.to_string() } else { format!("{host}:80") };
-    let err = |x: std::io::Error| format!("{url}: {x}");
-    let mut c = std::net::TcpStream::connect(&addr).map_err(err)?;
-    c.set_read_timeout(Some(std::time::Duration::from_secs(30))).map_err(err)?;
-    write!(c, "POST {path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).map_err(err)?;
-    c.write_all(body).map_err(err)?;
-    let mut r = Vec::new();
-    c.read_to_end(&mut r).map_err(err)?;
-    let split = r.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| format!("{url}: not an HTTP response"))?;
-    let head = String::from_utf8_lossy(&r[..split]);
-    let status = head.lines().next().unwrap_or_default();
-    if status.split_whitespace().nth(1) != Some("200") {
-        return Err(format!("{url}: {status}"));
+    let name = host.rsplit_once(':').map_or(host, |(n, _)| n);
+    let addr = if host.contains(':') { host.to_string() } else { format!("{host}:{}", if tls { 443 } else { 80 }) };
+    let err = |x: &dyn std::fmt::Display| format!("{url}: {x}");
+    let c = std::net::TcpStream::connect(&addr).map_err(|x| err(&x))?;
+    for t in [c.set_read_timeout(Some(std::time::Duration::from_secs(30))), c.set_write_timeout(Some(std::time::Duration::from_secs(30)))] {
+        t.map_err(|x| err(&x))?;
     }
-    Ok(r[split + 4..].to_vec())
+    let mut req = format!("{method} {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: ox\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
+    for (k, v) in headers {
+        req.push_str(&format!("{k}: {v}\r\n"));
+    }
+    req.push_str("\r\n");
+    let mut r = Vec::new();
+    fn exchange(mut s: impl Read + Write, req: &[u8], body: &[u8], r: &mut Vec<u8>) -> std::io::Result<()> {
+        s.write_all(req)?;
+        s.write_all(body)?;
+        s.flush()?;
+        s.read_to_end(r).map(|_| ())
+    }
+    if tls {
+        let tls = boring::ssl::SslConnector::builder(boring::ssl::SslMethod::tls()).map_err(|x| err(&x))?.build();
+        let s = tls.connect(name, c).map_err(|x| err(&format!("TLS: {x}")))?;
+        exchange(s, req.as_bytes(), body, &mut r)
+    } else {
+        exchange(c, req.as_bytes(), body, &mut r)
+    }
+    .map_err(|x| err(&x))?;
+    let split = r.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| err(&"not an HTTP response"))?;
+    let head = String::from_utf8_lossy(&r[..split]);
+    let line = head.lines().next().unwrap_or_default();
+    let status = line.split_whitespace().nth(1).and_then(|x| x.parse().ok()).ok_or_else(|| err(&line))?;
+    Ok((status, r[split + 4..].to_vec()))
+}
+
+/// An 80-byte block header that every source agrees on, and how many sources gave it.
+pub(crate) fn bitcoin_header(sources: &[HeaderSource], height: u64) -> Result<(Vec<u8>, usize), String> {
+    let mut got: Vec<(String, Vec<u8>)> = Vec::new();
+    for src in sources {
+        match src {
+            HeaderSource::Explorers { urls } => {
+                for u in urls {
+                    let b = u.trim_end_matches('/');
+                    let text = |url: String| -> Result<String, String> {
+                        Ok(String::from_utf8_lossy(&ok200(&url, http("GET", &url, &[], &[])?)?).trim().to_string())
+                    };
+                    let hash = text(format!("{b}/block-height/{height}"))?;
+                    let header = ots::unhex(&text(format!("{b}/block/{hash}/header"))?).map_err(|x| format!("{b}: header: {x}"))?;
+                    if ots::block_hash(&header) != hash {
+                        return Err(format!("{b}: the header it gave doesn't hash to the block it named"));
+                    }
+                    got.push((b.to_string(), header));
+                }
+            }
+            HeaderSource::Bitcoind { url, cookie_file } => {
+                let hash = rpc(url, cookie_file, "getblockhash", serde_json::json!([height]))?;
+                let hash = hash.as_str().ok_or_else(|| format!("{url}: getblockhash: not a hash"))?.to_string();
+                let header = rpc(url, cookie_file, "getblockheader", serde_json::json!([hash, false]))?;
+                let header = ots::unhex(header.as_str().unwrap_or_default()).map_err(|x| format!("{url}: header: {x}"))?;
+                if ots::block_hash(&header) != hash {
+                    return Err(format!("{url}: the header it gave doesn't hash to the block it named"));
+                }
+                got.push((url.clone(), header));
+            }
+            HeaderSource::LightClient(_) => return Err("light-client header source isn't built yet".into()),
+        }
+    }
+    let Some((first, header)) = got.first() else { return Err("no Bitcoin header sources chosen".into()) };
+    if let Some((other, _)) = got.iter().find(|(_, h)| h != header) {
+        return Err(format!("header sources disagree at block {height}: {first} and {other} gave different headers"));
+    }
+    Ok((header.clone(), got.len()))
+}
+
+/// A Bitcoin Core JSON-RPC call, authenticated with the node's cookie file. The cookie is a
+/// credential: read only here, never printed, logged or kept.
+fn rpc(url: &str, cookie_file: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    use base64::Engine;
+    let cookie = std::fs::read(cookie_file).map_err(|x| format!("bitcoind cookie file {cookie_file}: {x}"))?;
+    let auth = format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(cookie.trim_ascii()));
+    let body = serde_json::json!({"jsonrpc": "1.0", "id": "ox", "method": method, "params": params}).to_string();
+    let (status, resp) = http("POST", url, &[("Content-Type", "application/json"), ("Authorization", &auth)], body.as_bytes())?;
+    if status == 401 || status == 403 {
+        return Err(format!("{url}: the node refused the credentials in {cookie_file} (HTTP {status})"));
+    }
+    let v: serde_json::Value = serde_json::from_slice(&resp).map_err(|_| format!("{url}: {method}: HTTP {status}, not JSON-RPC"))?;
+    if !v["error"].is_null() {
+        return Err(format!("{url}: {method}: {}", v["error"]["message"].as_str().unwrap_or("error")));
+    }
+    Ok(v["result"].clone())
 }
 
 /// Deletes a layer's content, keeping its hash; the purge record replicates like a layer.
@@ -674,5 +928,187 @@ fn key(pos: &[&String]) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         _ => Err("usage: ox key new <name> [<dir>] | ox key upgrade [<name>] [<dir>] | ox key add <dir> <name> <ed25519:…> [<other keys>…] | ox key role <dir> <name> <role>".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The network code against local fakes (no public calendar, explorer or node is contacted).
+    use super::*;
+    use std::io::{Read, Write};
+    use std::sync::{Arc, Mutex};
+
+    type Handler = dyn Fn(&str, &str, &str, &[u8]) -> (u16, Vec<u8>) + Send + Sync;
+
+    /// A one-request-per-connection HTTP server on 127.0.0.1; `handler(method, path, head, body)`.
+    fn serve(handler: Arc<Handler>) -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut c in l.incoming().flatten() {
+                let mut r = Vec::new();
+                let mut buf = [0u8; 4096];
+                let (head, body) = loop {
+                    let n = c.read(&mut buf).unwrap_or(0);
+                    r.extend_from_slice(&buf[..n]);
+                    if let Some(i) = r.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&r[..i]).to_string();
+                        let len: usize = head
+                            .lines()
+                            .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length: ").map(|v| v.trim().parse().unwrap()))
+                            .unwrap_or(0);
+                        if r.len() >= i + 4 + len || n == 0 {
+                            break (head, r[i + 4..].to_vec());
+                        }
+                    } else if n == 0 {
+                        break (String::new(), Vec::new());
+                    }
+                };
+                let mut first = head.split_whitespace();
+                let (m, p) = (first.next().unwrap_or_default().to_string(), first.next().unwrap_or_default().to_string());
+                let (st, out) = handler(&m, &p, &head, &body);
+                let _ = write!(c, "HTTP/1.0 {st} X\r\nContent-Length: {}\r\n\r\n", out.len());
+                let _ = c.write_all(&out);
+            }
+        });
+        url
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ox-cli-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn opentimestamps_stamp_and_upgrade_against_a_local_calendar() {
+        let seen = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let confirmed = Arc::new(Mutex::new(false));
+        let me = Arc::new(Mutex::new(String::new()));
+        let (s2, c2, m2) = (seen.clone(), confirmed.clone(), me.clone());
+        let url = serve(Arc::new(move |m, p, _, body| {
+            use ots::{Att, Item, Node, Op};
+            match (m, p) {
+                ("POST", "/digest") => {
+                    s2.lock().unwrap().push(body.to_vec());
+                    let pending = Node(vec![Item::Att(Att::Pending(m2.lock().unwrap().clone()))]);
+                    let mut out = Vec::new();
+                    Node(vec![Item::Op(Op::Prepend(vec![1, 2, 3, 4]), pending)]).write(&mut out);
+                    (200, out)
+                }
+                ("GET", p) if p.starts_with("/timestamp/") && *c2.lock().unwrap() => {
+                    let mut out = Vec::new();
+                    Node(vec![Item::Op(Op::Sha256, Node(vec![Item::Att(Att::Bitcoin(912_095))]))]).write(&mut out);
+                    (200, out)
+                }
+                _ => (404, b"Pending confirmation in Bitcoin blockchain".to_vec()),
+            }
+        }));
+        *me.lock().unwrap() = url.clone();
+        let d = tmp("ots");
+        let f = d.join("sig.json");
+        std::fs::write(&f, b"a signature file").unwrap();
+        let cals = vec![url.clone()];
+
+        ots_stamp(&f, b"a signature file", &cals).unwrap();
+        let read = || ots::summarize(b"a signature file", &std::fs::read(ox_store::ots_of(&f)).unwrap()).unwrap();
+        assert_eq!(read().pending, [url.as_str()]);
+        // The calendar got a 32-byte commitment that isn't the file's digest.
+        use sha2::Digest;
+        let got = seen.lock().unwrap()[0].clone();
+        assert_eq!(got.len(), 32);
+        assert_ne!(got, sha2::Sha256::digest(b"a signature file").to_vec());
+        // Stamping again keeps the first proof beside the new one.
+        ots_stamp(&f, b"a signature file", &cals).unwrap();
+        assert_eq!(read().pending.len(), 2);
+        // A calendar no one chose is never asked, even if the proof names it.
+        ots_upgrade(&f, &["https://elsewhere.example".into()]).unwrap();
+        assert_eq!(read().pending.len(), 2);
+        // Still pending (404): nothing changes; confirmed: both completed.
+        ots_upgrade(&f, &cals).unwrap();
+        assert_eq!(read().pending.len(), 2);
+        *confirmed.lock().unwrap() = true;
+        ots_upgrade(&f, &cals).unwrap();
+        let s = read();
+        assert!(s.pending.is_empty() && s.bitcoin.len() == 2 && s.bitcoin.iter().all(|(h, _)| *h == 912_095), "{s:?}");
+        // No calendar answering is an error, not an empty proof.
+        assert!(ots_stamp(&f, b"x", &["http://127.0.0.1:9".into()]).unwrap_err().contains("no OpenTimestamps calendar"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn header() -> Vec<u8> {
+        ots::unhex(include_str!("../../ox-store/testdata/ots/912095.header")).unwrap()
+    }
+
+    /// An Esplora-like explorer serving `h` at height 912095.
+    fn explorer(h: Vec<u8>) -> String {
+        serve(Arc::new(move |_, p, _, _| {
+            let hash = ots::block_hash(&h);
+            match p {
+                "/api/block-height/912095" => (200, hash.into_bytes()),
+                p if p == format!("/api/block/{hash}/header") => (200, ots::hex(&h).into_bytes()),
+                _ => (404, vec![]),
+            }
+        })) + "/api"
+    }
+
+    /// A Bitcoin Core-like JSON-RPC node that wants `Basic base64(cookie)`.
+    fn bitcoind(h: Vec<u8>, cookie: &str) -> String {
+        use base64::Engine;
+        let want = format!("authorization: basic {}", base64::engine::general_purpose::STANDARD.encode(cookie)).to_ascii_lowercase();
+        serve(Arc::new(move |_, _, head, body| {
+            if !head.to_ascii_lowercase().lines().any(|l| l == want) {
+                return (401, vec![]);
+            }
+            let req: serde_json::Value = serde_json::from_slice(body).unwrap();
+            let result = match req["method"].as_str() {
+                Some("getblockhash") if req["params"][0] == 912_095 => serde_json::json!(ots::block_hash(&h)),
+                Some("getblockheader") if req["params"][1] == false => serde_json::json!(ots::hex(&h)),
+                _ => return (500, br#"{"result":null,"error":{"message":"bad request"},"id":"ox"}"#.to_vec()),
+            };
+            (200, serde_json::json!({"result": result, "error": null, "id": "ox"}).to_string().into_bytes())
+        }))
+    }
+
+    #[test]
+    fn bitcoin_headers_come_from_the_chosen_sources_and_must_agree() {
+        let h = header();
+        let mut other = h.clone();
+        other[4] ^= 1; // another (fake) header: different previous-block hash
+        let (a, b, bad) = (explorer(h.clone()), explorer(h.clone()), explorer(other.clone()));
+        let ex = |urls: &[&String]| HeaderSource::Explorers { urls: urls.iter().map(|u| u.to_string()).collect() };
+
+        assert_eq!(bitcoin_header(&[ex(&[&a, &b])], 912_095).unwrap(), (h.clone(), 2));
+        let err = bitcoin_header(&[ex(&[&a, &bad])], 912_095).unwrap_err();
+        assert!(err.contains("disagree") && err.contains(&a) && err.contains(&bad), "{err}");
+
+        let d = tmp("cookie");
+        let cookie = d.join(".cookie");
+        std::fs::write(&cookie, "__cookie__:s3cret-value\n").unwrap();
+        let node = |h: Vec<u8>, c: &str| HeaderSource::Bitcoind { url: bitcoind(h, c), cookie_file: cookie.display().to_string() };
+        assert_eq!(bitcoin_header(&[node(h.clone(), "__cookie__:s3cret-value")], 912_095).unwrap(), (h.clone(), 1));
+        assert_eq!(bitcoin_header(&[node(h.clone(), "__cookie__:s3cret-value"), ex(&[&a])], 912_095).unwrap().1, 2);
+        let err = bitcoin_header(&[node(h.clone(), "__cookie__:other")], 912_095).unwrap_err();
+        assert!(err.contains("refused the credentials") && !err.contains("s3cret"), "{err}");
+        let err = bitcoin_header(&[node(other, "__cookie__:s3cret-value"), ex(&[&a])], 912_095).unwrap_err();
+        assert!(err.contains("disagree"), "{err}");
+        std::fs::remove_file(&cookie).unwrap();
+        let err = bitcoin_header(&[node(h.clone(), "x")], 912_095).unwrap_err();
+        assert!(err.contains("cookie file"), "{err}");
+
+        let lc = HeaderSource::LightClient(Default::default());
+        assert!(bitcoin_header(&[lc], 912_095).unwrap_err().contains("isn't built yet"));
+        assert!(bitcoin_header(&[], 912_095).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The real public explorers over https (BoringSSL): run by hand, never in CI
+    /// (`--ignored`); reads public chain data only.
+    #[test]
+    #[ignore = "network: contacts mempool.space and blockstream.info"]
+    fn the_default_explorers_over_https() {
+        let sources = ox_store::policy::Timestamps::default().headers();
+        assert_eq!(bitcoin_header(&sources, 912_095).unwrap(), (header(), 2));
     }
 }

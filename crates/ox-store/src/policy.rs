@@ -36,10 +36,60 @@ pub struct Algorithm {
     pub until: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Time-stamp services the project chose (every option is the user's choice;
+/// there is no default service). `ox timestamp` uses all of them, or the ones given on its command line.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Timestamps {
-    /// RFC 3161 time-stamp authority used by `ox timestamp` when no `--tsa` is given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<Service>,
+    /// The older form: one RFC 3161 time-stamp authority, used like an `rfc3161` service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tsa: Option<String>,
+    /// Where `ox verify --online` reads Bitcoin block headers; every source must return the same
+    /// header. Absent: the two public explorers in `BITCOIN_EXPLORERS`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bitcoin_headers: Option<Vec<HeaderSource>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum HeaderSource {
+    /// Esplora APIs (`/block-height/<n>`, `/block/<hash>/header`); all must agree.
+    Explorers { urls: Vec<String> },
+    /// The user's own Bitcoin Core node over JSON-RPC. `cookie_file` is a credential: read only
+    /// when a request is made, never printed or copied.
+    #[serde(rename_all = "camelCase")]
+    Bitcoind { url: String, cookie_file: String },
+    /// Reserved for a BIP 157/158 light client (being spiked); not built.
+    LightClient(serde_json::Map<String, serde_json::Value>),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Service {
+    /// An RFC 3161 time-stamp authority; its token is kept as `<sigfile>.tsr` (`.2.tsr`, … for more).
+    Rfc3161 { url: String },
+    /// OpenTimestamps calendars; one proof for all of them, `<sigfile>.ots`.
+    Opentimestamps { calendars: Vec<String> },
+}
+
+/// Header sources when the policy names none: two public explorers, which must agree.
+pub const BITCOIN_EXPLORERS: [&str; 2] = ["https://mempool.space/api", "https://blockstream.info/api"];
+
+impl Timestamps {
+    /// `services`, then the older `tsa`.
+    pub fn all(&self) -> Vec<Service> {
+        let mut v = self.services.clone();
+        v.extend(self.tsa.iter().map(|url| Service::Rfc3161 { url: url.clone() }));
+        v
+    }
+
+    pub fn headers(&self) -> Vec<HeaderSource> {
+        self.bitcoin_headers
+            .clone()
+            .unwrap_or_else(|| vec![HeaderSource::Explorers { urls: BITCOIN_EXPLORERS.map(String::from).to_vec() }])
+    }
 }
 
 impl Default for Policy {

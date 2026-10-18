@@ -9,10 +9,12 @@
 //!   stacks/<sha256>.json      one per commit: imports the previous stack + the new layer
 //!   index/<sha256>.json       per layer, written once: header + which nodes and keys it touches
 //!   sigs/<sha256>/<key>.json  detached signatures (optional): Ed25519; `<key>.mldsa65.json` and
-//!                             `<key>.slhdsa.json` beside it; `<file>.tsr` an RFC 3161 time-stamp
+//!                             `<key>.slhdsa.json` beside it; `<file>.tsr` (`.2.tsr`, …) RFC 3161
+//!                             time-stamps, `<file>.ots` an OpenTimestamps proof
 //!   keys/<name>.pub           public keys the project knows (`.xwing`: X-Wing keys, `.mldsa65`,
 //!                             `.slhdsa`: post-quantum signing keys, `.role`: roles)
-//!   policy.json               which signatures `ox verify --require` requires (optional)
+//!   policy.json               which signatures `ox verify --require` requires; time-stamp
+//!                             services and Bitcoin header sources (optional)
 //!   blobs/<sha256>            assets, and the ciphertext of sealed layers
 //!   wraps/<key id>/<name>.json  a sealed layer's content key wrapped to one recipient (deletable)
 //!   purged/<sha256>.json      purges carried out here
@@ -31,12 +33,13 @@ pub mod pq;
 mod search;
 mod seal;
 mod time;
+pub mod ots;
 pub mod tsp;
 
 pub use history::{BlameEntry, Touch};
-pub use keys::{KeyPair, LayerStatus, SigInfo, Signature, strength, tsr_of};
+pub use keys::{KeyPair, LayerStatus, SigInfo, Signature, ots_of, strength, tsr_of, tsr_paths};
 pub use policy::Policy;
-pub use time::now_rfc3339;
+pub use time::{now_rfc3339, rfc3339};
 pub use seal::{Opened, SealInfo};
 pub use search::{Found, Hit};
 

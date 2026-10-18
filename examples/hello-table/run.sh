@@ -257,20 +257,30 @@ node -e 'if ((require("fs").statSync(process.argv[1]).mode & 0o777) !== 0o600) {
 $OX sign "$P3" "$LEGACY" --key legacy > /dev/null
 $OX verify "$P3" --require > "$TMP/v.txt" 2>&1 || { cat "$TMP/v.txt"; echo "the upgraded key is still refused"; exit 1; }
 echo "checked: an old key is classical only, refused after the policy's date, hybrid after ox key upgrade"
-#    RFC 3161 time-stamps of the signature files, from a local test TSA (openssl ts; never a public one)
+#    time-stamps of the signature files from the services the project chose (no default): here an
+#    RFC 3161 TSA (openssl ts) and an OpenTimestamps calendar, both local test fakes, never public ones
 node ../../tools/local-tsa.mjs "$TMP/tsa" > "$TMP/tsa.url" & TSA_PID=$!
-trap 'kill $TSA_PID 2> /dev/null || true' EXIT
-for _ in $(seq 100); do [ -s "$TMP/tsa.url" ] && break; sleep 0.1; done
-$OX timestamp "$P3" "$LEGACY" --tsa "$(head -1 "$TMP/tsa.url")" | sed "s|$TMP|\$TMP|"
+node ../../tools/local-ots-calendar.mjs > "$TMP/cal.url" & CAL_PID=$!
+trap 'kill $TSA_PID $CAL_PID 2> /dev/null || true' EXIT
+for _ in $(seq 100); do [ -s "$TMP/tsa.url" ] && [ -s "$TMP/cal.url" ] && break; sleep 0.1; done
+node -e 'const fs = require("fs"), [f, tsa, cal] = process.argv.slice(1), p = JSON.parse(fs.readFileSync(f));
+  p.timestamps = { services: [{ kind: "rfc3161", url: tsa }, { kind: "opentimestamps", calendars: [cal] }] };
+  fs.writeFileSync(f, JSON.stringify(p, null, 2)); console.log(JSON.stringify({ timestamps: p.timestamps }))' \
+  "$P3/.ox/policy.json" "$(head -1 "$TMP/tsa.url")" "$(head -1 "$TMP/cal.url")" | sed 's|127.0.0.1:[0-9]*|127.0.0.1:<port>|g'
+$OX timestamp "$P3" "$LEGACY" | sed -e "s|$TMP|\$TMP|" -e 's|127.0.0.1:[0-9]*|127.0.0.1:<port>|g'
+ls "$P3"/.ox/sigs/*/*.ots > /dev/null || { echo "no OpenTimestamps proof written"; exit 1; }
 $OX verify "$P3" > "$TMP/v.txt"
-grep "$LEGACY" "$TMP/v.txt"
+grep "$LEGACY" "$TMP/v.txt" | sed 's|127.0.0.1:[0-9]*|127.0.0.1:<port>|g'
 grep "$LEGACY" "$TMP/v.txt" | grep -q "timestamped" || { echo "verify doesn't report the time-stamp"; exit 1; }
+grep "$LEGACY" "$TMP/v.txt" | grep -q "OpenTimestamps pending at http://127.0.0.1" || { echo "verify doesn't report the pending proof"; exit 1; }
+$OX timestamp "$P3" "$LEGACY" --upgrade | sed 's|127.0.0.1:[0-9]*|127.0.0.1:<port>|g'
+kill $CAL_PID
 #    the TSA's signature and certificate, checked by openssl (ox checks the imprint and time only)
 for f in "$P3"/.ox/sigs/*/*.tsr; do
   openssl ts -verify -data "${f%.tsr}" -in "$f" -CAfile "$TMP/tsa/ca.pem" > /dev/null 2>&1 || { echo "openssl rejects $f"; exit 1; }
 done
 kill $TSA_PID
-echo "checked: every signature file of a layer time-stamped by a local TSA; openssl verifies the tokens"
+echo "checked: every signature file time-stamped by a local TSA (openssl verifies the tokens) and a local calendar (pending)"
 $OX validate "$TMP/proj" | tail -1
 #    the store composes exactly like the stack files with the same edits
 $OX compose "$TMP/proj" --out "$TMP/a.json" 2> /dev/null

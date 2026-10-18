@@ -31,9 +31,11 @@ USAGE:
   ox search   <dir> <words…> [--history] [--json]
                  find text in what the project says now (composed, sealed layers opened with
                  your keys); --history: in every stored layer, superseded values too
-  ox verify   <dir> [--require]                   hash and signatures of every layer in the head;
+  ox verify   <dir> [--require] [--online]        hash and signatures of every layer in the head;
                                                   --require: refuse what .ox/policy.json (or the
-                                                  default: Ed25519 + ML-DSA-65) doesn't accept
+                                                  default: Ed25519 + ML-DSA-65) doesn't accept;
+                                                  --online: check OpenTimestamps Bitcoin blocks
+                                                  against headers (timestamps.bitcoinHeaders)
   ox purge    <dir> <layer> [--reason TEXT] [--key NAME] [--key-destroy]
                  delete a layer's content, keep its hash; signed by an owner or approver;
                  --key-destroy (sealed layers): destroy its content key in every copy instead
@@ -41,8 +43,10 @@ USAGE:
   ox sign     <dir> <layer-hash> [--key NAME] [--archive]
                  add detached signatures: Ed25519 + ML-DSA-65, and SLH-DSA for owners and
                  approvers (or with --archive)
-  ox timestamp <dir> <layer-hash> [--tsa URL]     RFC 3161 time-stamp of each signature file
-                                                  (URL, or timestamps.tsa in .ox/policy.json)
+  ox timestamp <dir> <layer-hash> [--tsa URL]… [--ots CALENDAR]… [--upgrade]
+                 time-stamp each signature file with every service chosen (on the command line,
+                 else timestamps.services in .ox/policy.json; no default): RFC 3161 → .tsr,
+                 OpenTimestamps → .ots; --upgrade: complete pending .ots from those calendars
   ox key new  <name> [<dir>]                      new key (Ed25519, X-Wing, ML-DSA-65, SLH-DSA) in
                                                   ~/.config/ox/keys (or $OX_KEYS); with <dir>,
                                                   the project knows it
@@ -124,7 +128,7 @@ fn positional(args: &[String]) -> Vec<&String> {
         }
         if matches!(
             a.as_str(),
-            "--out" | "--author" | "--id" | "--expect" | "--key" | "--keep" | "--from" | "--report" | "--tsa"
+            "--out" | "--author" | "--id" | "--expect" | "--key" | "--keep" | "--from" | "--report" | "--tsa" | "--ots"
         ) {
             skip = true;
             continue;

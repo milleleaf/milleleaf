@@ -33,6 +33,8 @@ krilla = { git = "https://github.com/storytold/craft-libs", rev = "82a24b006eefa
 opt-level = 3
 [profile.dev.package.slh-dsa]
 opt-level = 3
+[profile.dev.package.fips205]
+opt-level = 3
 [profile.dev.package.module-lattice]
 opt-level = 3
 [profile.dev.package.sha2]
