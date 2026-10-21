@@ -11,6 +11,7 @@
 //! - `view`: what differs from a plain visible sheet: `hidden` (`"hidden"` / `"veryHidden"`),
 //!   `gridlines`, `headings`, `zeros` (false when off), `zoom`, `rightToLeft`, `tabColor`
 //! - `protection`: `<GridCraft SheetProtection>` (a password's hash, never the password)
+//! - `autoFilter`: `<GridCraft AutoFilter>`, the sheet's filter buttons and any criteria
 //! - `print`: `<GridCraft PrintSettings>` (page setup, print area, print titles, the sheet's
 //!   printed header and footer), when not the default
 //! - `pictures`: `[{blob, mediaType, alt?, at: "B2", dx, dy, w, h, mode?}]`, floating pictures
@@ -35,8 +36,8 @@ fn line(l: &LineInfo) -> Option<Value> {
     serde_json::to_value(l).ok()
 }
 
-pub(crate) const KEYS: [&str; 12] =
-    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection", "pictures", "charts"];
+pub(crate) const KEYS: [&str; 13] =
+    ["merges", "freeze", "comments", "validations", "rows", "cols", "defaults", "print", "view", "protection", "autoFilter", "pictures", "charts"];
 
 /// Pictures by blob value: (media type, bytes).
 pub type Pictures = std::collections::BTreeMap<String, (String, Vec<u8>)>;
@@ -143,6 +144,9 @@ pub(crate) fn sheet_look(sh: &Sheet, pics: &mut Pictures) -> Map<String, Value> 
     if let Some(p) = sh.protection.as_ref().and_then(|p| serde_json::to_value(p).ok()) {
         m.insert("protection".into(), p);
     }
+    if let Some(f) = sh.autofilter.as_ref().and_then(|f| serde_json::to_value(f).ok()) {
+        m.insert("autoFilter".into(), f);
+    }
     if (sh.default_col_width, sh.default_row_height) != (blank.default_col_width, blank.default_row_height) {
         m.insert("defaults".into(), json!({ "colWidth": sh.default_col_width, "rowHeight": sh.default_row_height }));
     }
@@ -242,6 +246,12 @@ pub(crate) fn apply_look(sh: &mut Sheet, gs: &Map<String, Value>, at: &str, warn
         match serde_json::from_value(p.clone()) {
             Ok(p) => sh.protection = Some(p),
             Err(e) => bad("sheet protection", &e),
+        }
+    }
+    if let Some(f) = gs.get("autoFilter") {
+        match serde_json::from_value(f.clone()) {
+            Ok(f) => sh.autofilter = Some(f),
+            Err(e) => bad("filter", &e),
         }
     }
     if let Some(d) = gs.get("defaults") {

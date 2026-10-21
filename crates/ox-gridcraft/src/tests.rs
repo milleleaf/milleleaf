@@ -592,3 +592,26 @@ fn an_unchanged_chart_exports_its_own_xml_and_a_changed_one_gridcrafts() {
     assert!(warnings.iter().any(|w| w.contains("chart 1 was changed")), "{warnings:?}");
     std::fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn a_sheets_filter_comes_back() {
+    // An Imperial College bibliography workbook (Zenodo 3754178, from the real-file search) has
+    // autoFilters on three sheets. They were dropped without a word (the inventory saw only the
+    // hidden _xlnm._FilterDatabase names Excel keeps for them going).
+    use gridcraft_core::RangeRef;
+    use gridcraft_model::AutoFilter;
+    let mut wb = Workbook::new();
+    let sh = wb.sheet_mut(0).unwrap();
+    sh.name = "Raw Data".into();
+    for (r, v) in ["Title", "a", "b"].iter().enumerate() {
+        sh.set_value(CellRef::new(r as u32, 0), GValue::text(*v));
+    }
+    sh.autofilter = Some(AutoFilter { range: RangeRef::parse("A1:A3").unwrap(), criteria: vec![] });
+    let look = crate::look::sheet_look(&wb.sheets[0], &mut crate::Pictures::new());
+    assert!(look.contains_key("autoFilter"), "{look:?}");
+    let mut out = Workbook::new();
+    out.sheet_mut(0).unwrap().name = "Raw Data".into();
+    crate::look::apply_look(out.sheet_mut(0).unwrap(), &look, "Raw Data", &mut vec![], ox_core::PictureSource::StandIn(None)).unwrap();
+    let back = from_xlsx(&to_xlsx(&out).unwrap()).unwrap();
+    assert_eq!(back.sheets[0].autofilter.as_ref().map(|f| f.range.to_string()), Some("A1:A3".to_string()));
+}
