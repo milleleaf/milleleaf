@@ -28,6 +28,9 @@ covered_by = {
     "slide text chars": ("table text chars", 1),
     "header/footer text chars": ("headers and footers (parts)", 10**9),
     "shapes (sp)": ("shapes without text", 1),
+    # A shape without text that had a fill or an outline takes it with it.
+    "shapes with a fill": ("shapes without text", 1),
+    "shapes with an outline": ("shapes without text", 1),
     "notes text chars": ("notes slide-number fields", 4),
     "defined names (not Milleleaf's)": ("defined names into other workbooks", 1),
     # A nested table's text stays in its cell; the table, its rows and cells go.
