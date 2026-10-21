@@ -636,3 +636,39 @@ fn real_deck_tables_lines_and_links_come_in_and_edits_to_them_are_changes() {
     assert_eq!(got(&lines[0].path, "deck::line")["line"]["fill"]["color"]["base"]["rgb"], json!({ "r": 255, "g": 0, "b": 0, "a": 255 }));
     assert!(layer.data.iter().any(|n| n.attributes.get("deck::text").is_some_and(|t| t.to_string().contains("mailto:someone@example.org"))));
 }
+
+#[test]
+fn a_groups_shapes_come_in_where_the_group_shows_them() {
+    // A DDI training deck (Zenodo 5180625, from the real-file search) holds a table and
+    // connectors inside a group: they were dropped with all their text. The model has no
+    // groups, so the shapes now come in on their own, placed where the group showed them.
+    use deckcraft_geom::Xfrm;
+    use deckcraft_model::{Shape, ShapeId, TextBody};
+    let mut p = from_pptx(&std::fs::read(example("../real/briefing.pptx")).unwrap()).unwrap();
+    let child = Shape {
+        id: ShapeId(901),
+        name: "inside".into(),
+        xfrm: Some(Xfrm::new(10.0, 10.0, 100.0, 50.0)),
+        text: Some(TextBody::from_text("in a group")),
+        ..Default::default()
+    };
+    // The group shows its child space (0, 0, 100, 50) twice as large, at (100, 100).
+    let group = Shape {
+        id: ShapeId(900),
+        name: "Group 1".into(),
+        xfrm: Some(Xfrm::new(100.0, 100.0, 200.0, 100.0)),
+        kind: ShapeKind::Group { children: vec![child], child: Xfrm::new(0.0, 0.0, 100.0, 50.0) },
+        ..Default::default()
+    };
+    std::sync::Arc::make_mut(&mut p.slides[0]).shapes.push(group);
+    let (layer, report) = crate::adopt(&p, "real-deck", "briefing", header()).expect("adopts");
+    let n = layer
+        .data
+        .iter()
+        .find(|n| n.attributes.get("deck::text").is_some_and(|t| t.to_string().contains("in a group")))
+        .unwrap_or_else(|| panic!("the grouped text box was dropped: {:?}", report.warnings));
+    let g = &n.attributes["deck::frame"];
+    let near = |k: &str, pt: f64| (g[k].as_f64().unwrap() - crate::px(pt)).abs() < 0.02;
+    assert!(near("x", 120.0) && near("y", 120.0) && near("w", 200.0) && near("h", 100.0), "{g}");
+}
+
