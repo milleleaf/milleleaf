@@ -1220,6 +1220,14 @@ fn import_into(
                         });
                         new_order.push(c.name.clone().unwrap_or_default());
                         let old = obj(c, "word::paragraph").cloned().unwrap_or_default();
+                        // Numbering turned off where the stack has no list: an editor writing the
+                        // "off" out (LibreOffice does, for headings its outline numbering covers),
+                        // still unnumbered. Not an edit.
+                        if old.get("list").is_none() && new_para.get("list").and_then(|l| l.get("id")).and_then(Value::as_str) == Some("") {
+                            if let Some(o) = new_para.as_object_mut() {
+                                o.remove("list");
+                            }
+                        }
                         let old_runs: Vec<Value> = old
                             .get("runs")
                             .and_then(Value::as_array)
