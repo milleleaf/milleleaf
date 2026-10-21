@@ -180,3 +180,37 @@ fn inventory_counts_nested_tables_character_styles_changes_split_fields_and_them
         assert!(lost.contains(&f), "{f} not listed: {lost:?}");
     }
 }
+
+/// What the real-file search's workbooks showed the counts getting wrong: a what-if data table
+/// (SIB-LCA, Zenodo 4742246) counted as a formula, protection settings without protection on
+/// (FAIR maturity model, Zenodo 3909563) counted as a protected sheet, Excel's
+/// `_xlnm._FilterDatabase` counted as the file's own name, filters not counted at all (Imperial
+/// College, Zenodo 3754178), and surface charts, which GridCraft reads as nothing (SIB-LCA).
+#[test]
+fn inventory_counts_data_tables_protection_filters_and_surface_charts() {
+    use crate::inventory::{inventory, losses};
+    const NS: &str = r#"xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main""#;
+    let sheet = |extra: &str| {
+        format!(
+            "<worksheet {NS}><sheetData><row r=\"1\"><c r=\"A1\"><f>1+1</f><v>2</v></c>\
+             <c r=\"B1\"><f t=\"dataTable\" ref=\"B1:B2\" dt2D=\"0\" dtr=\"0\" r1=\"A1\"/><v>3</v></c></row></sheetData>{extra}</worksheet>"
+        )
+    };
+    let wb = format!(
+        "<workbook {NS}><sheets><sheet name=\"S1\" sheetId=\"1\"/><sheet name=\"S2\" sheetId=\"2\"/></sheets><definedNames>\
+         <definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"0\" hidden=\"1\">S1!$A$1:$A$2</definedName>\
+         <definedName name=\"Rate\">S1!$A$1</definedName></definedNames></workbook>"
+    );
+    let chart = r#"<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:surface3DChart/></c:plotArea></c:chart></c:chartSpace>"#;
+    let s1 = sheet("<sheetProtection selectLockedCells=\"1\"/><autoFilter ref=\"A1:A2\"/>");
+    let s2 = sheet("<sheetProtection sheet=\"1\" objects=\"1\"/>");
+    let bytes = docx_of(&[("xl/workbook.xml", &wb), ("xl/worksheets/sheet1.xml", &s1), ("xl/worksheets/sheet2.xml", &s2), ("xl/charts/chart1.xml", chart)]);
+    let (k, c) = inventory(&bytes).unwrap();
+    assert_eq!(k, "xlsx");
+    assert_eq!((c["formulas"], c["what-if data tables"]), (2, 2));
+    assert_eq!(c["protected sheets"], 1, "only the sheet with protection on");
+    assert_eq!((c["defined names (not Milleleaf's)"], c["autofilters"]), (1, 1));
+    assert_eq!(c["surface charts"], 1);
+    let lost: Vec<&str> = losses(k, &c, None).iter().map(|l| l.feature).collect();
+    assert!(lost.contains(&"what-if data tables") && lost.contains(&"surface charts") && !lost.contains(&"autofilters"), "{lost:?}");
+}

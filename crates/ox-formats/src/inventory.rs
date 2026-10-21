@@ -88,7 +88,20 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
             .iter()
             .map(|n| part(n))
             .collect::<Result<_, _>>()?;
-        Ok(("xlsx", xlsx(&sheets, &styles, &wb, &comments, &names)))
+        // Charts GridCraft has no kind for (surface charts): it reads them as nothing.
+        let mut surface = 0u64;
+        for n in matching(|n| numbered(n, "xl/charts/chart")) {
+            let mut found = false;
+            walk(&part(&n)?, |ev| {
+                if let Ev::Open(_, b"surfaceChart" | b"surface3DChart", _) = ev {
+                    found = true;
+                }
+            });
+            surface += u64::from(found);
+        }
+        let mut c = xlsx(&sheets, &styles, &wb, &comments, &names);
+        c.insert("surface charts", surface);
+        Ok(("xlsx", c))
     } else if has("ppt/presentation.xml") {
         let slides: Vec<Vec<u8>> = matching(|n| numbered_req(n, "ppt/slides/slide"))
             .iter()
@@ -634,6 +647,8 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
                         has_value |= in_c;
                         return;
                     }
+                    // A what-if data table's anchor (`t="dataTable"`) holds no formula text.
+                    b"f" if attr(e, b"t").as_deref() == Some("dataTable") => "what-if data tables",
                     b"f" => "formulas",
                     b"mergeCell" => "merged ranges",
                     b"col" => "column width settings",
@@ -642,7 +657,10 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
                     b"conditionalFormatting" => "conditional formats",
                     b"dataValidation" => "data validations",
                     b"hyperlink" => "hyperlinks",
-                    b"sheetProtection" => "protected sheets",
+                    // Protection is on only with sheet="1"; without it the element only holds
+                    // the settings protection would use (Excel writes those too).
+                    b"autoFilter" => "autofilters",
+                    b"sheetProtection" if matches!(attr(e, b"sheet").as_deref(), Some("1" | "true")) => "protected sheets",
                     b"sheetView" if matches!(attr(e, b"showGridLines").as_deref(), Some("0" | "false")) => "sheets with gridlines off",
                     _ => return,
                 };
@@ -696,7 +714,9 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     // Names that point into another workbook (`[1]Sheet!A1`), through an external link.
     let (mut external_names, mut in_name) = (0u64, false);
     walk(wb, |ev| match ev {
-        Ev::Open(S, b"definedName", e) if !attr(e, b"name").unwrap_or_default().starts_with("ox_") => {
+        // Not Milleleaf's (`ox_…`), nor Excel's own record of a sheet's filter (`_xlnm._FilterDatabase`,
+        // which Excel writes for every autoFilter and rebuilds from it; counted as "autofilters").
+        Ev::Open(S, b"definedName", e) if !attr(e, b"name").is_some_and(|n| n.starts_with("ox_") || n == "_xlnm._FilterDatabase") => {
             own_names += 1;
             in_name = true;
         }
@@ -713,7 +733,7 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
         "cells in bold", "cells with a fill", "cells with borders", "cells with a number format",
         "cells with a value", "formulas", "merged ranges", "custom number formats", "cell styles (xf)", "fonts",
         "fills", "borders", "column width settings", "custom row heights", "frozen panes", "conditional formats",
-        "data validations", "hyperlinks",
+        "data validations", "hyperlinks", "what-if data tables", "autofilters",
     ] {
         c.insert(k, g(k));
     }
@@ -983,10 +1003,12 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("sheets", None),
             ("cells with a value", None),
             ("formulas", None),
+            ("what-if data tables", Some("their cells' values are kept; the TABLE() that recalculates them isn't (GridCraft has no data tables)")),
             ("column width settings", Some("widths are kept; entries that only give columns a style are not (styles aren't carried yet)")),
             ("custom row heights", None),
             ("merged ranges", None),
             ("frozen panes", None),
+            ("autofilters", None),
             ("comments", None),
             ("data validations", None),
             ("defined names (not Milleleaf's)", None),

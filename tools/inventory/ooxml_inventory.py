@@ -215,7 +215,9 @@ def xlsx(z):
     return {
         "sheets": len(sheets),
         "cells with a value": sum(1 for c in cells if c.find(S + "v") is not None or c.find(S + "is") is not None),
-        "formulas": count(sheets, S + "f"),
+        "formulas": sum(1 for r in sheets for f in r.iter(S + "f") if f.get("t") != "dataTable"),
+        # A what-if data table's anchor (t="dataTable") holds no formula text.
+        "what-if data tables": sum(1 for r in sheets for f in r.iter(S + "f") if f.get("t") == "dataTable"),
         "merged ranges": count(sheets, S + "mergeCell"),
         "custom number formats": count(styles, S + "numFmt"),
         **cell_looks(styles, sheets),
@@ -226,18 +228,23 @@ def xlsx(z):
         "column width settings": count(sheets, S + "col"),
         "custom row heights": sum(1 for s in sheets for r in s.iter(S + "row") if r.get("customHeight") in ("1", "true")),
         "frozen panes": count(sheets, S + "pane"),
+        "autofilters": count(sheets, S + "autoFilter"),
         # Excel 2010 keeps some (cross-sheet lists, newer rule types) in an x14 extension.
         "conditional formats": count(sheets, S + "conditionalFormatting") + count(sheets, X14 + "conditionalFormatting"),
         "data validations": count(sheets, S + "dataValidation") + count(sheets, X14 + "dataValidation"),
         "hyperlinks": count(sheets, S + "hyperlink"),
         # Milleleaf's own identity names (ox_…) would hide the loss of the file's own names.
         "hidden sheets": sum(1 for w in wbx for e in w.iter(S + "sheet") if e.get("state") in ("hidden", "veryHidden")),
-        "protected sheets": count(sheets, S + "sheetProtection"),
+        # Protection is on only with sheet="1"; without it the element only holds the settings.
+        "protected sheets": sum(1 for r in sheets for e in r.iter(S + "sheetProtection") if e.get("sheet") in ("1", "true")),
         "workbook structure locked": sum(1 for w in wbx for e in w.iter(S + "workbookProtection") if e.get("lockStructure") in ("1", "true")),
         "sheets with gridlines off": sum(1 for sh in sheets for v in sh.iter(S + "sheetView") if v.get("showGridLines") in ("0", "false")),
-        "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_")),
+        # Nor Excel's own record of a sheet's filter (written for every autoFilter, rebuilt from it).
+        "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_") and d.get("name") != "_xlnm._FilterDatabase"),
         "defined names into other workbooks": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_") and re.search(r"\[\d+\]", d.text or "")),
         "charts": len(parts(z, r"xl/charts/chart\d*\.xml")),
+        # Charts GridCraft has no kind for: it reads them as nothing.
+        "surface charts": sum(1 for n in parts(z, r"xl/charts/chart\d*\.xml") if any(e.tag.split("}")[-1] in ("surfaceChart", "surface3DChart") for e in xml(z, n).iter())),
         "drawings": len(parts(z, r"xl/drawings/drawing\d*\.xml")),
         "media files": len(parts(z, r"xl/media/.+")),
         "external links": len(parts(z, r"xl/externalLinks/externalLink\d*\.xml")),
