@@ -715,9 +715,12 @@ pub fn adopt(
     title: &str,
     header: Header,
 ) -> Result<(Layer, ImportReport), DeckError> {
+    // The slide size unrounded: px() rounds to 0.01 px, which moves a 1280 pt wide slide by
+    // 32 EMU (16256000 → 16256032), a different slide size to every reader.
+    let exact = |pt: f64| pt * crate::PX_PER_PT;
     let attr = json!({
-        "width": px(edited.slide_size.width),
-        "height": px(edited.slide_size.height),
+        "width": exact(edited.slide_size.width),
+        "height": exact(edited.slide_size.height),
         "unit": "px",
         "title": title,
     });

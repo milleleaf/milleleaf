@@ -919,15 +919,24 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
             _ => {}
         });
     }
-    let mut slide_numbers = 0u64;
+    // A notes page counts when it holds text besides its slide number: a page with nothing typed
+    // on it (PowerPoint adds one with only the number) holds no notes.
+    let (mut slide_numbers, mut with_text) = (0u64, 0u64);
     for x in notes {
-        walk(x, |ev| {
-            if let Ev::Open(A, b"fld", e) = ev {
-                if attr(e, b"type").as_deref() == Some("slidenum") {
-                    slide_numbers += 1;
-                }
+        let (mut in_num, mut in_t, mut text) = (0usize, 0usize, false);
+        walk(x, |ev| match ev {
+            Ev::Open(A, b"fld", e) if attr(e, b"type").as_deref() == Some("slidenum") => {
+                slide_numbers += 1;
+                in_num += 1;
             }
+            Ev::Open(A, b"fld", _) if in_num > 0 => in_num += 1,
+            Ev::Close(A, b"fld") => in_num = in_num.saturating_sub(1),
+            Ev::Open(A, b"t", _) => in_t += 1,
+            Ev::Close(A, b"t") => in_t = in_t.saturating_sub(1),
+            Ev::Text(t) if in_t > 0 && in_num == 0 && !t.trim().is_empty() => text = true,
+            _ => {}
         });
+        with_text += u64::from(text);
     }
     let g = |k: &str| t.get(k).copied().unwrap_or(0);
     let media = |n: &str| n.starts_with("ppt/media/") && n.len() > 10;
@@ -939,7 +948,7 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
     c.insert("charts", count_parts(names, |n| numbered(n, "ppt/charts/chart")));
     c.insert("media files", count_parts(names, media));
     c.insert("_milleleaf shapes without text", g("_milleleaf shapes without text"));
-    c.insert("notes slides", count_parts(names, |n| numbered_req(n, "ppt/notesSlides/notesSlide")));
+    c.insert("notes slides", with_text);
     c.insert("notes slide-number fields", slide_numbers);
     c.insert("layouts", count_parts(names, |n| numbered_req(n, "ppt/slideLayouts/slideLayout")));
     c.insert("masters", count_parts(names, |n| numbered_req(n, "ppt/slideMasters/slideMaster")));

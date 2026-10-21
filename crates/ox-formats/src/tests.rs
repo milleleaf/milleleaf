@@ -214,3 +214,20 @@ fn inventory_counts_data_tables_protection_filters_and_surface_charts() {
     let lost: Vec<&str> = losses(k, &c, None).iter().map(|l| l.feature).collect();
     assert!(lost.contains(&"what-if data tables") && lost.contains(&"surface charts") && !lost.contains(&"autofilters"), "{lost:?}");
 }
+
+/// Notes pages holding only their slide number (PowerPoint adds them; the DDI and Navarra decks
+/// in the real-file search have them) hold no notes, so they don't count as notes slides.
+#[test]
+fn a_notes_page_with_only_its_slide_number_isnt_counted() {
+    use crate::inventory::inventory;
+    const NS: &str = r#"xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main""#;
+    let notes = |body: &str| format!("<p:notes {NS}><p:cSld><p:spTree><p:sp><p:txBody><a:p>{body}</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>");
+    let num = r#"<a:fld id="{1}" type="slidenum"><a:t>7</a:t></a:fld>"#;
+    let pres = format!("<p:presentation {NS}/>");
+    let slide = format!("<p:sld {NS}><p:cSld><p:spTree/></p:cSld></p:sld>");
+    let n1 = notes(num);
+    let n2 = notes(&format!("<a:r><a:t>Say hello</a:t></a:r>{num}"));
+    let bytes = docx_of(&[("ppt/presentation.xml", &pres), ("ppt/slides/slide1.xml", &slide), ("ppt/notesSlides/notesSlide1.xml", &n1), ("ppt/notesSlides/notesSlide2.xml", &n2)]);
+    let (_, c) = inventory(&bytes).unwrap();
+    assert_eq!((c["notes slides"], c["notes slide-number fields"]), (1, 2));
+}

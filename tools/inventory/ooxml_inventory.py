@@ -303,7 +303,9 @@ def pptx(z):
         "table cells": count(slides, A + "tc"),
         "charts": len(parts(z, r"ppt/charts/chart\d*\.xml")),
         "media files": len(parts(z, r"ppt/media/.+")),
-        "notes slides": len(notes),
+        # A notes page counts when it holds text besides its slide number (PowerPoint adds pages
+        # holding only the number).
+        "notes slides": sum(1 for r in notes if any((t.text or "").strip() for t in r.iter(A + "t") if not any(t in f.iter() for f in r.iter(A + "fld") if f.get("type") == "slidenum"))),
         "notes text chars": len(text_of(notes, A + "t")),
         "notes slide-number fields": sum(1 for r in notes for f in r.iter(A + "fld") if f.get("type") == "slidenum"),
         "layouts": len(parts(z, r"ppt/slideLayouts/slideLayout\d+\.xml")),

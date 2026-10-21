@@ -672,3 +672,22 @@ fn a_groups_shapes_come_in_where_the_group_shows_them() {
     assert!(near("x", 120.0) && near("y", 120.0) && near("w", 200.0) && near("h", 100.0), "{g}");
 }
 
+#[test]
+fn an_adopted_decks_slide_size_comes_back_exactly() {
+    // A Navarra data-model deck (Zenodo 11519029, from the real-file search) is 1280 pt wide
+    // (16256000 EMU). Adopt rounded its width to 0.01 px, and the export made it 16256032 EMU.
+    let mut p = from_pptx(&std::fs::read(example("../real/briefing.pptx")).unwrap()).unwrap();
+    p.slide_size.width = 1280.0;
+    p.slide_size.height = 720.0;
+    let (layer, _) = crate::adopt(&p, "real-deck", "briefing", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    let d = ox_core::render::find(&trees, "real-deck").expect("deck").clone();
+    // Pictures as stand-ins: this is about the slide size.
+    let (out, _) = crate::export::export_with(&d, ox_core::PictureSource::StandIn(None)).expect("exports");
+    let back = from_pptx(&to_pptx(&out).expect("writes")).expect("reads");
+    let emu = |pt: f64| (pt * 12700.0).round() as i64;
+    assert_eq!((emu(back.slide_size.width), emu(back.slide_size.height)), (16256000, 9144000));
+}
