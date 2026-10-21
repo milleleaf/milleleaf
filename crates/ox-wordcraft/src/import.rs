@@ -292,6 +292,11 @@ fn style_para(doc: &Document, p: &Paragraph) -> Map<String, Value> {
     m
 }
 
+/// Whether the paragraph's style puts it in a list.
+fn style_numbered(doc: &Document, p: &Paragraph) -> bool {
+    style_para(doc, p).get("numbering").is_some_and(|v| !v.is_null())
+}
+
 /// The section's page setup as data (WordCraft's section properties: size, orientation,
 /// margins, columns, page numbering, borders…), without the headers and footers, which the
 /// model holds as `headers` / `footers` / `titlePage`.
@@ -367,7 +372,7 @@ fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut BTreeMap<&'static s
         for b in &part.blocks {
             match b.as_para() {
                 Some(p) => {
-                    let ex = extract(p, &|_| false, &doc.media, pics);
+                    let ex = extract(doc, p, &|_| false, pics);
                     *d += ex.dropped_objects;
                     let mut wp = json!({ "style": style_name(doc, p), "runs": ex.runs });
                     if let Some(f) = para_format(doc, p) {
@@ -473,7 +478,20 @@ struct Extracted {
     dropped_objects: usize,
 }
 
-fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<String, std::sync::Arc<Vec<u8>>>, pics: &mut Pictures) -> Extracted {
+/// A run's formatting as a reader sees it: its character style's (`w:rStyle`, with what that is
+/// based on), then its own. The model has no character styles, so their formatting goes on the run.
+fn effective_chr(doc: &Document, cp: &CharProps) -> CharProps {
+    let Some(id) = cp.style.as_deref() else { return cp.clone() };
+    let mut out = CharProps::default();
+    for st in doc.styles.chain(id) {
+        out.overlay(&st.chr);
+    }
+    out.overlay(cp);
+    out
+}
+
+fn extract(doc: &Document, p: &Paragraph, is_field: &dyn Fn(&str) -> bool, pics: &mut Pictures) -> Extracted {
+    let media = &doc.media;
     let mut runs: Vec<Value> = Vec::new();
     let mut fields = Vec::new();
     let mut text = String::new();
@@ -481,7 +499,15 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
     // Open inline controls: Some(path) for an ox field, None for anything else.
     let mut open: Vec<Option<String>> = Vec::new();
     let mut field_text = String::new();
+    // A Word field kept as a range (its result is ordinary text between start and end marks:
+    // REF, TOC, a field with a tracked change inside…): one field run, its result the text in
+    // between. Nested ones are part of the outer one's result.
+    let (mut range, mut range_depth): (Option<Map<String, Value>>, usize) = (None, 0);
     for (off, ch) in p.text.char_indices() {
+        // Tracked changes come in accepted: deleted text (and what sits in it) isn't content.
+        if p.props_of_char(off).del.is_some() {
+            continue;
+        }
         let in_field = open.iter().any(Option::is_some);
         if ch == OBJ {
             match p.object_at(off) {
@@ -503,9 +529,32 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
                         fields.push((path, field_text.trim().to_string()));
                     }
                 }
+                Some(InlineObject::FieldStart { instr, .. }) if !in_field => {
+                    if range_depth == 0 {
+                        let mut fmt = run_format(&effective_chr(doc, p.props_of_char(off)));
+                        fmt.insert("docField".into(), json!(instr.trim()));
+                        fmt.insert("text".into(), json!(""));
+                        range = Some(fmt);
+                    }
+                    range_depth += 1;
+                }
+                Some(InlineObject::FieldEnd) if !in_field && range_depth > 0 => {
+                    range_depth -= 1;
+                    if range_depth == 0
+                        && let Some(fmt) = range.take()
+                    {
+                        runs.push(Value::Object(fmt));
+                    }
+                }
+                Some(InlineObject::Field { result, .. }) if !in_field && range_depth > 0 => {
+                    text.push_str(result);
+                    if let Some(r) = range.as_mut() {
+                        r["text"] = json!(format!("{}{result}", r["text"].as_str().unwrap_or("")));
+                    }
+                }
                 // A Word field (PAGE, DATE…): its code, with the result it showed.
                 Some(InlineObject::Field { instr, result, .. }) if !in_field => {
-                    let mut fmt = run_format(p.props_of_char(off));
+                    let mut fmt = run_format(&effective_chr(doc, p.props_of_char(off)));
                     fmt.insert("docField".into(), json!(instr.trim()));
                     fmt.insert("text".into(), json!(result));
                     text.push_str(result);
@@ -526,8 +575,16 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
             continue;
         }
         text.push(ch);
-        let mut fmt = run_format(p.props_of_char(off));
+        if let Some(r) = range.as_mut() {
+            r["text"] = json!(format!("{}{ch}", r["text"].as_str().unwrap_or("")));
+            continue;
+        }
+        let mut fmt = run_format(&effective_chr(doc, p.props_of_char(off)));
         fmt.insert("text".into(), json!(ch.to_string()));
+        runs.push(Value::Object(fmt));
+    }
+    // A range the paragraph doesn't close (it ends in a later paragraph): its result so far.
+    if let Some(fmt) = range.take() {
         runs.push(Value::Object(fmt));
     }
     Extracted {
@@ -538,15 +595,38 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
     }
 }
 
+/// A cell's paragraphs in reading order, including those of a table nested in it (whose text is
+/// carried as the cell's paragraphs; the nested table itself isn't).
+fn cell_paras(c: &wordcraft_doc::Cell) -> Vec<&Paragraph> {
+    let mut out = Vec::new();
+    for b in &c.blocks {
+        match &**b {
+            Block::Para(p) => out.push(p),
+            Block::Table(t) => out.extend(t.rows.iter().flat_map(|r| &r.cells).flat_map(cell_paras)),
+        }
+    }
+    out
+}
+
 fn cell_text(c: &wordcraft_doc::Cell) -> String {
-    c.blocks
-        .iter()
-        .filter_map(|b| b.as_para())
+    cell_paras(c)
+        .into_iter()
         .map(|p| {
-            p.plain_text()
-                .chars()
-                .filter(|c| *c != OBJ)
-                .collect::<String>()
+            // What it shows (a field's result for its object), accepted: deleted text isn't
+            // the cell's.
+            let (mut out, mut k) = (String::new(), 0usize);
+            for (off, c) in p.text.char_indices() {
+                let obj = (c == OBJ).then(|| p.objects.get(k));
+                k += usize::from(c == OBJ);
+                if p.props_of_char(off).del.is_some() {
+                    continue;
+                }
+                match obj {
+                    Some(o) => out.push_str(o.map(|o| o.plain_text()).unwrap_or_default()),
+                    None => out.push(c),
+                }
+            }
+            out
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -617,10 +697,8 @@ fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> S
                         if let Some(p) = strip(serde_json::to_value(&c.props).ok(), &["span", "vmerge", "width", "widthPct", "fmtChange"]) {
                             cm.insert("props".into(), p);
                         }
-                        let para_lists: Vec<Value> = c
-                            .blocks
-                            .iter()
-                            .filter_map(|b| b.as_para())
+                        let para_lists: Vec<Value> = cell_paras(c)
+                            .into_iter()
                             .map(|p| match p.props.numbering.filter(|n| n.num != 0) {
                                 Some(n) => json!({ "id": list_of(n.num), "level": n.level }),
                                 None => Value::Null,
@@ -681,7 +759,7 @@ fn table_seen(doc: &Document, t: &Table) -> Value {
             chr.overlay(&ch);
             let align = p.and_then(|p| p.props.align).or(pf.align);
             // Which paragraphs are in a list, at what level (not which list: editors renumber).
-            let levels: Vec<Option<u8>> = c.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
+            let levels: Vec<Option<u8>> = cell_paras(c).into_iter().map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
             cells.push(json!([
                 levels,
                 c.props.shading.or(pf.fill).map(|r| r.hex()),
@@ -989,7 +1067,7 @@ fn import_into(
         match &**block {
             Block::Para(p) => {
                 let tag = para_tag(p, &is_field);
-                let ex = extract(p, &is_field, &edited.media, &mut report.pictures);
+                let ex = extract(edited, p, &is_field, &mut report.pictures);
                 if ex.dropped_objects > 0 {
                     report.warnings.push(format!(
                         "paragraph {}: {} inline object(s) (shapes, charts, embedded objects…) are not carried yet",
@@ -1126,6 +1204,10 @@ fn import_into(
                     let id = list_id(edited, n.num, &known_lists);
                     lists_used.entry(id.clone()).or_insert(n.num);
                     new_para["list"] = json!({ "id": id, "level": n.level });
+                } else if let Some(n) = p.props.numbering.filter(|_| style_numbered(edited, p)) {
+                    // Numbering turned off on a paragraph whose style numbers it (a heading
+                    // style with numbering, used for an unnumbered heading): `id` "".
+                    new_para["list"] = json!({ "id": "", "level": n.level });
                 }
                 match existing {
                     Some(c) => {

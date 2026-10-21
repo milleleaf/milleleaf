@@ -186,6 +186,8 @@ fn para_from(
         let id = l.get("id").and_then(Value::as_str).unwrap_or("");
         let level = l.get("level").and_then(Value::as_u64).unwrap_or(0).min(8) as u8;
         match lists.get(id) {
+            // "": the style's list turned off for this paragraph.
+            _ if id.is_empty() => p.props.numbering = Some(NumRef { num: 0, level }),
             Some(&num) => p.props.numbering = Some(NumRef { num, level }),
             None => report.warnings.push(format!(
                 "{at}: list `{id}` isn't defined in the document; exported without numbering"

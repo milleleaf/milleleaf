@@ -105,7 +105,7 @@ fn inventory_counts_real_files_and_lists_losses() {
     assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["merged cells (gridSpan/vMerge)"]), (87, 42, 5));
     assert_eq!((c["body text chars"], c["bold text chars"], c["footnote separator lines"]), (10140, 1066, 1));
     let l = lost(k, &c);
-    assert_eq!(l, ["media files"], "only the header logo");
+    assert_eq!(l, ["media files", "tracked changes (insertions and deletions)"], "the header logo, and a leftover tracked insertion (accepted)");
     assert_eq!((c["page width (value, twips)"], c["default style size (value, half-points)"], c["default style justified (value)"]), (11906, 24, 1), "A4, 12 pt, justified");
     assert!(!l.contains(&"paragraphs (non-empty)") && !l.contains(&"list paragraphs (numPr)"), "{l:?}");
 
@@ -130,4 +130,53 @@ fn inventory_counts_real_files_and_lists_losses() {
     let base = c.clone();
     let l: Vec<_> = losses(k, &c, Some(&base)).iter().map(|l| l.feature).collect();
     assert_eq!(l, ["shapes without text"]);
+}
+
+/// A minimal .docx from its parts (hand-written XML).
+fn docx_of(parts: &[(&str, &str)]) -> Vec<u8> {
+    use std::io::Write;
+    let mut out = Vec::new();
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(&mut out));
+    for (name, xml) in parts {
+        z.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+        z.write_all(xml.as_bytes()).unwrap();
+    }
+    z.finish().unwrap();
+    out
+}
+
+/// What the KonsortSWD contract (examples/real's search, Zenodo 10406480) showed the counts
+/// missing: a table nested in a cell, a character style, tracked changes, a field whose code Word
+/// split in two, and a default font given as the theme's.
+#[test]
+fn inventory_counts_nested_tables_character_styles_changes_split_fields_and_theme_fonts() {
+    use crate::inventory::{inventory, losses};
+    const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+    let cell = |inner: &str| format!("<w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p>{inner}</w:tc>");
+    let nested = format!("<w:tbl><w:tblGrid><w:gridCol w:w=\"100\"/><w:gridCol w:w=\"200\"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>", cell(""), cell(""));
+    let doc = format!(
+        "<w:document {W}><w:body><w:tbl><w:tblGrid><w:gridCol w:w=\"500\"/></w:tblGrid><w:tr>{}</w:tr></w:tbl>\
+         <w:p><w:r><w:rPr><w:rStyle w:val=\"Fett\"/></w:rPr><w:t>bold</w:t></w:r><w:ins w:id=\"1\" w:author=\"a\"><w:r><w:t>new</w:t></w:r></w:ins>\
+         <w:del w:id=\"2\" w:author=\"a\"><w:r><w:delText>old</w:delText></w:r></w:del>\
+         <w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText> HYP</w:instrText></w:r><w:r><w:instrText>ERLINK \\h </w:instrText></w:r>\
+         <w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>8</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p></w:body></w:document>",
+        cell(&nested)
+    );
+    let styles = format!(r#"<w:styles {W}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>"#);
+    let theme = r#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Calibri Light"/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>"#;
+    let bytes = docx_of(&[("word/document.xml", &doc), ("word/styles.xml", &styles), ("word/theme/theme1.xml", theme)]);
+    let (k, c) = inventory(&bytes).unwrap();
+    assert_eq!((c["tables"], c["nested tables"], c["rows in nested tables"], c["cells in nested tables"]), (2, 1, 1, 2));
+    assert_eq!((c["character styles used"], c["styles used"]), (1, 0));
+    assert_eq!(c["tracked changes (insertions and deletions)"], 2);
+    assert_eq!(c["fields"], 1, "one field, though its code is in two pieces");
+    // FNV-1a of "Calibri", the theme's minor font (the same in the Python counter).
+    let fnv = |s: &str| s.bytes().fold(0x811C_9DC5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as u64;
+    assert_eq!(c["default style font (value, name hash)"], fnv("Calibri"));
+    // The nested table's widths go with it: only the outer table's grid is in the hash.
+    assert_eq!(c["table column widths (value, hash)"], fnv("500"));
+    let lost: Vec<&str> = losses(k, &c, None).iter().map(|l| l.feature).collect();
+    for f in ["nested tables", "rows in nested tables", "cells in nested tables", "character styles used", "tracked changes (insertions and deletions)"] {
+        assert!(lost.contains(&f), "{f} not listed: {lost:?}");
+    }
 }

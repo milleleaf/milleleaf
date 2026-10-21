@@ -30,6 +30,10 @@ covered_by = {
     "shapes (sp)": ("shapes without text", 1),
     "notes text chars": ("notes slide-number fields", 4),
     "defined names (not Milleleaf's)": ("defined names into other workbooks", 1),
+    # A nested table's text stays in its cell; the table, its rows and cells go.
+    "tables": ("nested tables", 1),
+    "table rows": ("rows in nested tables", 1),
+    "table cells": ("cells in nested tables", 1),
 }
 text_loss_listed = any(k.endswith("text chars") or k in ("headers and footers (parts)", "tables") for k in listed)
 

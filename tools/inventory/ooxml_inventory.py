@@ -69,7 +69,20 @@ def default_style(z):
             if e is not None and e.get(W + attr) is not None:
                 return e.get(W + attr)
         return None
-    font = pick("rPr/rFonts", "ascii")
+    # A theme font (asciiTheme="minorHAnsi") is the theme's Latin typeface: what a reader sees.
+    tp = parts(z, r"word/theme/theme\d*\.xml")
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    def theme_font(t):
+        if not tp or not t or not t.startswith(("minor", "major")):
+            return None
+        f = xml(z, tp[0]).find(f".//{A}{t[:5]}Font/{A}latin")
+        return f.get("typeface") if f is not None else None
+    font = None
+    for root in (normal, dd):
+        e = None if root is None else (root.find(f"{W}rPr/{W}rFonts") if root is normal else root.find(W + "rFonts"))
+        if e is not None and (e.get(W + "ascii") or e.get(W + "asciiTheme")):
+            font = e.get(W + "ascii") or theme_font(e.get(W + "asciiTheme"))
+            break
     size = pick("rPr/sz", "val")
     jc = pick("pPr/jc", "val")
     return {
@@ -83,7 +96,8 @@ def docx(z):
     body = [xml(z, "word/document.xml")]
     hf = [xml(z, n) for n in parts(z, r"word/(header|footer)\d*\.xml")]
     notes = [xml(z, n) for n in parts(z, r"word/(footnotes|endnotes)\.xml")]
-    styles_used = {e.get(W + "val") for r in body for tag in ("pStyle", "rStyle", "tblStyle") for e in r.iter(W + tag)}
+    styles_used = {e.get(W + "val") for r in body for tag in ("pStyle", "tblStyle") for e in r.iter(W + tag)}
+    char_styles_used = {e.get(W + "val") for r in body for e in r.iter(W + "rStyle")}
     paras = [p for r in body for p in r.iter(W + "p")]
     in_tables = {id(p) for r in body for t in r.iter(W + "tbl") for p in t.iter(W + "p")}
     ppr = [p.find(W + "pPr") for p in paras if id(p) not in in_tables]
@@ -94,9 +108,12 @@ def docx(z):
     pg = ([None] + [e for r in body for e in r.iter(W + "pgSz")])[-1]
     pm = ([None] + [e for r in body for e in r.iter(W + "pgMar")])[-1]
     val = lambda e, k: int(float(e.get(W + k, 0))) if e is not None else 0
+    # Tables inside a table cell (counted on their own; their column widths aren't in the hash).
+    nested = {id(t2) for r in body for t in r.iter(W + "tbl") for tc in t.iter(W + "tc") for t2 in tc.iter(W + "tbl")}
+    nested_tbls = [t for r in body for t in r.iter(W + "tbl") if id(t) in nested]
     return {
         **default_style(z),
-        "table column widths (value, hash)": fnv("|".join(",".join(g.get(W + "w", "") for g in t.iter(W + "gridCol")) for r in body for t in r.iter(W + "tblGrid"))),
+        "table column widths (value, hash)": fnv("|".join(",".join(g.get(W + "w", "") for g in t.findall(f"{W}tblGrid/{W}gridCol")) for r in body for t in r.iter(W + "tbl") if id(t) not in nested)),
         "table cells with shading": sum(1 for r in body for tc in r.iter(W + "tc") for sh in tc.findall(f"{W}tcPr/{W}shd") if sh.get(W + "fill") not in (None, "auto", "FFFFFF", "ffffff")),
         "style definitions": count([xml(z, "word/styles.xml")], W + "style") if "word/styles.xml" in z.namelist() else 0,
         "page width (value, twips)": val(pg, "w"),
@@ -108,6 +125,9 @@ def docx(z):
         "table cell paragraphs with alignment, spacing or indents": sum(1 for x in cell_ppr if formatted(x)),
         "paragraphs (non-empty)": sum(1 for p in paras if "".join(t.text or "" for t in p.iter(W + "t")).strip()),
         "tables": count(body, W + "tbl"),
+        "nested tables": len(nested_tbls),
+        "rows in nested tables": sum(len(t.findall(W + "tr")) for t in nested_tbls),
+        "cells in nested tables": sum(len(tr.findall(W + "tc")) for t in nested_tbls for tr in t.findall(W + "tr")),
         "table rows": count(body, W + "tr"),
         "table cells": count(body, W + "tc"),
         "merged cells (gridSpan/vMerge)": count(body, W + "gridSpan") + count(body, W + "vMerge"),
@@ -123,9 +143,13 @@ def docx(z):
         "comments": count([xml(z, n) for n in parts(z, r"word/comments\.xml")], W + "comment"),
         "list paragraphs (numPr)": count(body, W + "numPr"),
         "styles used": len(styles_used - {None}),
+        "character styles used": len(char_styles_used - {None}),
+        # Tracked insertions and deletions (moves too): the marks, not their text.
+        "tracked changes (insertions and deletions)": sum(count(body, W + t) for t in ("ins", "del", "moveFrom", "moveTo")),
         "sections": count(body, W + "sectPr"),
         "hyperlinks": count(body, W + "hyperlink"),
-        "fields": count(body, W + "fldSimple") + count(body, W + "instrText"),
+        # A complex field is one fldChar begin, however many instrText pieces its instruction is split into.
+        "fields": count(body, W + "fldSimple") + sum(1 for r in body for e in r.iter(W + "fldChar") if e.get(W + "fldCharType") == "begin"),
         "text boxes": count(body, W + "txbxContent"),
         # Bold text, not bold elements: <w:b> also sits on paragraph marks and as w:val="0", and
         # a re-export may merge adjacent runs, so counting elements isn't a measure of loss.

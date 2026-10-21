@@ -68,9 +68,13 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
         let comments: Vec<Vec<u8>> =
             matching(|n| n == "word/comments.xml").iter().map(|n| part(n)).collect::<Result<_, _>>()?;
         let styles = if has("word/styles.xml") { Some(part("word/styles.xml")?) } else { None };
+        let theme = match matching(|n| numbered(n, "word/theme/theme")).first() {
+            Some(n) => Some(part(n)?),
+            None => None,
+        };
         let mut c = docx(&body, &hf, &notes, &comments, &names);
         if let Some(st) = styles {
-            default_style(&st, &mut c);
+            default_style(&st, theme.as_deref(), &mut c);
         }
         Ok(("docx", c))
     } else if has("xl/workbook.xml") {
@@ -235,7 +239,32 @@ fn fnv(s: &str) -> u64 {
 
 /// The default paragraph style's font, size and justification (font and size falling back to
 /// the document defaults), and how many styles the document defines.
-fn default_style(st: &[u8], c: &mut Counts) {
+fn default_style(st: &[u8], theme: Option<&[u8]>, c: &mut Counts) {
+    // A font given as the theme's (asciiTheme="minorHAnsi") is the theme's Latin typeface: what a
+    // reader sees, and what an editor writing the name out writes.
+    let (mut minor, mut major, mut in_minor, mut in_major) = (None, None, false, false);
+    walk(theme.unwrap_or_default(), |ev| match ev {
+        Ev::Open(n, l, e) if n == A => match l {
+            b"minorFont" => in_minor = true,
+            b"majorFont" => in_major = true,
+            b"latin" if in_minor && minor.is_none() => minor = attr(e, b"typeface"),
+            b"latin" if in_major && major.is_none() => major = attr(e, b"typeface"),
+            _ => {}
+        },
+        Ev::Close(n, l) if n == A => match l {
+            b"minorFont" => in_minor = false,
+            b"majorFont" => in_major = false,
+            _ => {}
+        },
+        _ => {}
+    });
+    let font_of = |e: &BytesStart| {
+        attr(e, b"ascii").or_else(|| match attr(e, b"asciiTheme")?.as_str() {
+            t if t.starts_with("minor") => minor.clone(),
+            t if t.starts_with("major") => major.clone(),
+            _ => None,
+        })
+    };
     // Where we are: in docDefaults' run properties, or in the default paragraph style's rPr / pPr.
     let (mut in_dd, mut in_normal, mut in_rpr, mut in_ppr) = (false, false, false, false);
     let (mut n_font, mut n_size, mut n_jc, mut d_font, mut d_size) = (None, None, None, None, None);
@@ -250,8 +279,8 @@ fn default_style(st: &[u8], c: &mut Counts) {
             }
             b"rPr" => in_rpr = true,
             b"pPr" => in_ppr = true,
-            b"rFonts" if in_rpr && in_normal => n_font = attr(e, b"ascii"),
-            b"rFonts" if in_dd => d_font = attr(e, b"ascii"),
+            b"rFonts" if in_rpr && in_normal => n_font = font_of(e),
+            b"rFonts" if in_dd => d_font = font_of(e),
             b"sz" if in_rpr && in_normal => n_size = attr(e, b"val"),
             b"sz" if in_dd => d_size = attr(e, b"val"),
             b"jc" if in_ppr && in_normal => n_jc = attr(e, b"val"),
@@ -279,12 +308,12 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     // used, and bold text (w:t inside a run whose w:rPr has w:b that isn't off).
     let count = [
         "tbl", "tr", "tc", "gridSpan", "vMerge", "drawing", "pgSz", "pgMar", "numPr", "sectPr", "hyperlink",
-        "fldSimple", "instrText", "txbxContent",
+        "fldSimple", "txbxContent",
     ];
     let mut tags: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut paras: Vec<bool> = Vec::new();
     let mut nonempty = 0u64;
-    let mut styles = std::collections::BTreeSet::new();
+    let (mut styles, mut char_styles) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
     // Bold counts only a w:b in the run's own w:rPr (not in w:rPrChange, a tracked change).
     let (mut in_t, mut run_bold, mut depth) = (0usize, false, 0usize);
     let mut runs: Vec<usize> = Vec::new();
@@ -321,6 +350,15 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             }
             if l == b"tbl" {
                 tables += 1;
+                if tables > 1 {
+                    *tags.entry("nested tables").or_default() += 1;
+                }
+            }
+            if tables > 1 && l == b"tr" {
+                *tags.entry("rows in nested tables").or_default() += 1;
+            }
+            if tables > 1 && l == b"tc" {
+                *tags.entry("cells in nested tables").or_default() += 1;
             }
             if l == b"tc" {
                 tc_at.push(depth);
@@ -331,17 +369,23 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             {
                 shaded += 1;
             }
-            if l == b"tblGrid" {
+            // A nested table's column widths go with it (counted as a nested table).
+            if l == b"tblGrid" && tables == 1 {
                 if grid_seen {
                     grids.push('|');
                 }
                 grid_seen = true;
             }
-            if l == b"gridCol" {
+            if l == b"gridCol" && tables == 1 {
                 if !grids.is_empty() && !grids.ends_with('|') {
                     grids.push(',');
                 }
                 grids.push_str(&attr(e, b"w").unwrap_or_default());
+            }
+            // A complex field is one fldChar begin, however many instrText pieces Word split
+            // its instruction into.
+            if l == b"fldChar" && attr(e, b"fldCharType").as_deref() == Some("begin") {
+                *tags.entry("fldChar begin").or_default() += 1;
             }
             match l {
                 b"pgSz" => page = [num(e, b"w"), num(e, b"h")],
@@ -363,11 +407,18 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
                     run_bold = false;
                 }
                 "b" if runs.last().map(|d| d + 2) == Some(depth) => run_bold = !matches!(attr(e, b"val").as_deref(), Some("0" | "false" | "off")),
-                "pStyle" | "rStyle" | "tblStyle" => {
+                "pStyle" | "tblStyle" => {
                     if let Some(v) = attr(e, b"val") {
                         styles.insert(v);
                     }
                 }
+                "rStyle" => {
+                    if let Some(v) = attr(e, b"val") {
+                        char_styles.insert(v);
+                    }
+                }
+                // Tracked insertions and deletions (moves too): the marks, not their text.
+                "ins" | "del" | "moveFrom" | "moveTo" => *tags.entry("tracked changes").or_default() += 1,
                 _ => {}
             }
         }
@@ -471,9 +522,14 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     c.insert("comments", comments.iter().map(|x| count_tag(x, W, b"comment")).sum());
     c.insert("list paragraphs (numPr)", g("numPr"));
     c.insert("styles used", styles.len() as u64);
+    c.insert("character styles used", char_styles.len() as u64);
+    c.insert("tracked changes (insertions and deletions)", g("tracked changes"));
     c.insert("sections", g("sectPr"));
+    c.insert("nested tables", g("nested tables"));
+    c.insert("rows in nested tables", g("rows in nested tables"));
+    c.insert("cells in nested tables", g("cells in nested tables"));
     c.insert("hyperlinks", g("hyperlink"));
-    c.insert("fields", g("fldSimple") + g("instrText"));
+    c.insert("fields", g("fldSimple") + g("fldChar begin"));
     c.insert("text boxes", g("txbxContent"));
     c.insert("bold text chars", norm_len(&bold_text));
     c.insert("body text chars", norm_len(&text));
@@ -892,11 +948,14 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("tables", None),
             ("table rows", None),
             ("table cells", None),
+            ("nested tables", Some("their text is kept, as paragraphs of the cell they sit in; their rows, columns and formatting aren't")),
             ("page setups (size and margins)", None),
             ("sections", None),
             ("body text chars", None),
             // The export applies its own named styles; direct formatting is kept on runs.
             ("styles used", None),
+            ("character styles used", Some("their formatting is kept on each run; the style names aren't")),
+            ("tracked changes (insertions and deletions)", Some("they come in accepted: inserted text is kept, deleted text dropped; the marks (who, when) aren't kept")),
             ("bold text chars", None),
             ("list paragraphs (numPr)", None),
             ("page width (value, twips)", None),

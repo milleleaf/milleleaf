@@ -713,3 +713,130 @@ fn a_cells_paragraphs_lists_and_spaces_come_back() {
     let levels: Vec<Option<u8>> = cell.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
     assert_eq!(levels, [None, Some(0), Some(0)]);
 }
+
+#[test]
+fn a_table_nested_in_a_cell_keeps_its_text() {
+    // The KonsortSWD contract: numbered clauses laid out as a table inside a cell. The nested
+    // table was dropped with its text; now its text stays, as the cell's paragraphs (the nested
+    // table itself is a listed loss: ox_formats::inventory "nested tables").
+    use wordcraft_doc::{Cell, Table};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let mut inner = Table::new(2, 2, 300.0);
+    for (r, row) in [["1)", "Pflicht zur Folgenabschätzung"], ["2)", "Pflicht zur Konsultation"]].iter().enumerate() {
+        for (c, text) in row.iter().enumerate() {
+            inner.rows[r].cells[c] = Cell::with_text(text);
+        }
+    }
+    let mut outer = Table::new(1, 1, 400.0);
+    outer.rows[0].cells[0].blocks.push(Arc::new(Block::Table(inner)));
+    outer.rows[0].cells[0].blocks.insert(0, wordcraft_doc::para_block(Paragraph::with_text("Der Auftragsverarbeiter unterstützt:", CharProps::default())));
+    doc.body.push(Arc::new(Block::Table(outer)));
+    let out = adopt_and_export(&doc);
+    let all: Vec<String> = texts(&first_table(&out).rows[0].cells[0]);
+    for want in ["Der Auftragsverarbeiter unterstützt:", "1)", "Pflicht zur Folgenabschätzung", "2)", "Pflicht zur Konsultation"] {
+        assert!(all.iter().any(|t| t == want), "{want:?} lost: {all:?}");
+    }
+}
+
+#[test]
+fn numbering_turned_off_on_a_numbered_style_stays_off() {
+    // The KonsortSWD contract's clause headings use a heading style that numbers, with
+    // numbering turned off (numId 0) on each. The export dropped the "off", so they got numbers.
+    use wordcraft_doc::numbering::ListKind;
+    use wordcraft_doc::props::{NumRef, ParaProps};
+    use wordcraft_doc::styles::{Style, StyleKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let num = doc.numbering.add_list(ListKind::Numbered);
+    doc.styles.upsert(Style {
+        id: "Clause".into(),
+        name: "Clause".into(),
+        kind: StyleKind::Paragraph,
+        para: ParaProps { numbering: Some(NumRef { num, level: 0 }), ..ParaProps::default() },
+        ..Style::default()
+    });
+    let numbered = Paragraph::with_text("Clause 1. Scope", CharProps::default()).styled("Clause");
+    let mut plain = Paragraph::with_text("Clause 2. Interpretation", CharProps::default()).styled("Clause");
+    plain.props.numbering = Some(NumRef { num: 0, level: 0 });
+    doc.body.push(Arc::new(Block::Para(numbered)));
+    doc.body.push(Arc::new(Block::Para(plain)));
+    let out = adopt_and_export(&doc);
+    let off: Vec<bool> = out.body.iter().filter_map(|b| b.as_para()).filter(|p| !p.text.is_empty()).map(|p| p.props.numbering.is_some_and(|n| n.num == 0)).collect();
+    assert_eq!(off, [false, true]);
+}
+
+#[test]
+fn tracked_changes_come_in_accepted() {
+    // The KonsortSWD contract "mit Nachverfolgung": deleted text came in as live text, next to the
+    // insertion that replaced it ("Anhang Anhang EU-Standardvertragsklauseln …").
+    use wordcraft_doc::{Revision, RevisionKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    doc.revisions.push(Revision::new(RevisionKind::Delete, "Autor", "2024-01-01T00:00:00Z"));
+    doc.revisions.push(Revision::new(RevisionKind::Insert, "Autor", "2024-01-01T00:00:00Z"));
+    let mut p = Paragraph::with_text("gelten die im ", CharProps::default());
+    p.append(Paragraph::with_text("Anhang ", CharProps { del: Some(0), ..CharProps::default() }));
+    p.append(Paragraph::with_text("Anhang EU-Standardvertragsklauseln", CharProps { ins: Some(1), ..CharProps::default() }));
+    p.append(Paragraph::with_text(" beschriebenen Bedingungen", CharProps::default()));
+    doc.body.push(Arc::new(Block::Para(p)));
+    let out = adopt_and_export(&doc);
+    let text: Vec<String> = out.body.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).filter(|t| !t.is_empty()).collect();
+    assert_eq!(text, ["gelten die im Anhang EU-Standardvertragsklauseln beschriebenen Bedingungen"]);
+}
+
+#[test]
+fn a_character_styles_formatting_stays_on_its_text() {
+    // The KonsortSWD contract makes text bold with a character style ("Fett"); the model has no
+    // character styles, and the text came back plain.
+    use wordcraft_doc::styles::{Style, StyleKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    doc.styles.upsert(Style {
+        id: "Fett".into(),
+        name: "Fett".into(),
+        kind: StyleKind::Character,
+        chr: CharProps { bold: Some(true), ..CharProps::default() },
+        ..Style::default()
+    });
+    let mut p = Paragraph::with_text("plain ", CharProps::default());
+    p.append(Paragraph::with_text("strong", CharProps { style: Some("Fett".into()), ..CharProps::default() }));
+    doc.body.push(Arc::new(Block::Para(p)));
+    let out = adopt_and_export(&doc);
+    let p = out.body.iter().filter_map(|b| b.as_para()).find(|p| p.plain_text() == "plain strong").expect("the paragraph");
+    let bold = |off: usize| {
+        let cp = p.props_of_char(off);
+        cp.bold == Some(true) || cp.style.as_deref().and_then(|s| out.styles.get(s)).is_some_and(|s| s.chr.bold == Some(true))
+    };
+    assert!(!bold(p.text.find("plain").unwrap()) && bold(p.text.find("strong").unwrap()), "{p:?}");
+}
+
+#[test]
+fn a_field_kept_as_a_range_stays_a_field() {
+    // The KonsortSWD contract: a REF field whose result holds a tracked insertion is read as a
+    // range (start, result text, end). The field was dropped; its result stayed as plain text.
+    use wordcraft_doc::{Revision, RevisionKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    doc.revisions.push(Revision::new(RevisionKind::Insert, "Autor", "2024-01-01T00:00:00Z"));
+    let mut p = Paragraph::with_text("see ", CharProps::default());
+    p.insert_object(4, InlineObject::FieldStart { instr: "REF _Ref153888714 \\h".into(), locked: false, dirty: false }, &CharProps::default()).unwrap();
+    p.append(Paragraph::with_text("Annex ", CharProps::default()));
+    p.append(Paragraph::with_text("A", CharProps { ins: Some(0), ..CharProps::default() }));
+    let end = p.text.len();
+    p.insert_object(end, InlineObject::FieldEnd, &CharProps::default()).unwrap();
+    p.append(Paragraph::with_text(" below", CharProps::default()));
+    doc.body.push(Arc::new(Block::Para(p)));
+    let out = adopt_and_export(&doc);
+    let p = out.body.iter().filter_map(|b| b.as_para()).find(|p| p.plain_text().contains("Annex A")).expect("the paragraph");
+    let instrs: Vec<String> = p
+        .objects
+        .iter()
+        .filter_map(|o| match o {
+            InlineObject::Field { instr, .. } | InlineObject::FieldStart { instr, .. } => Some(instr.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(instrs.iter().any(|i| i.contains("REF _Ref153888714")), "{instrs:?}");
+    assert_eq!(p.plain_text(), "see Annex A below");
+}
