@@ -291,7 +291,7 @@ fn para_from(
 
 /// Applies `word::table`'s `grid`, `props` and `cells` (see the importer's `table_style_look`) to a
 /// table whose merges are done: cells are addressed as they stand, row by row.
-fn table_style_look(t: &mut Table, wt: &Map<String, Value>, path: &str, report: &mut ExportReport) {
+fn table_style_look(t: &mut Table, wt: &Map<String, Value>, lists: &HashMap<String, u32>, path: &str, report: &mut ExportReport) {
     let mut bad = |what: &str, e: &dyn std::fmt::Display| report.warnings.push(format!("{path}: {what} can't be read ({e}); not applied"));
     if let Some(g) = wt.get("grid") {
         match serde_json::from_value::<Vec<f32>>(g.clone()) {
@@ -327,8 +327,18 @@ fn table_style_look(t: &mut Table, wt: &Map<String, Value>, path: &str, report: 
             }
             let para = look.get("para").and_then(|v| serde_json::from_value::<ParaProps>(v.clone()).ok());
             let chr = look.get("chr").and_then(|v| serde_json::from_value::<CharProps>(v.clone()).ok());
-            for b in &mut c.blocks {
+            // Each paragraph's list (`lists`, by paragraph: `{id, level}` or null).
+            let para_lists = look.get("lists").and_then(Value::as_array);
+            for (i, b) in c.blocks.iter_mut().enumerate() {
                 let Block::Para(p) = Arc::make_mut(b) else { continue };
+                if let Some(l) = para_lists.and_then(|a| a.get(i)).filter(|l| l.is_object()) {
+                    let id = l.get("id").and_then(Value::as_str).unwrap_or("");
+                    let level = l.get("level").and_then(Value::as_u64).unwrap_or(0).min(8) as u8;
+                    match lists.get(id) {
+                        Some(&num) => p.props.numbering = Some(NumRef { num, level }),
+                        None => bad("a table cell's list", &format!("`{id}` isn't defined in the document")),
+                    }
+                }
                 let props = match &para {
                     Some(f) => ParaProps { style: p.props.style.take(), numbering: p.props.numbering, ..f.clone() },
                     None => p.props.clone(),
@@ -383,6 +393,7 @@ fn table_block(
     doc: &Document,
     node: &Composed,
     text_width: f32,
+    lists: &HashMap<String, u32>,
     report: &mut ExportReport,
 ) -> Result<Vec<Block>, WordError> {
     let data = obj(node, "office::data::table")
@@ -428,12 +439,18 @@ fn table_block(
             bold: bold.then_some(true),
             ..CharProps::default()
         };
-        let mut p = Paragraph::with_text(text, props);
-        if right {
-            p.props.align = Some(Align::Right);
-        }
+        // A cell's paragraphs are its text's lines (the importer joins them with "\n").
         let mut c = Cell::with_text("");
-        c.blocks = vec![para_block(p)];
+        c.blocks = text
+            .split('\n')
+            .map(|line| {
+                let mut p = Paragraph::with_text(line, props.clone());
+                if right {
+                    p.props.align = Some(Align::Right);
+                }
+                para_block(p)
+            })
+            .collect();
         c
     };
     // The first row holds the column names; it is a (bold, repeating) header row unless the
@@ -469,7 +486,7 @@ fn table_block(
         }
     }
     merge_cells(&mut t, wt.get("merges"), &node.path, report);
-    table_style_look(&mut t, &wt, &node.path, report);
+    table_style_look(&mut t, &wt, lists, &node.path, report);
     let linked = obj(node, "ox::link")
         .and_then(|l| l.get("source"))
         .and_then(Value::as_str);
@@ -605,7 +622,7 @@ pub(crate) fn export_with(node: &Composed, layers: &[String], assets: ox_core::P
             let p = paragraph_block(&doc, child, &lists, &mut pics, &mut report)?;
             doc.body.push(para_block(p));
         } else if child.attributes.contains_key("office::data::table") {
-            for b in table_block(&doc, child, text_width, &mut report)? {
+            for b in table_block(&doc, child, text_width, &lists, &mut report)? {
                 doc.body.push(Arc::new(b));
             }
         } else {

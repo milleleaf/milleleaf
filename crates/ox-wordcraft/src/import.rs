@@ -550,8 +550,6 @@ fn cell_text(c: &wordcraft_doc::Cell) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-        .trim()
-        .to_string()
 }
 
 /// The table's text on its grid: a cell spanning columns fills its first column and leaves the
@@ -586,8 +584,9 @@ fn table_look(t: &Table) -> Map<String, Value> {
 
 /// How a table is drawn: its column widths (`grid`, points), its own properties (`props`:
 /// borders, alignment, cell margins, shading… WordCraft's form) and each cell's (`cells`, by row
-/// and cell: the cell's properties, its first paragraph's formatting and character format).
-fn table_style_look(doc: &Document, t: &Table) -> Map<String, Value> {
+/// and cell: the cell's properties, its first paragraph's formatting and character format, and
+/// its paragraphs' lists when any is in one). `list_of` names a numbering instance's list.
+fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> String) -> Map<String, Value> {
     let strip = |v: Option<Value>, keys: &[&str]| -> Option<Value> {
         let mut v = v?;
         let o = v.as_object_mut()?;
@@ -617,6 +616,18 @@ fn table_style_look(doc: &Document, t: &Table) -> Map<String, Value> {
                         let mut cm = Map::new();
                         if let Some(p) = strip(serde_json::to_value(&c.props).ok(), &["span", "vmerge", "width", "widthPct", "fmtChange"]) {
                             cm.insert("props".into(), p);
+                        }
+                        let para_lists: Vec<Value> = c
+                            .blocks
+                            .iter()
+                            .filter_map(|b| b.as_para())
+                            .map(|p| match p.props.numbering.filter(|n| n.num != 0) {
+                                Some(n) => json!({ "id": list_of(n.num), "level": n.level }),
+                                None => Value::Null,
+                            })
+                            .collect();
+                        if para_lists.iter().any(Value::is_object) {
+                            cm.insert("lists".into(), Value::Array(para_lists));
                         }
                         if let Some(p) = c.blocks.iter().find_map(|b| b.as_para()) {
                             if let Some(f) = para_format(doc, p) {
@@ -669,7 +680,10 @@ fn table_seen(doc: &Document, t: &Table) -> Value {
             chr.overlay(&pf.chr);
             chr.overlay(&ch);
             let align = p.and_then(|p| p.props.align).or(pf.align);
+            // Which paragraphs are in a list, at what level (not which list: editors renumber).
+            let levels: Vec<Option<u8>> = c.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
             cells.push(json!([
+                levels,
                 c.props.shading.or(pf.fill).map(|r| r.hex()),
                 chr.bold == Some(true),
                 chr.italic == Some(true),
@@ -1214,7 +1228,12 @@ fn import_into(
                         // The table's look changed in Word when what a reader sees differs from
                         // what Milleleaf would export: then the file's look comes back whole.
                         if !same_look(ours_tables.get(&c.path), &table_seen(edited, t)) {
-                            for (k, v) in table_style_look(edited, t) {
+                            let mut list_of = |num| {
+                                let id = list_id(edited, num, &known_lists);
+                                lists_used.entry(id.clone()).or_insert(num);
+                                id
+                            };
+                            for (k, v) in table_style_look(edited, t, &mut list_of) {
                                 wt.insert(k, v);
                             }
                         }
@@ -1282,7 +1301,12 @@ fn import_into(
                         ));
                         let header = grid.first().cloned().unwrap_or_default();
                         let mut wt = table_look(t);
-                        wt.extend(table_style_look(edited, t));
+                        let mut list_of = |num| {
+                            let id = list_id(edited, num, &known_lists);
+                            lists_used.entry(id.clone()).or_insert(num);
+                            id
+                        };
+                        wt.extend(table_style_look(edited, t, &mut list_of));
                         let body: Vec<&Vec<String>> = grid.iter().skip(1).collect();
                         let cols: Vec<Value> = header
                             .iter()

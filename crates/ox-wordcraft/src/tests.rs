@@ -670,3 +670,46 @@ fn hyperlinks_come_in_go_out_and_a_changed_address_is_a_change() {
     assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
     assert!(serde_json::to_string(&layer).unwrap().contains("https://example.org/"));
 }
+
+// ---- Losses found on the real files (examples/real), each with a minimal document ----
+
+fn first_table(d: &Document) -> &wordcraft_doc::Table {
+    d.body
+        .iter()
+        .find_map(|b| match &**b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("a table")
+}
+
+fn texts(c: &wordcraft_doc::Cell) -> Vec<String> {
+    c.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).collect()
+}
+
+#[test]
+fn a_cells_paragraphs_lists_and_spaces_come_back() {
+    // The "10 simple rules" paper: a cell holding a sentence, then a bulleted list; the sentence
+    // ends in a space. It came back as one paragraph (line breaks), unbulleted, trimmed.
+    use wordcraft_doc::numbering::ListKind;
+    use wordcraft_doc::props::NumRef;
+    use wordcraft_doc::{Cell, Table, para_block};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let num = doc.numbering.add_list(ListKind::Bullet);
+    let mut t = Table::new(2, 1, 400.0);
+    t.rows[0].cells[0] = Cell::with_text("Rule");
+    let mut c = Cell::with_text("One entity is identified by no more than one URI ");
+    for text in ["Eliminates costly mapping problems and", "avoids false negatives"] {
+        let mut p = Paragraph::with_text(text, CharProps::default());
+        p.props.numbering = Some(NumRef { num, level: 0 });
+        c.blocks.push(para_block(p));
+    }
+    t.rows[1].cells[0] = c;
+    doc.body.push(Arc::new(Block::Table(t)));
+    let out = adopt_and_export(&doc);
+    let cell = &first_table(&out).rows[1].cells[0];
+    assert_eq!(texts(cell), ["One entity is identified by no more than one URI ", "Eliminates costly mapping problems and", "avoids false negatives"]);
+    let levels: Vec<Option<u8>> = cell.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
+    assert_eq!(levels, [None, Some(0), Some(0)]);
+}
