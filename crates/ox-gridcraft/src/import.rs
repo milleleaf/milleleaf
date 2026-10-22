@@ -278,7 +278,9 @@ pub fn import_saved_by(
                 .unwrap_or_default();
             let mut now = now;
             crate::look::settle(&mut now, &was, libreoffice);
-            if let Some(file) = wb.sheet(*si) {
+            // (Not LibreOffice's: it keeps a chart's place and size in its own rows and columns and
+            // re-anchors it to them, see `same_charts`.)
+            if let Some(file) = wb.sheet(*si).filter(|_| !libreoffice) {
                 crate::look::settle_chart_sizes(&mut now, file);
             }
             if let (Some(n), Some(w)) = (now.get("charts"), was.get("charts"))

@@ -797,7 +797,8 @@ pub(crate) fn settle(now: &mut Map<String, Value>, was: &Map<String, Value>, lib
 /// gave rows 7 onwards the height it works out itself (`ht="16"`, not custom; Milleleaf's export
 /// has none, so 15) and left both charts' `xdr:from` and `xdr:to` cells as they were, which read
 /// as 546.33 → 574.33 px. A size an edit changed (a custom height, a new default width) still
-/// moves the chart's size, as the file shows it. Charts placed by position alone aren't touched.
+/// moves the chart's size, as the file shows it. Charts placed by position alone aren't touched,
+/// and nor are LibreOffice's: it keeps a chart's size in its own rows and re-anchors it to them.
 pub(crate) fn settle_chart_sizes(now: &mut Map<String, Value>, file: &Sheet) {
     let mut kept = Sheet::new("");
     let sizes: Map<String, Value> = ["rows", "cols", "defaults"].iter().filter_map(|k| Some((k.to_string(), now.get(*k)?.clone()))).collect();
