@@ -100,24 +100,35 @@ fn inventory_counts_real_files_and_lists_losses() {
         losses(kind, c, None).iter().map(|l| l.feature).collect()
     };
 
-    let (k, c) = inventory(&real("board-report.docx")).unwrap();
+    // The "10 simple rules" paper (Word for Mac 2011): headings, tables, lists, 132 links, a figure.
+    let (k, c) = inventory(&real("paper.docx")).unwrap();
     assert_eq!(k, "docx");
-    assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["merged cells (gridSpan/vMerge)"]), (87, 42, 5));
-    assert_eq!((c["body text chars"], c["bold text chars"], c["footnote separator lines"]), (10140, 1066, 1));
+    assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["tables"], c["table cells"]), (180, 35, 6, 76));
+    assert_eq!((c["body text chars"], c["bold text chars"], c["hyperlinks"], c["footnote separator lines"]), (30045, 1073, 132, 1));
     let l = lost(k, &c);
-    assert_eq!(l, ["media files", "tracked changes (insertions and deletions)"], "the header logo, and a leftover tracked insertion (accepted)");
-    assert_eq!((c["page width (value, twips)"], c["default style size (value, half-points)"], c["default style justified (value)"]), (11906, 24, 1), "A4, 12 pt, justified");
+    assert_eq!(l, ["character styles used", "hyperlinks", "hyperlinks in table cells", "images in body (drawings)", "media files"]);
+    assert_eq!((c["page width (value, twips)"], c["default style size (value, half-points)"], c["default style justified (value)"]), (12240, 22, 1), "Letter, 11 pt, justified");
     assert!(!l.contains(&"paragraphs (non-empty)") && !l.contains(&"list paragraphs (numPr)"), "{l:?}");
 
-    let (k, c) = inventory(&real("finance.xlsx")).unwrap();
-    assert_eq!((c["formulas"], c["comments"], c["defined names (not Milleleaf's)"], c["merged ranges"]), (25932, 219, 20, 444));
+    // The sodium-ion battery LCA model: 9 sheets (3 hidden), 15,749 formulas, 148 what-if data
+    // tables, 58 charts (8 of them surface charts).
+    let (k, c) = inventory(&real("lca-model.xlsx")).unwrap();
+    assert_eq!((c["formulas"], c["what-if data tables"], c["merged ranges"], c["data validations"]), (15749, 148, 99, 2));
+    assert_eq!((c["charts"], c["surface charts"], c["hidden sheets"], c["conditional formats"]), (58, 8, 3, 538));
     let l = lost(k, &c);
-    assert_eq!(c["data validations"], 7, "4 in the sheets, 3 in Excel 2010's x14 extension");
-    for carried in ["formulas", "comments", "data validations", "merged ranges", "frozen panes", "defined names (not Milleleaf's)"] {
+    for carried in ["formulas", "data validations", "merged ranges", "hidden sheets", "cells with a number format"] {
         assert!(!l.contains(&carried), "{carried}: {l:?}");
     }
-    assert!(l.contains(&"charts") && l.contains(&"conditional formats"), "{l:?}");
+    for listed in ["charts", "conditional formats", "what-if data tables", "surface charts"] {
+        assert!(l.contains(&listed), "{listed}: {l:?}");
+    }
     assert!(losses(k, &c, None).iter().any(|l| l.feature == "charts" && l.carried == "partly carried"), "the charts come in, their fine formatting doesn't");
+
+    // The hydrogen cost calculator: small, and every loss listed (the clean example).
+    let (k, c) = inventory(&real("lcoh-calculator.xlsx")).unwrap();
+    assert_eq!((c["sheets"], c["formulas"], c["merged ranges"], c["data validations"], c["charts"]), (4, 451, 5, 1, 3));
+    let l = lost(k, &c);
+    assert!(l.contains(&"hyperlinks") && !l.contains(&"formulas"), "{l:?}");
 
     let (k, c) = inventory(&real("briefing.pptx")).unwrap();
     assert_eq!((c["slides"], c["shapes (sp)"], c["shapes without text"], c["notes slide-number fields"]), (28, 59, 1, 28));
