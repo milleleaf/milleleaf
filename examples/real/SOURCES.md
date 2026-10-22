@@ -147,20 +147,23 @@ changing nothing but what each step says. Application and version are from each 
 
 | File | SHA-256 | Size | Application |
 |---|---|---|---|
-| `paper.msoffice-resaved.docx` | `31ce2705fe0de74251ae57e26197abd7e8cb033cdbeb6478b5cfd2c6d42499f4` | 117,314 | Microsoft Office Word 16.0000 |
-| `paper.msoffice-blank-line.docx` | `117094c70705cb37f9088d68e2dcbf168dd883d55109edf89fb0a368c59cf962` | 117,305 | Microsoft Office Word 16.0000 |
-| `lca-model.msoffice-resaved.xlsx` | `456f3d91ca4d678421a855ce6db27440787438674b13a6e1b753d74142ace18e` | 2,119,245 | Microsoft Macintosh Excel 16.0300 |
-| `lca-model.msoffice-margins.xlsx` | `2dc75873223da29323b7582ca4a642830448136c1428b95f660f819e4bfc5791` | 2,119,303 | Microsoft Macintosh Excel 16.0300 |
-| `milleleaf-deck.msoffice-resaved.pptx` | `401c196831deac9dfb2734ca733dff393dc4443f02bae941c29c882076bcb1bf` | 99,132 | Microsoft Macintosh PowerPoint 16.0000 |
-| `milleleaf-deck.msoffice-edited.pptx` | `3900ff15de7bf48001dcec7b06f089a7539910073d61618c518d96fcec8abc6b` | 99,218 | Microsoft Macintosh PowerPoint 16.0000 |
+| `paper.msoffice-resaved.docx` | `80cf38e6c52638b6c2ef2673307a27bc351a8dd16e625ec42de2bfafd726694d` | 117,362 | Microsoft Office Word 16.0000 |
+| `paper.msoffice-blank-line.docx` | `a295665a84477b16163e09ffa5d08d5eecfc435b873e0972bbfb7a6bbd4e2a77` | 117,353 | Microsoft Office Word 16.0000 |
+| `lca-model.msoffice-resaved.xlsx` | `aa909e23e43474fcb6d822e98ca007ea274dcace3936cd8387b4d729df3964be` | 2,119,293 | Microsoft Macintosh Excel 16.0300 |
+| `lca-model.msoffice-margins.xlsx` | `169df07354f0538a3c362e314b89e27045c26a6e334adf4aa04e256050f620ce` | 2,119,351 | Microsoft Macintosh Excel 16.0300 |
+| `milleleaf-deck.msoffice-resaved.pptx` | `b3259123efc8f835cf6b8d594daf79fab81d4fe6534cabed5d2ebdf4943cf1f8` | 101,591 | Microsoft Macintosh PowerPoint 16.0000 |
+| `milleleaf-deck.msoffice-edited.pptx` | `72750f1da4084568c85563b47b7573f0e185def51eea2c98855dcf5a77e974bb` | 101,676 | Microsoft Macintosh PowerPoint 16.0000 |
 
 **Licence:** each is a modified copy of its original and keeps the original's terms: the paper's and
 the model's under CC BY 4.0 with the attributions above (modified: exported by Milleleaf, then
 re-saved or edited in Word or Excel as the table says); the deck's under the repository's licence,
 the Milleleaf mark excepted (see the authored deck below).
 
-**Personal data:** each file's `docProps/core.xml` names the maintainer (her full name) as the last to modify
-it, as Office writes it; no email address but the deck's own `hello@milleleaf.com`.
+**Personal data:** Office wrote the maintainer's full name as `cp:lastModifiedBy` in each file's
+`docProps/core.xml`. On 22 Oct 2026 that one field was changed to `Milleleaf` in all
+eight Microsoft files, by replacing only that zip entry (`zip` updating `docProps/core.xml`; every
+other entry and the entry order untouched); the SHA-256 and sizes above are after that change. No
+email address but the deck's own `hello@milleleaf.com`.
 
 **What they show** (the tests, run.sh step 18 and the demo): the three re-saves are no change, once
 three Word and Excel rewrites are settled (an autofit table's grid, a run colour its style already
@@ -206,7 +209,7 @@ it is used as supplied, rendered from `brand/milleleaf-mark.svg` without croppin
 | `milleleaf-deck.deckcraft.pptx` | `8d21922e09a6f9a5f06f6eeed1686bad2c98c70c62fd6cbe6be3788636953843` | 98,298 | DeckCraft |
 | `milleleaf-impress-native.pptx` | `d64cafb7635ad86c2437e54c9fa725e361f52a94458125adfd0f350bc557c489` | 23,166 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-impress-native.odp` | `168100519d222f52bb430b0264f4c7593efcebbdd446359998825a1745f133c6` | 16,808 | LibreOffice/24.2.7.2 Linux |
-| `milleleaf-deck.powerpoint.pptx` | `c55c7f266f3154e3d4fb885920944908a53de29888550397a21cdfc92700762f` | 134,112 | Microsoft Macintosh PowerPoint 16.0000 |
+| `milleleaf-deck.powerpoint.pptx` | `03032fb5c82070224ac311aac1da0b1adb605ea45937fcf619a7ed42db987042` | 136,741 | Microsoft Macintosh PowerPoint 16.0000 |
 | `authored/milleleaf-deck.python-pptx.pptx` | `3806339a3b7e71c96a346d2cae7b9d9800022de7454494d1f1023ba9dacb1a2a` | 120,826 | python-pptx 1.0.2 (see above) |
 
 **Inventory (`milleleaf-deck.impress.pptx`):** 9 slides, each with speaker notes; 1 master and 11
@@ -247,7 +250,7 @@ number formats, formulas and a drop-down. Ours, under the repository's licence (
 | `milleleaf-charts.calc.xlsx` | `7962b99efdbd474c5c9575b9be8a106f504677c4d9829133b7f2b398c86e37c0` | 16,157 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-charts.calc.ods` | `410339ad99fc20034ef56432cbf79f3ba539164bf75825c6bc81fef73de91364` | 38,483 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-charts.gridcraft.xlsx` | `ebcb2cc69a116658eb14fdda9f6725e3daaaf07613caac4908c392f95f225c68` | 11,750 | GridCraft |
-| `milleleaf-charts.excel.xlsx` | `687f16a5df093d51010b47ca87274d9a3d088f47ca17254c13231fedf740ace0` | 15,486 | Microsoft Macintosh Excel 16.0300 |
+| `milleleaf-charts.excel.xlsx` | `dde045e554935bd093ee5cdee48211df40d435ef0df8260a43261551465db556` | 15,534 | Microsoft Macintosh Excel 16.0300 |
 | `authored/milleleaf-charts.openpyxl.xlsx` | `88783115b1baf295842edd70bbb9982abf143f5a9e920741d5420ae0130f22c2` | 10,491 | openpyxl 3.1.5 |
 
 Every authored file round-trips with every loss listed (`0 problem(s)`; inventories in
