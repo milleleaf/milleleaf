@@ -401,7 +401,10 @@ fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
     assert_eq!(report.warnings.iter().filter(|w| w.contains("without its data")).count(), 3, "{:?}", report.warnings);
 
     // Excel 16 (Mac): sheet Graphs' left margin set to 1 in and its Standard Width to 12. Exactly
-    // that comes back; Excel's own rewrites (row heights, default width, trailing spaces) don't.
+    // that comes back; Excel's own rewrites (row heights, default width, trailing spaces, and the
+    // chart sizes those row heights give) don't. The new width does widen the sheet's five charts
+    // and its legend picture, which sit between cells over default-width columns (their cells
+    // unchanged in the file): that's the edit as the file shows it, and comes back too.
     if let Some(mut xl) = office_fixture("lca-model.msoffice-margins.xlsx") {
         let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel"), None).expect("imports");
         assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
@@ -409,6 +412,9 @@ fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
         assert_eq!(gs["name"], "Graphs");
         assert_eq!(gs["print"]["margins"][0], json!(1.0));
         assert_eq!(gs["defaults"]["colWidth"], json!(90.0), "12 characters");
+        let widths: Vec<i64> = gs["charts"].as_array().unwrap().iter().map(|c| c["anchor"]["width"].as_f64().unwrap().round() as i64).collect();
+        assert_eq!(widths, [446; 5]);
+        assert_eq!(gs["pictures"][0]["w"], json!(411.24));
     }
     if let Some(mut xl) = office_fixture("lca-model.msoffice-resaved.xlsx") {
         let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel"), None).expect("imports");

@@ -116,9 +116,14 @@ resave!(
     "real/fixtures/milleleaf-deck.msoffice-resaved.pptx"
 );
 resave!(
-    real_workbook_resaved,
+    real_workbook_resaved_a,
     "real/lca-model.xlsx",
     "real/fixtures/lca-model.libreoffice-resaved.xlsx"
+);
+resave!(
+    real_workbook_resaved_b,
+    "real/lca-model.xlsx",
+    "real/fixtures/lca-model.msoffice-resaved.xlsx"
 );
 resave!(
     hello_document_resaved_a,
@@ -260,11 +265,22 @@ fn edited_fixture_reports() {
             "hello-table/fixtures/deck.libreoffice-edited.pptx"
             | "hello-table/fixtures/deck.msoffice-edited.pptx" => deck.to_vec(),
             // Expectations for the maintainer's hand-made files (packet README): check them when the files land.
+            // the maintainer's edit, and what it does to the sheet's floating objects: the charts and the
+            // legend picture on Graphs sit between cells (their `xdr:from`/`xdr:to` cells are the
+            // same in the file as in the export), over columns of the default width, so the new
+            // Standard Width (12) widens them, as the file shows them. Real changes, not Excel's
+            // rewrites: its plain re-save (`real_workbook_resaved_b`) changes nothing.
             "real/fixtures/lca-model.msoffice-margins.xlsx" => {
-                vec![("Sheet Graphs", "Page setup changed: left margin:")]
+                let mut v = vec![("Sheet Graphs", "Page setup changed: left margin:")];
+                v.extend(["Chart 1 resized: width 396.00 → 446.00 px", "Chart 2 resized: width 396.00 → 446.00 px", "Chart 3 resized: width 396.00 → 446.00 px", "Chart 4 resized: width 396.00 → 446.00 px", "Chart 5 resized: width 396.00 → 446.00 px", "Pictures changed"].map(|d| ("Sheet Graphs", d)));
+                v
             }
+            // The maintainer pressed Enter at the end of "Throughout this document…" (the third body
+            // paragraph after the heading). The demo counts every paragraph, the paper's empty
+            // ones too (Introduction, Life science…, empty, Building on…, empty, Throughout…), so
+            // the new one is paragraph 7.
             "real/fixtures/paper.msoffice-blank-line.docx" => {
-                vec![("Paragraph 4", "Paragraph added")]
+                vec![("Paragraph 7", "Paragraph added")]
             }
             "real/fixtures/milleleaf-deck.msoffice-edited.pptx" => {
                 vec![("Slide 1", "(revised)")]
@@ -295,9 +311,13 @@ fn edited_fixture_reports() {
             actual.remove(i);
         }
         if edited.ends_with("lca-model.msoffice-margins.xlsx") {
-            let change = &r["changes"][0];
-            assert_eq!(change["after"]["print"]["margins"][0], json!(1.0));
-            assert_eq!(change["after"]["defaults"]["colWidth"], json!(90.0));
+            let change = |d: &str| r["changes"].as_array().unwrap().iter().find(|c| c["description"].as_str().unwrap().contains(d)).unwrap().clone();
+            let page = change("Page setup");
+            assert_eq!(page["after"]["print"]["margins"][0], json!(1.0));
+            assert_eq!(page["after"]["defaults"]["colWidth"], json!(90.0));
+            // The legend picture spans the same cells, so it widens with them: 361.24 → 411.24.
+            let pictures = change("Pictures changed");
+            assert_eq!((pictures["before"][0]["w"].clone(), pictures["after"][0]["w"].clone()), (json!(361.24), json!(411.24)));
         }
     }
 }
