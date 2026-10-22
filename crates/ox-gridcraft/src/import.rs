@@ -278,6 +278,11 @@ pub fn import_saved_by(
                 .unwrap_or_default();
             let mut now = now;
             crate::look::settle(&mut now, &was, libreoffice);
+            // (Not LibreOffice's: it keeps a chart's place and size in its own rows and columns and
+            // re-anchors it to them, see `same_charts`.)
+            if let Some(file) = wb.sheet(*si).filter(|_| !libreoffice) {
+                crate::look::settle_chart_sizes(&mut now, file);
+            }
             if let (Some(n), Some(w)) = (now.get("charts"), was.get("charts"))
                 && crate::look::same_charts(n, w, &wb.theme, libreoffice)
             {
@@ -289,8 +294,20 @@ pub fn import_saved_by(
                 // Some charts changed: the unchanged ones stay as the model has them (with their own
                 // XML); the changed ones come back as the editor saved them.
                 for i in 0..n.len() {
+                    let mut placed_as_was = n[i].clone();
+                    placed_as_was["anchor"] = w[i]["anchor"].clone();
                     if crate::look::same_charts(&json!([n[i]]), &json!([w[i]]), &wb.theme, libreoffice) {
                         n[i] = old[i].clone();
+                    } else if crate::look::same_charts(&json!([placed_as_was]), &json!([w[i]]), &wb.theme, libreoffice) {
+                        // Only moved or resized: the chart stays as the model has it (its own XML
+                        // too), in its new place. Otherwise the editor's way of writing the same
+                        // chart came back as edits: on the real workbook's sheet Graphs, a new
+                        // Standard Width widened four combo charts (396 → 446 px) and Excel 16's
+                        // XML for them read as theme colours turned RGB and series kinds spelled
+                        // out, which its plain re-save, read the same way, doesn't count as edits.
+                        let anchor = n[i]["anchor"].clone();
+                        n[i] = old[i].clone();
+                        n[i]["anchor"] = anchor;
                     } else if libreoffice && n[i]["series"].as_array().is_some_and(|ss| ss.iter().any(|s| s["values"] == json!(""))) {
                         // LibreOffice lost the chart's data (a series with no values): its loss,
                         // not an edit; the chart stays as the model has it.

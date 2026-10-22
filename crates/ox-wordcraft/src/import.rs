@@ -292,6 +292,40 @@ fn unmark(runs: &[Value]) -> Vec<Value> {
     canonical(&runs)
 }
 
+/// The colour a paragraph's style gives its text (`#rrggbb`): the document defaults, then the
+/// style and each style it's based on.
+fn style_colour(doc: &Document, p: &Paragraph) -> Option<String> {
+    let mut chr = doc.styles.default_chr.clone();
+    let pstyle = p.props.style.clone().or_else(|| doc.styles.find("Normal").map(|s| s.id.clone()));
+    for st in pstyle.as_deref().map(|id| doc.styles.chain(id)).unwrap_or_default() {
+        chr.overlay(&st.chr);
+    }
+    chr.color.as_ref().and_then(hex)
+}
+
+/// Runs without a colour their paragraph's style already gives them, in canonical form: a reader
+/// sees the same text. Word 16 drops such a run colour when it saves. Seen in paper.docx's
+/// paragraph "…used with any version: UniProt:P12345.3 → http://www.uniprot.org/uniprot/P12345.3.":
+/// its style LO-normal sets `<w:color w:val="000000"/>`, Milleleaf's export gives five of its runs
+/// the same `<w:color w:val="000000"/>`, and Word's re-save writes those runs with no `w:color`
+/// (the style unchanged); nobody touched them.
+fn without_style_colour(runs: &[Value], colour: Option<&str>) -> Vec<Value> {
+    let Some(colour) = colour else { return runs.to_vec() };
+    let runs: Vec<Value> = runs
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if let Some(o) = r.as_object_mut()
+                && o.get("color").and_then(Value::as_str).is_some_and(|c| c.eq_ignore_ascii_case(colour))
+            {
+                o.remove("color");
+            }
+            r
+        })
+        .collect();
+    canonical(&runs)
+}
+
 /// Links a file shows only as empty HYPERLINK fields (see [`comparable`]).
 fn emptied_links(runs: &[Value]) -> BTreeSet<String> {
     runs.iter()
@@ -885,6 +919,26 @@ fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> S
     m
 }
 
+/// The column widths a table asks for, points. A fixed-layout table's are its grid. An autofit
+/// table's grid (`w:tblGrid`) is only the editor's last layout: Word 16 lays the table out again
+/// when it opens it and saves the result, while the widths asked for, the cells' preferred widths
+/// (`w:tcW`), stay as they were. Seen in paper.docx's tables 2 and 6 (`w:tblW w:type="auto"`, no
+/// `w:tblLayout`): Word's re-save of Milleleaf's export wrote `w:gridCol` 9923 → 9872 and
+/// 6567/3356 → 6510/3423 twips, every `w:tcW` unchanged (9923; 6567/3356), and nobody touched
+/// them. Dragging a column border in Word changes the cells' `w:tcW` too, so that still shows.
+/// So an autofit table's widths are its first row's preferred widths when each of that row's
+/// cells has one and spans one column; else its grid.
+fn column_widths(t: &Table) -> Vec<f32> {
+    if !t.props.fixed
+        && let Some(r) = t.rows.first()
+        && r.cells.len() == t.grid.len()
+        && let Some(w) = r.cells.iter().map(|c| c.props.width.filter(|_| c.props.span <= 1)).collect::<Option<Vec<f32>>>()
+    {
+        return w;
+    }
+    t.grid.clone()
+}
+
 /// What a reader sees of a table: column widths (to the half point), its alignment and indent,
 /// and per cell the effective shading, emphasis, colour, size and alignment (its table style's
 /// parts, then the cell's own formatting). Editors move table-style formatting into the cells on
@@ -933,7 +987,7 @@ fn table_seen(doc: &Document, t: &Table) -> Value {
         rows.push(Value::Array(cells));
     }
     json!({
-        "grid": t.grid.iter().map(|w| half(*w)).collect::<Vec<_>>(),
+        "grid": column_widths(t).iter().map(|w| half(*w)).collect::<Vec<_>>(),
         "align": serde_json::to_value(t.props.align.filter(|a| *a != wordcraft_doc::Align::Left)).ok(),
         "indent": t.props.indent.map(half).filter(|i| *i != 0),
         "rows": rows,
@@ -1299,6 +1353,21 @@ fn import_into(
     // Where the last matched block sits among the original's children.
     let child_idx: HashMap<&str, usize> = node.children.iter().enumerate().map(|(i, c)| (c.path.as_str(), i)).collect();
     let mut last_seen: Option<usize> = None;
+    // A new block's path: from where it is and what it holds, unless a node has that path already.
+    // An adopted document's blocks got theirs the same way, so a block typed where the adopted one
+    // had a block with the same content would take that block's path: one node for two blocks. Seen
+    // on Word 16's blank line in the paper: the new empty paragraph sits at body index 6, as the
+    // adopted empty paragraph after "Throughout this document…" did, and took its path.
+    let new_path = |base: String, nodes: &[Node]| {
+        let taken = |p: &str| by_path.contains_key(p) || nodes.iter().any(|n| n.path == p);
+        let mut path = stable_id(&base);
+        let mut i = 2;
+        while taken(&path) {
+            path = stable_id(&format!("{base}|{i}"));
+            i += 1;
+        }
+        path
+    };
     let tags_in_file: BTreeSet<String> = edited
         .body
         .iter()
@@ -1416,7 +1485,7 @@ fn import_into(
                 let para_path = match existing {
                     Some(c) => c.path.clone(),
                     None => tag.clone().filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t))
-                        .unwrap_or_else(|| stable_id(&format!("{}|word-edit|{}|{}", node.path, index, ex.text))),
+                        .unwrap_or_else(|| new_path(format!("{}|word-edit|{}|{}", node.path, index, ex.text), &nodes)),
                 };
                 // Resolve field runs to child names, adding a child when a field was copied here.
                 let mut children: BTreeMap<String, Option<String>> = BTreeMap::new();
@@ -1516,6 +1585,8 @@ fn import_into(
                             new_c = runs;
                             spread = n;
                         }
+                        let styled = style_colour(edited, p);
+                        let (old_c, new_c) = (without_style_colour(&old_c, styled.as_deref()), without_style_colour(&new_c, styled.as_deref()));
                         let same_runs = ox_core::same(&Value::Array(old_c), &Value::Array(new_c));
                         if same_runs {
                             spread_links += spread;
@@ -1676,12 +1747,12 @@ fn import_into(
                         }
                     }
                     None => {
-                        let path = tag.filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t)).unwrap_or_else(|| stable_id(&format!(
+                        let path = tag.filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t)).unwrap_or_else(|| new_path(format!(
                             "{}|word-edit-table|{}|{:?}",
                             node.path,
                             index,
                             grid.first()
-                        )));
+                        ), &nodes));
                         let header = grid.first().cloned().unwrap_or_default();
                         let mut wt = table_look(t);
                         let mut list_of = |num| {

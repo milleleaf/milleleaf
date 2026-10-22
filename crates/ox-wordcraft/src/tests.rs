@@ -577,14 +577,81 @@ fn a_blank_line_typed_in_word_comes_back_and_resaves_stay_clean() {
         let (layer, report) = import(&node, &doc, header()).expect("imports");
         assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
     }
-    // Word: Enter at the end of paragraph 3. One new, empty paragraph; nothing else changes.
+    // Word: Enter at the end of paragraph 3 ("Throughout this document…", the third after the
+    // heading). One new, empty paragraph, right after it; nothing else changes.
     if let Some(doc) = office_fixture("paper.msoffice-blank-line.docx") {
         let (layer, report) = import(&node, &doc, header()).expect("imports");
         assert_eq!((report.added.len(), report.changed.len(), report.removed.len()), (1, 0, 0), "{report:?}");
+        // A node of its own: the adopted empty paragraph after it (same place in the body, same
+        // empty text) mustn't lend it its path.
+        assert!(node.children.iter().all(|c| c.path != report.added[0]), "{report:?}");
+        let order = layer.data.iter().find(|n| n.path == node.path).and_then(|n| n.order.clone()).expect("new order");
+        let name_of = |p: &str| node.children.iter().find(|c| c.attributes.get("word::paragraph").is_some_and(|w| w["runs"].to_string().contains(p))).and_then(|c| c.name.clone()).unwrap();
+        let after = order.iter().position(|n| *n == name_of("Throughout this document")).unwrap();
+        let new_name = layer.data.iter().find(|n| n.path == node.path).unwrap().children.iter().find(|(_, p)| p.as_deref() == Some(report.added[0].as_str())).map(|(k, _)| k.clone()).unwrap();
+        assert_eq!(order[after + 1], new_name);
         let added = layer.data.iter().find(|n| n.path == report.added[0]).expect("new node");
         let runs = added.attributes["word::paragraph"]["runs"].as_array().cloned().unwrap_or_default();
         assert!(runs.iter().all(|r| r["text"].as_str().is_none_or(|t| t.trim().is_empty())), "{added:?}");
     }
+}
+
+/// Milleleaf's export of the paper, read back: what Word opens.
+fn paper_export(node: &Composed) -> Document {
+    let (doc, _) = crate::export::export_with(node, &[], ox_core::PictureSource::StandIn(None)).expect("exports");
+    from_docx(&to_docx(&doc).unwrap()).unwrap()
+}
+
+#[test]
+fn word_laying_out_an_autofit_table_again_is_no_change_and_a_dragged_column_is() {
+    let node = paper_node();
+    fn table(d: &mut Document, n: usize) -> &mut wordcraft_doc::Table {
+        d.body.iter_mut().filter_map(|b| match Arc::make_mut(b) {
+            Block::Table(t) => Some(t),
+            _ => None,
+        }).nth(n).expect("table")
+    }
+    // Table 6 (autofit: `w:tblW` auto, no `w:tblLayout`). Word's re-save of the export wrote its
+    // `w:gridCol` 6567/3356 → 6510/3423 twips and left every cell's `w:tcW` as it was.
+    let mut doc = paper_export(&node);
+    let t = table(&mut doc, 5);
+    assert!(!t.props.fixed);
+    t.grid = vec![6510.0 / 20.0, 3423.0 / 20.0];
+    let (layer, report) = import(&node, &doc, header()).expect("imports");
+    assert!(report.changed.is_empty() && layer.data.is_empty(), "{report:?}");
+    // Dragging the border between its columns changes the cells' preferred widths too: a change.
+    let t = table(&mut doc, 5);
+    for r in &mut t.rows {
+        r.cells[0].props.width = Some(6510.0 / 20.0);
+        r.cells[1].props.width = Some(3423.0 / 20.0);
+    }
+    let (_, report) = import(&node, &doc, header()).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{report:?}");
+}
+
+#[test]
+fn a_run_colour_its_style_already_gives_is_no_change_and_another_colour_is() {
+    use wordcraft_doc::TextColor;
+    let node = paper_node();
+    let black = Some(TextColor::Rgb(wordcraft_doc::Rgb(0, 0, 0)));
+    fn para(d: &mut Document) -> &mut Paragraph {
+        d.body.iter_mut().filter_map(|b| match Arc::make_mut(b) {
+            Block::Para(p) => Some(p),
+            _ => None,
+        }).find(|p| p.text.contains("UniProt:P12345.3")).expect("the paragraph")
+    }
+    // Its style (LO-normal) sets black text; the export gives five of its runs black too. Word's
+    // re-save writes those runs with no colour.
+    let mut doc = paper_export(&node);
+    let p = para(&mut doc);
+    assert_eq!(p.runs.iter().filter(|r| r.props.color == black).count(), 5);
+    p.runs.iter_mut().filter(|r| r.props.color == black).for_each(|r| r.props.color = None);
+    let (layer, report) = import(&node, &doc, header()).expect("imports");
+    assert!(report.changed.is_empty() && layer.data.is_empty(), "{report:?}");
+    // A colour the style doesn't give is still a change.
+    para(&mut doc).runs.iter_mut().for_each(|r| if r.props.color.is_none() { r.props.color = Some(TextColor::Rgb(wordcraft_doc::Rgb(200, 0, 0))) });
+    let (_, report) = import(&node, &doc, header()).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{report:?}");
 }
 
 #[test]
@@ -867,3 +934,5 @@ fn a_link_starting_a_cell_isnt_spread_over_the_cell() {
     let at = p.text.find(" to").unwrap();
     assert!(p.props_of_char(at).link.is_none(), "{p:?}");
 }
+
+
