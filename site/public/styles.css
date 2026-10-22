@@ -217,4 +217,124 @@ ml-revisions{display:block;min-height:55px}
 
 .alternatives-band .story-layout{margin-bottom:30px}.alternatives-wrap{max-width:100%}.alternatives-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px;line-height:1.5}.alternatives-table caption{text-align:left;margin-bottom:18px;font-weight:600}.alternatives-table th,.alternatives-table td{padding:18px 14px;vertical-align:top;text-align:left;border-bottom:1px solid var(--tool-ink);overflow-wrap:anywhere}.alternatives-table thead th{background:var(--mint);color:var(--tool-ink)}.alternatives-table th:first-child{width:14%}.alternatives-table tbody tr{background:var(--paper);color:var(--ink)}.alternatives-table tbody tr:last-child{background:var(--back-paper)}.alternatives-table small{display:block;font-size:11px;margin-top:10px;color:var(--muted)}.alternatives-limit{font-size:14px;max-width:850px;margin-top:24px}
 @media(max-width:800px){.alternatives-table caption{display:block;width:100%}.alternatives-table,.alternatives-table tbody{display:block}.alternatives-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.alternatives-table tbody tr{display:block;padding:20px;margin:0 6px 24px 0;box-shadow:6px 6px 0 var(--mint)}.alternatives-table tbody th,.alternatives-table tbody td{display:block;width:100%;border:0;padding:10px 0}.alternatives-table tbody th:first-child{width:100%;font-size:22px;border-bottom:1px solid var(--line);padding-bottom:18px}.alternatives-table td::before{content:attr(data-label);display:block;font-weight:600;margin-bottom:5px}.alternatives-table small{margin-top:5px}}
-.demo-switch{display:flex;flex-wrap:wrap;gap:28px;padding-top:18px;font:600 15px Commissioner,sans-serif}.demo-switch a{color:var(--muted);text-decoration:none;padding-bottom:4px;border-bottom:2px solid transparent}.demo-switch a[aria-current=page]{color:var(--ink);border-bottom-color:var(--ink)}
+
+/* Browser demos (/flow, /demo): site tokens only, so fonts, colours and dark mode follow the site. */
+.demo-switch{display:flex;flex-wrap:wrap;gap:28px;margin-bottom:28px;font-weight:600;font-size:15px}
+.demo-switch a{color:var(--muted);text-decoration:none;padding-bottom:4px;border-bottom:2px solid transparent}
+.demo-switch a[aria-current=page]{color:var(--ink);border-bottom-color:var(--ink)}
+.page-demo button.button,.page-demo label.button{font:inherit;font-weight:600;font-size:15px;cursor:pointer}
+.page-demo .button:disabled,.page-demo label.button:has(input:disabled){opacity:.45;cursor:not-allowed}
+.page-demo summary{cursor:pointer;overflow-wrap:anywhere}
+.page-demo pre{background:var(--back-paper);white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:14px;max-height:480px;overflow:auto}
+.page-demo table{border-collapse:collapse;width:100%;font-size:14px}
+.page-demo th,.page-demo td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.page-demo input:not([type=file]),.page-demo select{display:block;width:100%;margin-top:6px;padding:9px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;min-width:0}
+.page-demo .caption,.page-demo .muted{font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.page-demo [role=alert]{padding:14px 18px;border-left:3px solid var(--ink);background:var(--removed);overflow-wrap:anywhere}
+.page-demo [role=alert][hidden]{display:none}
+.page-demo .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+
+.demo-compare .workflow{display:grid;grid-template-columns:1.3fr 1fr;gap:24px;align-items:start}
+.demo-compare .drop{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:130px;padding:18px 22px;border:1px dashed var(--muted);background:var(--paper);cursor:pointer}
+.demo-compare .drop:hover,.demo-compare .drop.dragging{border-color:var(--ink);border-style:solid}
+.demo-compare .drop strong{font-size:var(--t2);font-weight:670;letter-spacing:-.02em}
+.demo-compare .drop-note,.demo-compare .privacy{font-size:14px;color:var(--muted);margin:0}
+.demo-compare .drop input{margin-top:10px;max-width:100%}
+.demo-compare .privacy{margin-top:8px}
+.demo-compare .file-order p{margin:4px 0;font-size:15px;overflow-wrap:anywhere}
+.demo-compare .status{font-size:15px;color:var(--muted);margin:14px 0}
+.demo-compare .comparison-summary{margin:16px 0;padding:18px 22px;background:var(--back-paper);border-left:3px solid var(--ink);font-size:var(--t2);scroll-margin-top:16px}
+.demo-compare .report{padding:18px 22px;border:1px solid var(--line);background:var(--paper);margin:16px 0}
+.demo-compare .report>summary{font-weight:600}
+.demo-compare .report p{font-size:15px;color:var(--muted);max-width:850px}
+.demo-compare .report h3{font-size:var(--t2);margin:16px 0 10px}
+.demo-compare .report h4{font-size:15px;margin:0 0 8px}
+.demo-compare .report-item{padding:10px 0;border-top:1px solid var(--line)}
+.demo-compare .report-item details{margin-top:6px}
+.demo-compare .report .change-description{font-size:16px;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0 8px}
+.demo-compare .context-sides{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px}
+.demo-compare .context-panel{min-width:0;border:1px solid var(--line);padding:12px;background:var(--bg)}
+.demo-compare .context-panel h5{margin:0 0 8px;color:var(--muted);font-size:13px}
+.demo-compare .report .context-panel p{color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;max-width:none}
+.demo-compare .report .highlight{background:var(--conflict);color:oklch(.23 .04 180);padding:6px 10px}
+.demo-compare .report .after .highlight{background:var(--mint)}
+.demo-compare .context-grid{overflow:auto}
+.demo-compare .context-grid .highlight{font-weight:700;padding:5px 8px}
+.demo-compare .context-panel img{max-width:100%;max-height:180px}
+.demo-compare .signature label{display:block;font-size:15px;margin:12px 0}
+.demo-compare .verification{font-weight:650;color:var(--ink)}
+.demo-compare .verification.invalid{text-decoration:underline wavy}
+.demo-compare .proof-input{font-size:15px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.demo-compare .limits{margin:32px 0}
+.demo-compare .limits p,.demo-compare .privacy-check ol{font-size:15px;color:var(--muted)}
+.demo-compare .empty{color:var(--muted);font-style:italic}
+.demo-compare ul{padding-left:22px;font-size:15px}
+
+.demo-flow .privacy{font-size:14px;color:var(--muted);margin:0 0 6px}
+.demo-flow #status{font-size:15px;color:var(--muted);margin-bottom:16px}
+.demo-flow .workbench{display:grid;grid-template-columns:minmax(270px,.85fr) 55px minmax(350px,1.3fr);align-items:start}
+.demo-flow .panel{background:var(--paper);border:1px solid var(--line);padding:25px}
+.demo-flow .panel h2{font-size:var(--t3);margin-bottom:12px}
+.demo-flow .panel h3{font-size:var(--t2)}
+.demo-flow .section-label{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted);margin-bottom:18px}
+.demo-flow .file-tag{font-size:12px;border:1px solid var(--line);padding:2px 7px}
+.demo-flow .actions{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 10px}
+.demo-flow .file-button{position:relative;overflow:hidden}
+.demo-flow .file-button input,.demo-flow .drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.demo-flow .fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+.demo-flow .fields label{font-size:14px;color:var(--muted)}
+.demo-flow .wide{grid-column:1/-1}
+.demo-flow .table-scroll{max-height:350px;overflow:auto}
+.demo-flow #create{width:100%;justify-content:center;margin-top:18px}
+.demo-flow .connector{text-align:center;padding-top:135px;font-size:27px;color:var(--muted)}
+.demo-flow .connector span{display:block;font-size:11px;line-height:1.4;margin-bottom:8px}
+.demo-flow .destinations{display:grid;gap:16px}
+.demo-flow .preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.demo-flow .preview-heading .button{padding:7px 12px;font-size:13px}
+.demo-flow .mini-eyebrow{font-size:13px;font-weight:600;margin-bottom:10px}
+/* The previews show a document page and a slide, so they keep paper and slide colours in both themes. */
+.demo-flow .report-placeholder{margin-top:10px;padding:26px 32px;background:#fff;color:#1f2a27;border:1px solid var(--line);min-height:240px}
+.demo-flow .report-placeholder h3{font-size:28px;color:#1f2a27}
+.demo-flow .report-placeholder p,.demo-flow .report-placeholder .caption{color:#4d5a55}
+.demo-flow .report-placeholder table{color:#1f2a27}
+.demo-flow .placeholder-lines{height:38px;margin-top:20px;background:repeating-linear-gradient(transparent 0 8px,#e7e9e3 8px 9px)}
+.demo-flow .deck-placeholder{margin-top:10px;padding:25px 30px;background:#254b39;color:#fafaf0;position:relative;min-height:210px;overflow:hidden}
+.demo-flow .deck-placeholder h3{font-size:26px;max-width:65%;color:#fafaf0}
+.demo-flow .deck-placeholder.live-preview h3{max-width:none}
+.demo-flow .deck-placeholder td,.demo-flow .deck-placeholder th{border-color:#557a66}
+.demo-flow .deck-placeholder .caption,.demo-flow .deck-placeholder .chart-label{color:#d4e0d0}
+.demo-flow .bars{position:absolute;right:25px;bottom:25px;display:flex;gap:8px;align-items:end;height:100px}
+.demo-flow .bars i{width:19px;background:#b4c497;height:50%}
+.demo-flow .bars i:nth-child(2){height:85%}.demo-flow .bars i:nth-child(3){height:65%}.demo-flow .bars i:nth-child(4){height:100%}
+.demo-flow .live-chart{margin-top:14px}
+.demo-flow .chart-row{display:grid;grid-template-columns:1fr 2fr auto;gap:10px;align-items:center;font-size:13px}
+.demo-flow .chart-row progress{width:100%;accent-color:var(--green)}
+.demo-flow .deck-placeholder progress{accent-color:#b4c497}
+.demo-flow .mix-note{margin:22px 0 50px;max-width:860px;font-size:15px;color:var(--muted)}
+.demo-flow #project{margin-top:20px}
+.demo-flow .section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.demo-flow .section-heading h2{font-size:var(--t4);margin:0}
+.demo-flow .review-layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.demo-flow .drop-zone{display:flex;position:relative;flex-direction:column;justify-content:center;align-items:center;border:1px dashed var(--muted);min-height:175px;text-align:center;background:var(--bg);padding:20px}
+.demo-flow .drop-zone strong{font-size:var(--t2)}
+.demo-flow .drop-zone span{font-size:14px;color:var(--muted);margin-top:10px}
+.demo-flow .drop-zone.dragging{border-style:solid;border-color:var(--ink)}
+.demo-flow .change-item{padding:12px 0;border-bottom:1px solid var(--line);font-size:15px}
+.demo-flow .change-item h4{font-size:14px;color:var(--muted);margin:0 0 5px}
+.demo-flow .change-item p{margin:3px 0}
+.demo-flow .conflict{border-left:3px solid var(--ink);padding-left:15px;margin:15px 0;background:var(--back-paper)}
+.demo-flow #warnings{font-size:14px;color:var(--muted)}
+.demo-flow #sign{margin-top:20px}
+.demo-flow .history{margin-top:45px}
+.demo-flow #history{list-style:none;padding:0;counter-reset:layers}
+.demo-flow #history li{display:grid;grid-template-columns:40px 1fr;gap:15px;border-top:1px solid var(--line);padding:18px 0;counter-increment:layers;font-size:15px}
+.demo-flow #history li:before{content:counter(layers,decimal-leading-zero);font-size:22px;color:var(--muted)}
+.demo-flow #history p{margin:3px 0}
+.demo-flow .technical{margin:25px 0}
+.demo-flow .checked{border-top:1px solid var(--line);margin-top:40px;padding-top:40px}
+.demo-flow .checked h2{font-size:var(--t4)}
+.demo-flow .evidence-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:35px;margin:30px 0}
+.demo-flow .evidence-grid h3{font-size:var(--t2)}
+.demo-flow .evidence-grid p,.demo-flow .checked details p{font-size:15px;color:var(--muted)}
+@media(max-width:900px){.demo-flow .workbench{grid-template-columns:1fr}.demo-flow .connector{padding:12px;transform:rotate(90deg)}.demo-flow .connector span{display:none}.demo-flow .preview-heading{display:block}.demo-flow .preview-heading .button{margin-bottom:12px}}
+@media(max-width:700px){.demo-compare .workflow,.demo-compare .context-sides,.demo-flow .review-layout,.demo-flow .evidence-grid,.demo-flow .fields{grid-template-columns:1fr}.demo-flow .panel{padding:20px}}

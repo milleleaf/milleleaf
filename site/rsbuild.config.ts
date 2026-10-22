@@ -4,6 +4,6 @@ import { tanstackStart } from '@tanstack/react-start/plugin/rsbuild'
 
 export default defineConfig({
   plugins: [pluginReact(), tanstackStart({
-    prerender: { enabled: true, crawlLinks: true, concurrency: 1, failOnError: true, filter: ({ path }) => !path.includes('#') && !/\.[a-z0-9]+$/i.test(path) && !/^\/(demo|flow)\//.test(path) },
+    prerender: { enabled: true, crawlLinks: true, concurrency: 1, failOnError: true, filter: ({ path }) => !path.includes('#') && !/\.[a-z0-9]+$/i.test(path) },
   })],
 })

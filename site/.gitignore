@@ -5,3 +5,4 @@ _shots/
 _out/
 src/routeTree.gen.ts
 .cloudflare/
+public/engine/pkg/

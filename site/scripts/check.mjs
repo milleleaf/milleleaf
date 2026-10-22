@@ -3,8 +3,8 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
-const paths = ['/', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/standards']
-const headings = ['Make it once.Use it in every app.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'Standards, with the checks beside them.']
+const paths = ['/', '/flow', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/standards']
+const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -105,6 +105,7 @@ try {
       assert.equal((await page.goto(origin + path)).status(), 200)
       await page.evaluate(() => document.fonts.ready)
       await page.waitForFunction(() => !!document.querySelector('ml-theme')?.shadowRoot)
+      if (path === '/flow' || path === '/demo') await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
       assert.equal(await page.locator('h1').count(), 1)
       assert.equal(await page.locator('h1').textContent(), headings[paths.indexOf(path)], `Hydrated page identity ${path}`)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow ${path} ${width} ${theme}`)
@@ -171,47 +172,24 @@ try {
   })
   await page.locator('ml-verify').getByRole('button').click()
   await page.locator('ml-verify').getByRole('status').filter({ hasText: 'Layer hash does not match' }).waitFor()
-  // The browser demos are their own pages (web/demo, web/flow), published by add-demos.mjs. No iframe.
-  const bare = await page.request.get(origin + '/demo', { maxRedirects: 0 })
-  assert.equal(bare.status(), 301)
-  assert.equal(bare.headers().location, '/demo/')
-  const demoCsp = (await readFile('../web/demo/index.html', 'utf8')).match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1]
-  assert(demoCsp.includes("connect-src 'none'"))
-  assert.equal((await readFile('dist/client/_headers', 'utf8')).match(/^\s+Content-Security-Policy:\s*(.+)$/m)[1].startsWith(demoCsp), true, 'Host header carries the page policy')
-  for (const [path, heading] of [['/demo/', 'Follow the file.See what changed.'], ['/flow/', 'Make it once.Use it in every app.']]) {
-    await page.goto(origin + path)
+  // The demos are site pages: the React layout plus one demo component each, under a strict policy.
+  const headers = await readFile('dist/client/_headers', 'utf8')
+  for (const path of ['/flow', '/demo']) {
+    const response = await page.goto(origin + path)
+    const csp = response.headers()['content-security-policy']
+    assert(csp && csp.includes("connect-src 'none'") && headers.includes(`${path}\n  Content-Security-Policy: ${csp}`), `${path}: strict policy from _headers`)
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
-    assert.equal(await page.locator('h1').textContent(), heading, path)
-    assert.equal(await page.locator('.site-header').count(), 1, `Site header on ${path}`)
-    assert.equal(await page.locator('.site-footer').count(), 1, `Site footer on ${path}`)
-    assert.equal(await page.locator('iframe:not([sandbox])').count(), 0, `No embedding frame on ${path}`)
     assert.equal(await page.locator('.demo-switch a').count(), 2, `Demo switcher on ${path}`)
     assert.equal(await page.locator('.demo-switch a[aria-current=page]').getAttribute('href'), path, `Switcher marks ${path}`)
-    if (path === '/demo/') assert.equal(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'), demoCsp)
-    console.log(`PASS demo page ${path}: engine ready, site header and footer`)
+    assert.equal(await page.locator('.site-header nav a[aria-current=page]').first().textContent(), 'Demo', `Menu marks Demo on ${path}`)
+    assert.equal(await page.locator('iframe').count(), 0, `No iframe on ${path}`)
+    console.log(`PASS demo page ${path}: engine ready under the strict policy, switcher, site layout`)
   }
   await context.close()
-  for (const width of [1280, 400]) for (const theme of ['light', 'dark']) {
-    const c = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme, reducedMotion: 'reduce' })
-    const p = await c.newPage()
-    p.on('pageerror', error => failures.push(error.message))
-    p.on('console', message => { if (message.type() === 'error') failures.push(message.text()) })
-    p.on('response', response => { if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`) })
-    for (const path of ['/demo/', '/flow/']) {
-      await p.goto(origin + path)
-      await p.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
-      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow ${path} ${width} ${theme}`)
-      const name = `${path.slice(1, -1)}-${width}-${theme}.png`
-      await p.screenshot({ path: '_shots/' + name, fullPage: true, animations: 'disabled' })
-      captures.push({ path, width, theme, file: name })
-      console.log(`PASS capture ${name}`)
-    }
-    await c.close()
-  }
   assert.deepEqual(failures, [], 'Browser console, page and asset errors')
   const pkg = JSON.parse(await readFile('package.json', 'utf8'))
   for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) assert(/^\d+\.\d+\.\d+$/.test(version), `Unpinned ${name}`)
-  const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'dataset tables: 14 open, 2 other, seven fields each', 'dataset mobile cards and licence boundaries', 'UNESCO disclaimer and shared pipeline link', 'security contact and security.txt preserved', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'revision stepping with arrow keys', 'real browser signature verification and tamper rejection', 'demo pages: engine ready, site header and footer, demo CSP, folder redirect', 'reduced motion', 'exact package pins'], captures }
+  const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'dataset tables: 14 open, 2 other, seven fields each', 'dataset mobile cards and licence boundaries', 'UNESCO disclaimer and shared pipeline link', 'security contact and security.txt preserved', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'revision stepping with arrow keys', 'real browser signature verification and tamper rejection', 'demo pages: engine ready under the strict policy, switcher, site layout', 'reduced motion', 'exact package pins'], captures }
   await writeFile('_shots/results.json', JSON.stringify(result, null, 2) + '\n')
   await writeFile('_shots/gallery.html', `<!doctype html><html lang="en"><meta charset="utf-8"><title>Milleleaf release captures</title><style>body{font:16px sans-serif;background:#e6eded;padding:24px}main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}img{width:100%;height:480px;object-fit:contain;object-position:top;background:#fff}a{color:#174536}figure{margin:0}figcaption{padding:12px 0}@media(max-width:800px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style><h1>Milleleaf · final captures</h1><p>${paths.length} pages × 2 widths × 2 themes. Full-page images; open each for detail.</p><main>${captures.map(c => `<figure><a href="${c.file}"><img src="${c.file}" alt="${c.path}, ${c.width}px, ${c.theme}" loading="lazy"><figcaption>${c.path} · ${c.width}px · ${c.theme}</figcaption></a></figure>`).join('')}</main></html>`)
   console.log(`PASS: ${paths.length} static pages, ${captures.length} screenshots, interaction and integration checks; zero unexpected browser errors.`)

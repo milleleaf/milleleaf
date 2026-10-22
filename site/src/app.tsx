@@ -4,8 +4,10 @@ import { AlternativesTable } from './alternatives'
 import { pages } from './content'
 import { DatasetTables } from './dataset-tables'
 import { Comparison, ContentFlow } from './hero'
+import { CompareDemo } from './demos/compare'
+import { FlowDemo } from './demos/flow'
 
-const nav = [['Demo', '/flow/'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['GitHub', 'https://github.com/milleleaf']]
+const nav = [['Demo', '/flow'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['GitHub', 'https://github.com/milleleaf']]
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 function Logo() {
@@ -13,7 +15,7 @@ function Logo() {
 }
 
 function Header({ path }: { path: string }) {
-  const links = nav.map(([label, href]) => <a key={href} href={href} aria-current={path === href || (href === '/data' && path.startsWith('/data/')) ? 'page' : undefined}>{label}</a>)
+  const links = nav.map(([label, href]) => <a key={href} href={href} aria-current={path === href || (href === '/data' && path.startsWith('/data/')) || (href === '/flow' && path === '/demo') ? 'page' : undefined}>{label}</a>)
   return <header className="site-header wrap"><Logo /><nav className="desktop-nav" aria-label="Main navigation">{links}</nav><div className="header-tools"><ml-theme /></div><details className="mobile-menu"><summary>Menu</summary><nav aria-label="Mobile navigation">{links}<a href="/method">Method</a><a href="/about">About</a></nav></details></header>
 }
 
@@ -21,9 +23,25 @@ function Footer() {
   return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/standards">Standards</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><span>hello@milleleaf.com</span><span>security@milleleaf.com</span></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. Public release in preparation.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
 }
 
+// The two browser demos: the site renders their page; each demo is one component.
+const demos = {
+  '/flow': { label: 'Make it once: linked content', title: <>Make it once.<br />Use it in every app.</>, lead: 'A table and chart, shared by a report and a deck. Change the source and both stay current, each in its own style. Bring an edit back from any app and see what changed.', demo: <FlowDemo /> },
+  '/demo': { label: 'Follow the file: compare versions', title: <>Follow the file.<br />See what changed.</>, lead: 'Choose two versions. See what happened to your file, wherever it was edited.', demo: <CompareDemo /> },
+} as const
+type DemoPath = keyof typeof demos
+
+function DemoPage({ path }: { path: DemoPath }) {
+  const page = demos[path]
+  return <main id="main" className="wrap content-page page-demo">
+    <nav className="demo-switch" aria-label="Demos">{(Object.keys(demos) as DemoPath[]).map(p => <a key={p} href={p} aria-current={p === path ? 'page' : undefined}>{demos[p].label}</a>)}</nav>
+    <header className="page-heading"><span className="page-topic">Demo</span><h1>{page.title}</h1><p className="lead">{page.lead}</p></header>
+    {page.demo}
+  </main>
+}
+
 function Home() {
   return <main id="main">
-    <section className="product-hero wrap"><div className="hero-heading"><h1>Make it once.<br />Use it in every app.</h1><div><p>One table or chart, in the workbook, report, deck and PDF. Each keeps its own style. When the numbers change, every use follows. Edits come back for review.</p><a href="/flow/" className="button">Try it in your browser <span aria-hidden="true">↗</span></a></div></div><ContentFlow /></section>
+    <section className="product-hero wrap"><div className="hero-heading"><h1>Make it once.<br />Use it in every app.</h1><div><p>One table or chart, in the workbook, report, deck and PDF. Each keeps its own style. When the numbers change, every use follows. Edits come back for review.</p><a href="/flow" className="button">Try it in your browser <span aria-hidden="true">↗</span></a></div></div><ContentFlow /></section>
     <section className="story-band alternatives-band"><div className="wrap"><div className="story-layout"><h2>Why not just open it in another app?</h2><div><p>Or copy/paste, import/export, or a plugin? Each does a useful job. Here is where each stops.</p><p>“Reported” means vendor or community statements in our research, not a test by Milleleaf. Paste and conversion behaviour describe a copy, not a linked workflow.</p></div></div><AlternativesTable /><p className="alternatives-limit">Milleleaf needs no app add-in. Refresh uses CLI export today; one-click refresh inside apps, review approvals and shared stores are still missing or planned. Signing is optional today.</p><a href="/how-it-works#why-not-just-open-it-in-another-app">Read each answer and its evidence →</a></div></section>
     <AppFamilies />
     <section className="wrap open-work"><h2>Open the work.</h2><div className="open-tool"><span>The office tool</span><h3>Built to be inspected.</h3><p>The CLI and libraries work locally. The public repository and browser demo are in preparation.</p><a href="https://github.com/milleleaf">Public GitHub organisation ↗</a></div><div className="open-data sheet-surface"><span>The data</span><h3>Real places.<br />Individual terms.</h3><a href="https://worldviews-libre.pages.dev">WorldViews Libre ↗</a><a href="https://worldviews.pages.dev">WorldViews ↗</a><a href="/data/datasets">Dataset register →</a></div><div className="open-method"><span>The method</span><p>One standard for human and AI work. Make the claim the evidence supports.</p><a href="/method">AI Output to Value →</a></div></section>
@@ -73,5 +91,5 @@ function Content({ path }: { path: string }) {
 
 export function App({ path }: { path: string }) {
   useEffect(() => { void import('./elements').then(m => m.registerElements()) }, [])
-  return <><a className="skip-link" href="#main">Skip to content</a><Header path={path} />{path === '/' ? <Home /> : <Content path={path} />}<Footer /></>
+  return <><a className="skip-link" href="#main">Skip to content</a><Header path={path} />{path === '/' ? <Home /> : path in demos ? <DemoPage path={path as DemoPath} /> : <Content path={path} />}<Footer /></>
 }
