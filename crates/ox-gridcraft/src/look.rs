@@ -789,6 +789,40 @@ pub(crate) fn settle(now: &mut Map<String, Value>, was: &Map<String, Value>, lib
     }
 }
 
+/// Charts' sizes in the rows and columns a [`settle`]d look keeps (`now`, the file's sheet `file`
+/// read through it). A chart in a file sits between two cells, and its size is worked out from
+/// the sizes of the rows and columns between them: when an editor rewrote those sizes and that
+/// isn't an edit (a row height Excel worked out, its own default width), the chart's size isn't
+/// one either. Seen on the real workbook's sheet "Heat map article": Excel 16's plain re-save
+/// gave rows 7 onwards the height it works out itself (`ht="16"`, not custom; Milleleaf's export
+/// has none, so 15) and left both charts' `xdr:from` and `xdr:to` cells as they were, which read
+/// as 546.33 → 574.33 px. A size an edit changed (a custom height, a new default width) still
+/// moves the chart's size, as the file shows it. Charts placed by position alone aren't touched.
+pub(crate) fn settle_chart_sizes(now: &mut Map<String, Value>, file: &Sheet) {
+    let mut kept = Sheet::new("");
+    let sizes: Map<String, Value> = ["rows", "cols", "defaults"].iter().filter_map(|k| Some((k.to_string(), now.get(*k)?.clone()))).collect();
+    if apply_look(&mut kept, &sizes, "", &mut Vec::new(), ox_core::PictureSource::StandIn(None)).is_err() {
+        return;
+    }
+    let Some(Value::Array(charts)) = now.get_mut("charts") else { return };
+    for c in charts {
+        let Ok(mut ch) = serde_json::from_value::<Chart>(c.clone()) else { continue };
+        let a = &mut ch.anchor;
+        if a.mode == AnchorMode::Absolute {
+            continue;
+        }
+        // Where the chart ends, in the file's own rows and columns.
+        let (x1, y1) = (file.col_left(a.cell.col) + a.dx as f64, file.row_top(a.cell.row) + a.dy as f64);
+        let (x2, y2) = (x1 + a.width as f64, y1 + a.height as f64);
+        let (tc, tr) = (file.col_at(x2), file.row_at(y2));
+        let (tdx, tdy) = (x2 - file.col_left(tc), y2 - file.row_top(tr));
+        a.width = (kept.col_left(tc) + tdx - kept.col_left(a.cell.col) - a.dx as f64).max(0.0) as f32;
+        a.height = (kept.row_top(tr) + tdy - kept.row_top(a.cell.row) - a.dy as f64).max(0.0) as f32;
+        if let Ok(v) = serde_json::to_value(&ch) {
+            *c = v;
+        }
+    }
+}
 
 /// A formula that refers to another workbook: `[1]Sheet!A1`, `'[2]My sheet'!B2`.
 pub(crate) fn external_ref(f: &str) -> bool {

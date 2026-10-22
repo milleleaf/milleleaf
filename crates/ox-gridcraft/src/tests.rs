@@ -416,6 +416,78 @@ fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
     }
 }
 
+/// A chart's size as a file read back gives it when its cells (`xdr:from`, `xdr:to`) stay where
+/// they are and `resize` changes the sizes of the rows or columns between them.
+fn chart_on_resized_lines(sh: &mut gridcraft_model::Sheet, resize: impl FnOnce(&mut gridcraft_model::Sheet)) {
+    let a = sh.charts[0].anchor.clone();
+    let (x2, y2) = (sh.col_left(a.cell.col) + (a.dx + a.width) as f64, sh.row_top(a.cell.row) + (a.dy + a.height) as f64);
+    let (tc, tr) = (sh.col_at(x2), sh.row_at(y2));
+    let (tdx, tdy) = (x2 - sh.col_left(tc), y2 - sh.row_top(tr));
+    resize(sh);
+    let width = (sh.col_left(tc) + tdx - sh.col_left(a.cell.col) - a.dx as f64) as f32;
+    let height = (sh.row_top(tr) + tdy - sh.row_top(a.cell.row) - a.dy as f64) as f32;
+    (sh.charts[0].anchor.width, sh.charts[0].anchor.height) = (width, height);
+}
+
+#[test]
+fn row_heights_excel_works_out_dont_resize_a_chart_and_a_new_standard_width_does() {
+    use gridcraft_model::{Anchor, AnchorMode, Chart, ChartKind, Color, LegendPos, LineInfo, Series};
+    let mut wb = Workbook::new();
+    let sh = wb.sheet_mut(0).unwrap();
+    sh.name = "Data".into();
+    for (r, v) in [3.0, 5.0, 4.0].iter().enumerate() {
+        sh.set_value(CellRef::new(r as u32 + 1, 1), GValue::number(*v));
+    }
+    sh.charts.push(Chart {
+        id: 1,
+        kind: ChartKind::Line,
+        anchor: Anchor { cell: CellRef::new(5, 1), dx: 0.0, dy: 0.0, width: 300.0, height: 200.0, mode: AnchorMode::MoveAndSize },
+        title: Some("Totals".into()),
+        series: vec![Series { values: "Data!$B$2:$B$4".into(), color: Some(Color::Theme(4, 0)), ..Series::default() }],
+        legend: LegendPos::Bottom,
+        data_labels: false,
+        gridlines: true,
+        style: 2,
+        x_title: None,
+        y_title: None,
+        source: None,
+        by_rows: false,
+        pivot: None,
+    });
+    let (layer, _) = crate::adopt(&wb, "adopted-chart", "charts", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let trees = Composer::new(&ox_core::compose::flatten(&loaded)).compose_all().expect("composes");
+    let node = node(&trees, "adopted-chart");
+    let (out, _) = export(&node, std::path::Path::new("")).expect("exports");
+    let file = to_xlsx(&out).unwrap();
+    let excel = Some("Microsoft Macintosh Excel");
+
+    // Excel's plain re-save: the rows under the chart get the height Excel works out itself (16
+    // pt where the export has 15, not custom), the chart's cells stay. No change.
+    let mut xl = from_xlsx(&file).unwrap();
+    chart_on_resized_lines(xl.sheet_mut(0).unwrap(), |sh| {
+        let h = sh.default_row_height * 16.0 / 15.0;
+        for r in 1..30 {
+            sh.rows.insert(r, LineInfo { size: Some(h), ..LineInfo::default() });
+        }
+    });
+    assert!(xl.sheets[0].charts[0].anchor.height > 210.0, "the file reads taller");
+    let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), excel, None).expect("imports");
+    assert!(report.changed.is_empty() && layer.data.is_empty(), "{:?}", layer.data);
+
+    // A new Standard Width: the columns under the chart widen, and so does the chart, as the file
+    // shows it. A change, with the chart's new width.
+    let mut xl = from_xlsx(&file).unwrap();
+    chart_on_resized_lines(xl.sheet_mut(0).unwrap(), |sh| sh.default_col_width += 10.0);
+    let wide = xl.sheets[0].charts[0].anchor.width;
+    assert!(wide > 330.0, "{wide}");
+    let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), excel, None).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{report:?}");
+    let chart = &layer.data[0].attributes["grid::sheet"]["charts"][0];
+    assert!((chart["anchor"]["width"].as_f64().unwrap() - wide as f64).abs() < 0.01, "{chart}");
+}
+
 #[test]
 fn sheet_pictures_come_back_and_a_swapped_one_is_a_change() {
     use gridcraft_model::{Anchor, AnchorMode, Image, Sheet};

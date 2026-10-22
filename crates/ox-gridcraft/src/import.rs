@@ -278,6 +278,9 @@ pub fn import_saved_by(
                 .unwrap_or_default();
             let mut now = now;
             crate::look::settle(&mut now, &was, libreoffice);
+            if let Some(file) = wb.sheet(*si) {
+                crate::look::settle_chart_sizes(&mut now, file);
+            }
             if let (Some(n), Some(w)) = (now.get("charts"), was.get("charts"))
                 && crate::look::same_charts(n, w, &wb.theme, libreoffice)
             {
