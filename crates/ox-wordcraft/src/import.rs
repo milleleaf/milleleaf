@@ -143,6 +143,164 @@ fn run_format(cp: &CharProps) -> Map<String, Value> {
     m
 }
 
+/// LibreOffice (24.2) extends a link back over the text before it, to the start of the content
+/// control it makes of Milleleaf's paragraph control: the file links text the stack doesn't. When
+/// the text is the same and every character whose link differs is unlinked in the stack and, in
+/// the file, carries the link of the next linked text in the stack, the stack's links are kept
+/// (`Some`, with how many characters were LibreOffice's). Any other link change is an edit.
+fn settle_spread_links(old: &[Value], new: &[Value]) -> Option<(Vec<Value>, usize)> {
+    // Text runs only, one entry per character: (char, formatting).
+    let chars = |runs: &[Value]| -> Option<Vec<(char, Map<String, Value>)>> {
+        let mut out = Vec::new();
+        for r in canonical(runs) {
+            let mut fmt = r.as_object()?.clone();
+            let text = fmt.remove("text")?.as_str()?.to_string();
+            if fmt.keys().any(|k| matches!(k.as_str(), "field" | "fieldPath" | "docField" | "picture")) {
+                return None;
+            }
+            out.extend(text.chars().map(|c| (c, fmt.clone())));
+        }
+        Some(out)
+    };
+    let (a, mut b) = (chars(old)?, chars(new)?);
+    if a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| x.0 != y.0) {
+        return None;
+    }
+    let mut spread = 0;
+    for i in 0..a.len() {
+        let (la, lb) = (a[i].1.get("link"), b[i].1.get("link"));
+        if la == lb {
+            continue;
+        }
+        let next = a[i..].iter().find_map(|(_, f)| f.get("link"));
+        if la.is_some() || lb.is_none() || lb != next {
+            return None;
+        }
+        b[i].1.remove("link");
+        spread += 1;
+    }
+    if spread == 0 {
+        return None;
+    }
+    let runs: Vec<Value> = b
+        .into_iter()
+        .map(|(c, mut f)| {
+            f.insert("text".into(), json!(c.to_string()));
+            Value::Object(f)
+        })
+        .collect();
+    Some((canonical(&runs), spread))
+}
+
+/// A HYPERLINK field's address (`url`, `url#anchor`, `#anchor`), `Some("")` for one with none.
+fn hyperlink_field(instr: &str) -> Option<String> {
+    let rest = instr.trim().strip_prefix("HYPERLINK")?;
+    let mut quoted = rest.split('"').skip(1).step_by(2);
+    let mut url = String::new();
+    let mut anchor = None;
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    if words.first().is_some_and(|w| w.starts_with('"')) {
+        url = quoted.next().unwrap_or("").to_string();
+    }
+    if let Some(i) = words.iter().position(|w| *w == "\\l") {
+        anchor = words.get(i + 1).map(|a| a.trim_matches('"').to_string());
+    }
+    Some(match anchor {
+        Some(a) => format!("{url}#{a}"),
+        None => url,
+    })
+}
+
+/// Runs as compared on import: [`canonical`], with HYPERLINK fields read as what they are, a link
+/// on their text (a target-less one: plain text), and links in `lost` left out. LibreOffice
+/// (24.2) turns links into HYPERLINK fields and back, drops target-less ones, and turns a link
+/// to an anchor in another file into an empty field at the paragraph's start, unlinking its text
+/// (`lost`: those links, a LibreOffice loss the stack's version keeps).
+fn comparable(runs: &[Value], lost: &BTreeSet<String>) -> Vec<Value> {
+    let read: Vec<Value> = runs
+        .iter()
+        .filter_map(|r| {
+            let mut m = r.as_object()?.clone();
+            if let Some(link) = m.get("docField").and_then(Value::as_str).and_then(hyperlink_field) {
+                m.remove("docField");
+                if m.get("text").and_then(Value::as_str).unwrap_or("").is_empty() {
+                    return None;
+                }
+                if !link.is_empty() {
+                    m.insert("link".into(), json!(link));
+                }
+                // A field's result has one formatting; see `field_formatting`.
+                m.insert("_field".into(), json!(true));
+            }
+            if m.get("link").and_then(Value::as_str).is_some_and(|l| lost.contains(l)) {
+                m.remove("link");
+            }
+            Some(Value::Object(m))
+        })
+        .collect();
+    canonical(&read)
+}
+
+/// A HYPERLINK field's text (from [`comparable`], marked `_field`) is held with one formatting,
+/// its start's: where the text is the same, its characters take the stack's formatting when they
+/// carry the stack's link there (LibreOffice writes a link as a field; the text looks the same).
+fn field_formatting(old: &[Value], new: &[Value]) -> Vec<Value> {
+    let chars = |runs: &[Value]| -> Vec<(char, Map<String, Value>)> {
+        runs.iter()
+            .filter_map(|r| r.as_object())
+            .flat_map(|r| {
+                let mut f = r.clone();
+                let text = f.remove("text").and_then(|t| t.as_str().map(String::from)).unwrap_or_default();
+                text.chars().map(move |c| (c, f.clone())).collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    let strip = unmark;
+    let (a, mut b) = (chars(old), chars(new));
+    // Fields and pictures hold no characters here: only text runs can be lined up.
+    let only_text = |runs: &[Value]| runs.iter().all(|r| !["field", "fieldPath", "docField", "picture"].iter().any(|k| r.get(*k).is_some()));
+    if a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| x.0 != y.0) || !only_text(old) || !only_text(new) {
+        return strip(new);
+    }
+    for (x, y) in a.iter().zip(b.iter_mut()) {
+        if y.1.contains_key("_field") && x.1.get("link") == y.1.get("link") {
+            y.1 = x.1.clone();
+        }
+    }
+    let runs: Vec<Value> = b
+        .into_iter()
+        .map(|(c, mut f)| {
+            f.insert("text".into(), json!(c.to_string()));
+            Value::Object(f)
+        })
+        .collect();
+    strip(&runs)
+}
+
+/// Runs without [`comparable`]'s `_field` marks, in canonical form.
+fn unmark(runs: &[Value]) -> Vec<Value> {
+    let runs: Vec<Value> = runs
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if let Some(o) = r.as_object_mut() {
+                o.remove("_field");
+            }
+            r
+        })
+        .collect();
+    canonical(&runs)
+}
+
+/// Links a file shows only as empty HYPERLINK fields (see [`comparable`]).
+fn emptied_links(runs: &[Value]) -> BTreeSet<String> {
+    runs.iter()
+        .filter(|r| r.get("text").and_then(Value::as_str).unwrap_or("").is_empty())
+        .filter_map(|r| r.get("docField").and_then(Value::as_str).and_then(hyperlink_field))
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
 /// Canonical form for comparing runs: text runs merged when formatting matches, colours in
 /// lower case, field runs reduced to their name.
 fn canonical(runs: &[Value]) -> Vec<Value> {
@@ -292,6 +450,11 @@ fn style_para(doc: &Document, p: &Paragraph) -> Map<String, Value> {
     m
 }
 
+/// Whether the paragraph's style puts it in a list.
+fn style_numbered(doc: &Document, p: &Paragraph) -> bool {
+    style_para(doc, p).get("numbering").is_some_and(|v| !v.is_null())
+}
+
 /// The section's page setup as data (WordCraft's section properties: size, orientation,
 /// margins, columns, page numbering, borders…), without the headers and footers, which the
 /// model holds as `headers` / `footers` / `titlePage`.
@@ -367,7 +530,7 @@ fn header_set(doc: &Document, set: &HeaderSet, dropped: &mut BTreeMap<&'static s
         for b in &part.blocks {
             match b.as_para() {
                 Some(p) => {
-                    let ex = extract(p, &|_| false, &doc.media, pics);
+                    let ex = extract(doc, p, &|_| false, pics);
                     *d += ex.dropped_objects;
                     let mut wp = json!({ "style": style_name(doc, p), "runs": ex.runs });
                     if let Some(f) = para_format(doc, p) {
@@ -473,7 +636,20 @@ struct Extracted {
     dropped_objects: usize,
 }
 
-fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<String, std::sync::Arc<Vec<u8>>>, pics: &mut Pictures) -> Extracted {
+/// A run's formatting as a reader sees it: its character style's (`w:rStyle`, with what that is
+/// based on), then its own. The model has no character styles, so their formatting goes on the run.
+fn effective_chr(doc: &Document, cp: &CharProps) -> CharProps {
+    let Some(id) = cp.style.as_deref() else { return cp.clone() };
+    let mut out = CharProps::default();
+    for st in doc.styles.chain(id) {
+        out.overlay(&st.chr);
+    }
+    out.overlay(cp);
+    out
+}
+
+fn extract(doc: &Document, p: &Paragraph, is_field: &dyn Fn(&str) -> bool, pics: &mut Pictures) -> Extracted {
+    let media = &doc.media;
     let mut runs: Vec<Value> = Vec::new();
     let mut fields = Vec::new();
     let mut text = String::new();
@@ -481,7 +657,15 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
     // Open inline controls: Some(path) for an ox field, None for anything else.
     let mut open: Vec<Option<String>> = Vec::new();
     let mut field_text = String::new();
+    // A Word field kept as a range (its result is ordinary text between start and end marks:
+    // REF, TOC, a field with a tracked change inside…): one field run, its result the text in
+    // between. Nested ones are part of the outer one's result.
+    let (mut range, mut range_depth): (Option<Map<String, Value>>, usize) = (None, 0);
     for (off, ch) in p.text.char_indices() {
+        // Tracked changes come in accepted: deleted text (and what sits in it) isn't content.
+        if p.props_of_char(off).del.is_some() {
+            continue;
+        }
         let in_field = open.iter().any(Option::is_some);
         if ch == OBJ {
             match p.object_at(off) {
@@ -503,9 +687,32 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
                         fields.push((path, field_text.trim().to_string()));
                     }
                 }
+                Some(InlineObject::FieldStart { instr, .. }) if !in_field => {
+                    if range_depth == 0 {
+                        let mut fmt = run_format(&effective_chr(doc, p.props_of_char(off)));
+                        fmt.insert("docField".into(), json!(instr.trim()));
+                        fmt.insert("text".into(), json!(""));
+                        range = Some(fmt);
+                    }
+                    range_depth += 1;
+                }
+                Some(InlineObject::FieldEnd) if !in_field && range_depth > 0 => {
+                    range_depth -= 1;
+                    if range_depth == 0
+                        && let Some(fmt) = range.take()
+                    {
+                        runs.push(Value::Object(fmt));
+                    }
+                }
+                Some(InlineObject::Field { result, .. }) if !in_field && range_depth > 0 => {
+                    text.push_str(result);
+                    if let Some(r) = range.as_mut() {
+                        r["text"] = json!(format!("{}{result}", r["text"].as_str().unwrap_or("")));
+                    }
+                }
                 // A Word field (PAGE, DATE…): its code, with the result it showed.
                 Some(InlineObject::Field { instr, result, .. }) if !in_field => {
-                    let mut fmt = run_format(p.props_of_char(off));
+                    let mut fmt = run_format(&effective_chr(doc, p.props_of_char(off)));
                     fmt.insert("docField".into(), json!(instr.trim()));
                     fmt.insert("text".into(), json!(result));
                     text.push_str(result);
@@ -526,8 +733,16 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
             continue;
         }
         text.push(ch);
-        let mut fmt = run_format(p.props_of_char(off));
+        if let Some(r) = range.as_mut() {
+            r["text"] = json!(format!("{}{ch}", r["text"].as_str().unwrap_or("")));
+            continue;
+        }
+        let mut fmt = run_format(&effective_chr(doc, p.props_of_char(off)));
         fmt.insert("text".into(), json!(ch.to_string()));
+        runs.push(Value::Object(fmt));
+    }
+    // A range the paragraph doesn't close (it ends in a later paragraph): its result so far.
+    if let Some(fmt) = range.take() {
         runs.push(Value::Object(fmt));
     }
     Extracted {
@@ -538,20 +753,41 @@ fn extract(p: &Paragraph, is_field: &dyn Fn(&str) -> bool, media: &BTreeMap<Stri
     }
 }
 
+/// A cell's paragraphs in reading order, including those of a table nested in it (whose text is
+/// carried as the cell's paragraphs; the nested table itself isn't).
+fn cell_paras(c: &wordcraft_doc::Cell) -> Vec<&Paragraph> {
+    let mut out = Vec::new();
+    for b in &c.blocks {
+        match &**b {
+            Block::Para(p) => out.push(p),
+            Block::Table(t) => out.extend(t.rows.iter().flat_map(|r| &r.cells).flat_map(cell_paras)),
+        }
+    }
+    out
+}
+
 fn cell_text(c: &wordcraft_doc::Cell) -> String {
-    c.blocks
-        .iter()
-        .filter_map(|b| b.as_para())
+    cell_paras(c)
+        .into_iter()
         .map(|p| {
-            p.plain_text()
-                .chars()
-                .filter(|c| *c != OBJ)
-                .collect::<String>()
+            // What it shows (a field's result for its object), accepted: deleted text isn't
+            // the cell's.
+            let (mut out, mut k) = (String::new(), 0usize);
+            for (off, c) in p.text.char_indices() {
+                let obj = (c == OBJ).then(|| p.objects.get(k));
+                k += usize::from(c == OBJ);
+                if p.props_of_char(off).del.is_some() {
+                    continue;
+                }
+                match obj {
+                    Some(o) => out.push_str(o.map(|o| o.plain_text()).unwrap_or_default()),
+                    None => out.push(c),
+                }
+            }
+            out
         })
         .collect::<Vec<_>>()
         .join("\n")
-        .trim()
-        .to_string()
 }
 
 /// The table's text on its grid: a cell spanning columns fills its first column and leaves the
@@ -586,8 +822,9 @@ fn table_look(t: &Table) -> Map<String, Value> {
 
 /// How a table is drawn: its column widths (`grid`, points), its own properties (`props`:
 /// borders, alignment, cell margins, shading… WordCraft's form) and each cell's (`cells`, by row
-/// and cell: the cell's properties, its first paragraph's formatting and character format).
-fn table_style_look(doc: &Document, t: &Table) -> Map<String, Value> {
+/// and cell: the cell's properties, its first paragraph's formatting and character format, and
+/// its paragraphs' lists when any is in one). `list_of` names a numbering instance's list.
+fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> String) -> Map<String, Value> {
     let strip = |v: Option<Value>, keys: &[&str]| -> Option<Value> {
         let mut v = v?;
         let o = v.as_object_mut()?;
@@ -618,12 +855,22 @@ fn table_style_look(doc: &Document, t: &Table) -> Map<String, Value> {
                         if let Some(p) = strip(serde_json::to_value(&c.props).ok(), &["span", "vmerge", "width", "widthPct", "fmtChange"]) {
                             cm.insert("props".into(), p);
                         }
+                        let para_lists: Vec<Value> = cell_paras(c)
+                            .into_iter()
+                            .map(|p| match p.props.numbering.filter(|n| n.num != 0) {
+                                Some(n) => json!({ "id": list_of(n.num), "level": n.level }),
+                                None => Value::Null,
+                            })
+                            .collect();
+                        if para_lists.iter().any(Value::is_object) {
+                            cm.insert("lists".into(), Value::Array(para_lists));
+                        }
                         if let Some(p) = c.blocks.iter().find_map(|b| b.as_para()) {
                             if let Some(f) = para_format(doc, p) {
                                 cm.insert("para".into(), f);
                             }
                             if !p.text.is_empty() {
-                                if let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change"]) {
+                                if let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change", "link", "ins", "del"]) {
                                     cm.insert("chr".into(), ch);
                                 }
                             }
@@ -669,7 +916,10 @@ fn table_seen(doc: &Document, t: &Table) -> Value {
             chr.overlay(&pf.chr);
             chr.overlay(&ch);
             let align = p.and_then(|p| p.props.align).or(pf.align);
+            // Which paragraphs are in a list, at what level (not which list: editors renumber).
+            let levels: Vec<Option<u8>> = cell_paras(c).into_iter().map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
             cells.push(json!([
+                levels,
                 c.props.shading.or(pf.fill).map(|r| r.hex()),
                 chr.bold == Some(true),
                 chr.italic == Some(true),
@@ -696,7 +946,12 @@ fn same_look(ours: Option<&Value>, now: &Value) -> bool {
     let Some(ours) = ours else { return false };
     let row_cells = |v: &Value| v["rows"].as_array().cloned().unwrap_or_default();
     let (a, b) = (row_cells(ours), row_cells(now));
-    ["grid", "align", "indent"].iter().all(|k| ours[k] == now[k]) && a.iter().zip(&b).all(|(x, y)| x == y)
+    // Column widths to within a half point: editors store twips and round them their own way
+    // (LibreOffice: 221.25 pt comes back as 221.2).
+    let grid = |v: &Value| v["grid"].as_array().cloned().unwrap_or_default();
+    let (ga, gb) = (grid(ours), grid(now));
+    let same_grid = ga.len() == gb.len() && ga.iter().zip(&gb).all(|(x, y)| (x.as_i64().unwrap_or(0) - y.as_i64().unwrap_or(0)).abs() <= 1);
+    same_grid && ["align", "indent"].iter().all(|k| ours[k] == now[k]) && a.iter().zip(&b).all(|(x, y)| x == y)
 }
 
 /// Merged cells on the grid: `{row, col, rows, cols}`, row 0 being the first (header) row.
@@ -873,6 +1128,47 @@ pub fn adopt(
     Ok((layer, report))
 }
 
+/// `node` with its paragraphs' pictures named by a readable path renamed by their file's hash.
+fn paragraph_pictures_by_hash(node: &Composed, root: &std::path::Path) -> Composed {
+    let mut out = node.clone();
+    for c in &mut out.children {
+        for r in c.attributes.get_mut("word::paragraph").and_then(|p| p.get_mut("runs")).and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(b) = r.pointer_mut("/picture/blob")
+                && let Some(h) = b.as_str().and_then(|p| ox_core::resolve_blob(Some(root), p))
+            {
+                *b = json!(h);
+            }
+        }
+    }
+    out
+}
+
+/// A paragraph holding only a page break, before another paragraph, written the way Word does:
+/// the next paragraph starts on a new page (`pageBreakBefore`), and the break's paragraph is empty.
+/// LibreOffice (24.2) saves "page break before" the other way round; a reader sees the same.
+fn page_breaks_as_properties(doc: &Document) -> std::borrow::Cow<'_, Document> {
+    // (A page break is whitespace to `trim`: compare the text itself, without control marks.)
+    let only_break = |b: &Block| b.as_para().is_some_and(|p| p.text.chars().filter(|c| *c != OBJ).eq(['\u{c}']));
+    let at: Vec<usize> = (0..doc.body.len().saturating_sub(1))
+        .filter(|&i| only_break(&doc.body[i]) && doc.body[i + 1].as_para().is_some())
+        .collect();
+    if at.is_empty() {
+        return std::borrow::Cow::Borrowed(doc);
+    }
+    let mut out = doc.clone();
+    for i in at {
+        if let Block::Para(p) = std::sync::Arc::make_mut(&mut out.body[i]) {
+            let props = p.props.clone();
+            *p = Paragraph::new();
+            p.props = props;
+        }
+        if let Block::Para(p) = std::sync::Arc::make_mut(&mut out.body[i + 1]) {
+            p.props.page_break_before = Some(true);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 fn import_into(
     node: &Composed,
     edited: &Document,
@@ -880,6 +1176,7 @@ fn import_into(
     adopting: bool,
     assets: Option<&std::path::Path>,
 ) -> Result<(Layer, ImportReport), WordError> {
+    let edited = &*page_breaks_as_properties(edited);
     let mut report = ImportReport::default();
     for b in ox_core::unreadable_pictures(node, assets) {
         report.warnings.push(format!("picture `{b}` can't be read, so it's compared by its path and may come back as changed"));
@@ -888,6 +1185,10 @@ fn import_into(
         report.stale = true;
         report.warnings.push("the document changed in the stack since this file was exported; review the edit layer before stacking it".into());
     }
+    // A stack file names its pictures by path: body paragraphs' pictures are compared by the hash
+    // of their file, as the file's own are (a re-save then isn't a change).
+    let resolved = assets.map(|root| paragraph_pictures_by_hash(node, root));
+    let node = resolved.as_ref().unwrap_or(node);
 
     let by_path: HashMap<&str, &Composed> =
         node.children.iter().map(|c| (c.path.as_str(), c)).collect();
@@ -945,6 +1246,10 @@ fn import_into(
         }
     }
     let mut seen: BTreeSet<String> = BTreeSet::new();
+    // Characters LibreOffice linked by extending a link back (see `settle_spread_links`).
+    let mut spread_links = 0usize;
+    // Links LibreOffice turned into empty fields, unlinking their text (see `comparable`).
+    let mut lost_links = 0usize;
     let mut captions_seen: BTreeSet<String> = BTreeSet::new();
     let mut new_order: Vec<String> = Vec::new();
     // Where the last matched block sits among the original's children.
@@ -975,7 +1280,7 @@ fn import_into(
         match &**block {
             Block::Para(p) => {
                 let tag = para_tag(p, &is_field);
-                let ex = extract(p, &is_field, &edited.media, &mut report.pictures);
+                let ex = extract(edited, p, &is_field, &mut report.pictures);
                 if ex.dropped_objects > 0 {
                     report.warnings.push(format!(
                         "paragraph {}: {} inline object(s) (shapes, charts, embedded objects…) are not carried yet",
@@ -1033,8 +1338,9 @@ fn import_into(
                 if !adopting && blank && required {
                     continue;
                 }
-                // Editors drop the tag from an empty paragraph (LibreOffice does): a blank line where
-                // the original had an empty paragraph, right after the last block matched, is that one.
+                // Editors drop the tag from a paragraph without text (LibreOffice does, from an empty
+                // one or one holding only a picture): one where the original had such a paragraph,
+                // right after the last block matched, is that one.
                 let by_position = !adopting && blank;
                 let existing = if by_position {
                     node.children
@@ -1043,7 +1349,7 @@ fn import_into(
                         .filter(|c| {
                             obj(c, "word::paragraph").is_some_and(|w| {
                                 w.get("runs").and_then(Value::as_array).is_none_or(|r| {
-                                    r.iter().all(|r| r.get("text").and_then(Value::as_str).is_some_and(|t| t.trim().is_empty()))
+                                    r.iter().all(|r| r.get("picture").is_some() || r.get("text").and_then(Value::as_str).is_some_and(|t| t.trim().is_empty()))
                                 })
                             })
                         })
@@ -1112,6 +1418,10 @@ fn import_into(
                     let id = list_id(edited, n.num, &known_lists);
                     lists_used.entry(id.clone()).or_insert(n.num);
                     new_para["list"] = json!({ "id": id, "level": n.level });
+                } else if let Some(n) = p.props.numbering.filter(|_| style_numbered(edited, p)) {
+                    // Numbering turned off on a paragraph whose style numbers it (a heading
+                    // style with numbering, used for an unnumbered heading): `id` "".
+                    new_para["list"] = json!({ "id": "", "level": n.level });
                 }
                 match existing {
                     Some(c) => {
@@ -1124,16 +1434,37 @@ fn import_into(
                         });
                         new_order.push(c.name.clone().unwrap_or_default());
                         let old = obj(c, "word::paragraph").cloned().unwrap_or_default();
+                        // Numbering turned off where the stack has no list: an editor writing the
+                        // "off" out (LibreOffice does, for headings its outline numbering covers),
+                        // still unnumbered. Not an edit.
+                        if old.get("list").is_none() && new_para.get("list").and_then(|l| l.get("id")).and_then(Value::as_str) == Some("") {
+                            if let Some(o) = new_para.as_object_mut() {
+                                o.remove("list");
+                            }
+                        }
                         let old_runs: Vec<Value> = old
                             .get("runs")
                             .and_then(Value::as_array)
                             .cloned()
                             .unwrap_or_default();
                         // Numbers by value: a layer from the store holds 12.0 as 12.
-                        let same_runs = ox_core::same(
-                            &Value::Array(canonical(&old_runs)),
-                            &Value::Array(canonical(new_para["runs"].as_array().map(Vec::as_slice).unwrap_or(&[]))),
-                        );
+                        let new_runs = new_para["runs"].as_array().cloned().unwrap_or_default();
+                        let lost = emptied_links(&new_runs);
+                        let old_c = comparable(&old_runs, &lost);
+                        let mut new_c = field_formatting(&old_c, &comparable(&new_runs, &lost));
+                        let old_c = unmark(&old_c);
+                        let mut spread = 0;
+                        if let Some((runs, n)) = settle_spread_links(&old_c, &new_c) {
+                            new_c = runs;
+                            spread = n;
+                        }
+                        let same_runs = ox_core::same(&Value::Array(old_c), &Value::Array(new_c));
+                        if same_runs {
+                            spread_links += spread;
+                        }
+                        if same_runs && !lost.is_empty() {
+                            lost_links += lost.len();
+                        }
                         let opt = |v: Option<Value>| v.unwrap_or(Value::Null);
                         let same_style =
                             old.get("style").and_then(Value::as_str).unwrap_or("Normal") == style
@@ -1214,7 +1545,12 @@ fn import_into(
                         // The table's look changed in Word when what a reader sees differs from
                         // what Milleleaf would export: then the file's look comes back whole.
                         if !same_look(ours_tables.get(&c.path), &table_seen(edited, t)) {
-                            for (k, v) in table_style_look(edited, t) {
+                            let mut list_of = |num| {
+                                let id = list_id(edited, num, &known_lists);
+                                lists_used.entry(id.clone()).or_insert(num);
+                                id
+                            };
+                            for (k, v) in table_style_look(edited, t, &mut list_of) {
                                 wt.insert(k, v);
                             }
                         }
@@ -1282,7 +1618,12 @@ fn import_into(
                         ));
                         let header = grid.first().cloned().unwrap_or_default();
                         let mut wt = table_look(t);
-                        wt.extend(table_style_look(edited, t));
+                        let mut list_of = |num| {
+                            let id = list_id(edited, num, &known_lists);
+                            lists_used.entry(id.clone()).or_insert(num);
+                            id
+                        };
+                        wt.extend(table_style_look(edited, t, &mut list_of));
                         let body: Vec<&Vec<String>> = grid.iter().skip(1).collect();
                         let cols: Vec<Value> = header
                             .iter()
@@ -1374,6 +1715,16 @@ fn import_into(
             },
         );
     }
+    if lost_links > 0 {
+        report.warnings.push(format!(
+            "{lost_links} links to an anchor in another file came back as empty HYPERLINK fields, their text unlinked (LibreOffice does this when it saves); kept the stack's links"
+        ));
+    }
+    if spread_links > 0 {
+        report.warnings.push(format!(
+            "{spread_links} characters before links came back linked to them (LibreOffice extends a link back to the start of the paragraph's control when it saves); kept the stack's links"
+        ));
+    }
     // Definitions of lists the document doesn't have yet (a list made in Word, or adopted).
     let wd = obj(node, "word::document").cloned().unwrap_or_default();
     let known = wd.get("lists").and_then(Value::as_object).cloned().unwrap_or_default();
@@ -1442,7 +1793,14 @@ fn import_into(
         let mut merged = Map::new();
         for which in ["default", "first", "even"] {
             let (now, ours) = (v.get(which), ours_v.as_ref().and_then(|o| o.get(which)));
-            let keep = if header_seen(now) == header_seen(ours) {
+            // A first-page header without a different first page, or an even-page one without
+            // different odd and even pages, isn't shown: LibreOffice writes them anyway (24.2).
+            let shown = match which {
+                "first" => sect.title_page,
+                "even" => edited.settings.even_odd_headers,
+                _ => true,
+            };
+            let keep = if !shown || header_seen(now) == header_seen(ours) {
                 true
             } else if d_now.get(which).copied().unwrap_or(0) > d_ours.get(which).copied().unwrap_or(0) {
                 report.warnings.push(format!(

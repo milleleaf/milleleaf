@@ -238,6 +238,10 @@
               "dataType": "Object",
               "optional": true
             },
+            "autoFilter": {
+              "dataType": "Object",
+              "optional": true
+            },
             "charts": {
               "dataType": "Array",
               "optional": true

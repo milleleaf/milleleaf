@@ -535,14 +535,15 @@ fn a_merge_made_in_word_on_an_existing_table_comes_back() {
     assert_eq!(wt["merges"], json!([{ "row": 1, "col": 0, "rows": 2, "cols": 1 }]));
 }
 
-/// The real board report, adopted the way `ox adopt` does it, then imported from files Word 16.114
-/// and LibreOffice 24.2 saved from Milleleaf's export (`examples/real/fixtures`).
-fn board_report_node() -> Composed {
+/// The real paper ("10 simple rules", examples/real/paper.docx), adopted the way `ox adopt`
+/// does it, then imported from files Word and LibreOffice 24.2 saved from Milleleaf's export
+/// (`examples/real/fixtures`).
+fn paper_node() -> Composed {
     let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
-    let bytes = std::fs::read(real.join("board-report.docx")).unwrap();
+    let bytes = std::fs::read(real.join("paper.docx")).unwrap();
     // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
-    let root = "f5bb6935-f60f-5b56-96e8-6ed886cc9246";
-    let (layer, _) = crate::adopt(&from_docx(&bytes).unwrap(), root, "board-report", header()).expect("adopts");
+    let root = "239ca6b3-1319-5dda-b48e-45b32b0abb90";
+    let (layer, _) = crate::adopt(&from_docx(&bytes).unwrap(), root, "paper", header()).expect("adopts");
     let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
     loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
     let flat = ox_core::compose::flatten(&loaded);
@@ -555,53 +556,57 @@ fn real_fixture(name: &str) -> Document {
     from_docx(&std::fs::read(p).expect("fixture")).expect("reads")
 }
 
-#[test]
-fn a_blank_line_typed_in_word_comes_back_and_word_resaves_stay_clean() {
-    let node = board_report_node();
-    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
-    assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
-
-    // Word: Enter at the end of paragraph 3. One new, empty paragraph; nothing else changes.
-    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-blank-line.docx"), header()).expect("imports");
-    assert_eq!((report.added.len(), report.changed.len(), report.removed.len()), (1, 0, 0), "{report:?}");
-    let added = layer.data.iter().find(|n| n.path == report.added[0]).expect("new node");
-    let runs = added.attributes["word::paragraph"]["runs"].as_array().cloned().unwrap_or_default();
-    assert!(runs.iter().all(|r| r["text"].as_str().is_none_or(|t| t.trim().is_empty())), "{added:?}");
-
-    // LibreOffice drops the tag of an empty paragraph: it is matched by place, as a best guess,
-    // not reported as one removed and one added. (Its re-save still differs in list numbers,
-    // border colours, tabs and table borders: known, see the plan.)
-    let (_, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
-    assert_eq!((report.added.len(), report.removed.len()), (0, 0), "{report:?}");
-    assert!(report.matches.iter().any(|m| m.by == "an empty paragraph in the same place"), "{:?}", report.matches);
+/// A fixture only Microsoft Office can make (the Office packet): `None`, said out loud, until it's there.
+fn office_fixture(name: &str) -> Option<Document> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    if !p.exists() {
+        eprintln!("PENDING: examples/real/fixtures/{name} (a Microsoft Office re-save) isn't there yet; that part isn't checked");
+        return None;
+    }
+    Some(from_docx(&std::fs::read(p).expect("fixture")).expect("reads"))
 }
 
 #[test]
-fn the_report_logo_comes_in_and_a_swapped_one_is_a_change() {
-    let node = board_report_node();
-    let logo = |v: &serde_json::Value| -> Option<serde_json::Value> {
-        v["headers"].as_object()?.values().flat_map(|ps| ps.as_array().cloned().unwrap_or_default())
-            .flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default())
-            .find_map(|r| r.get("picture").cloned())
+fn a_blank_line_typed_in_word_comes_back_and_resaves_stay_clean() {
+    let node = paper_node();
+    // LibreOffice 24.2's re-save is no change.
+    let (layer, report) = import(&node, &real_fixture("paper.libreoffice-resaved.docx"), header()).expect("imports");
+    assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
+
+    if let Some(doc) = office_fixture("paper.msoffice-resaved.docx") {
+        let (layer, report) = import(&node, &doc, header()).expect("imports");
+        assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
+    }
+    // Word: Enter at the end of paragraph 3. One new, empty paragraph; nothing else changes.
+    if let Some(doc) = office_fixture("paper.msoffice-blank-line.docx") {
+        let (layer, report) = import(&node, &doc, header()).expect("imports");
+        assert_eq!((report.added.len(), report.changed.len(), report.removed.len()), (1, 0, 0), "{report:?}");
+        let added = layer.data.iter().find(|n| n.path == report.added[0]).expect("new node");
+        let runs = added.attributes["word::paragraph"]["runs"].as_array().cloned().unwrap_or_default();
+        assert!(runs.iter().all(|r| r["text"].as_str().is_none_or(|t| t.trim().is_empty())), "{added:?}");
+    }
+}
+
+#[test]
+fn the_papers_figure_comes_in_and_a_swapped_one_is_a_change() {
+    let node = paper_node();
+    let figure = |v: &serde_json::Value| -> Option<serde_json::Value> {
+        v["runs"].as_array()?.iter().find_map(|r| r.get("picture").cloned())
     };
-    // Ofsted's logo floats in the first page's header, in front of the text.
-    let pic = logo(&node.attributes["word::document"]).expect("the header logo");
-    assert_eq!(pic["float"]["wrap"], json!("inFrontOfText"), "{pic}");
-    assert!(pic["blob"].as_str().unwrap().starts_with("sha256-"));
+    // Figure 1 (the authors' table of identifier examples) sits in a body paragraph.
+    let holder = node.children.iter().find(|c| c.attributes.get("word::paragraph").and_then(figure).is_some()).expect("the figure");
+    let pic = figure(&holder.attributes["word::paragraph"]).unwrap();
+    assert!(pic["blob"].as_str().unwrap().starts_with("sha256-"), "{pic}");
 
-    // LibreOffice's re-save keeps it.
-    let (layer, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
-    let doc_changed = layer.data.iter().find(|n| n.path == node.path).and_then(|n| logo(&n.attributes["word::document"]));
-    assert!(doc_changed.is_none(), "LibreOffice changed the logo: {doc_changed:?} {:?}", report.warnings);
-
-    // Someone swaps the picture in Word.
-    let mut doc = real_fixture("board-report.msoffice-resaved.docx");
-    let swapped = b"\xff\xd8\xffnot really a jpeg".to_vec();
+    // Someone swaps the picture (in LibreOffice's re-save): that paragraph changes, to the new
+    // picture by its hash.
+    let mut doc = real_fixture("paper.libreoffice-resaved.docx");
+    let swapped = b"\x89PNG\r\n\x1a\nnot really a png".to_vec();
     let key = doc.media.keys().next().expect("a picture").clone();
     doc.media.insert(key, Arc::new(swapped.clone()));
     let (layer, report) = import(&node, &doc, header()).expect("imports");
-    assert_eq!(report.changed, vec![node.path.clone()], "{:?}", report.warnings);
-    let now = logo(&layer.data[0].attributes["word::document"]).expect("the new logo");
+    assert_eq!(report.changed, vec![holder.path.clone()], "{:?}", report.warnings);
+    let now = figure(&layer.data[0].attributes["word::paragraph"]).expect("the new figure");
     let blob = ox_core::integrity_of(&swapped);
     assert_eq!(now["blob"], json!(blob));
     assert_eq!(report.pictures[&blob].1, swapped);
@@ -627,9 +632,9 @@ fn a_resave_is_no_change_against_a_node_from_the_store() {
         n.attributes.values_mut().for_each(as_stored);
         n.children.iter_mut().for_each(node_as_stored);
     }
-    let mut node = board_report_node();
+    let mut node = paper_node();
     node_as_stored(&mut node);
-    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
+    let (layer, report) = import(&node, &real_fixture("paper.libreoffice-resaved.docx"), header()).expect("imports");
     assert!(report.is_empty() && layer.data.is_empty(), "{:?}", report.changed);
 }
 
@@ -669,4 +674,196 @@ fn hyperlinks_come_in_go_out_and_a_changed_address_is_a_change() {
     let (layer, report) = import(&node, &back, header()).expect("imports");
     assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
     assert!(serde_json::to_string(&layer).unwrap().contains("https://example.org/"));
+}
+
+// ---- Losses found on the real files (examples/real), each with a minimal document ----
+
+fn first_table(d: &Document) -> &wordcraft_doc::Table {
+    d.body
+        .iter()
+        .find_map(|b| match &**b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("a table")
+}
+
+fn texts(c: &wordcraft_doc::Cell) -> Vec<String> {
+    c.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).collect()
+}
+
+#[test]
+fn a_cells_paragraphs_lists_and_spaces_come_back() {
+    // The "10 simple rules" paper: a cell holding a sentence, then a bulleted list; the sentence
+    // ends in a space. It came back as one paragraph (line breaks), unbulleted, trimmed.
+    use wordcraft_doc::numbering::ListKind;
+    use wordcraft_doc::props::NumRef;
+    use wordcraft_doc::{Cell, Table, para_block};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let num = doc.numbering.add_list(ListKind::Bullet);
+    let mut t = Table::new(2, 1, 400.0);
+    t.rows[0].cells[0] = Cell::with_text("Rule");
+    let mut c = Cell::with_text("One entity is identified by no more than one URI ");
+    for text in ["Eliminates costly mapping problems and", "avoids false negatives"] {
+        let mut p = Paragraph::with_text(text, CharProps::default());
+        p.props.numbering = Some(NumRef { num, level: 0 });
+        c.blocks.push(para_block(p));
+    }
+    t.rows[1].cells[0] = c;
+    doc.body.push(Arc::new(Block::Table(t)));
+    let out = adopt_and_export(&doc);
+    let cell = &first_table(&out).rows[1].cells[0];
+    assert_eq!(texts(cell), ["One entity is identified by no more than one URI ", "Eliminates costly mapping problems and", "avoids false negatives"]);
+    let levels: Vec<Option<u8>> = cell.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.props.numbering.filter(|n| n.num != 0).map(|n| n.level)).collect();
+    assert_eq!(levels, [None, Some(0), Some(0)]);
+}
+
+#[test]
+fn a_table_nested_in_a_cell_keeps_its_text() {
+    // The KonsortSWD contract: numbered clauses laid out as a table inside a cell. The nested
+    // table was dropped with its text; now its text stays, as the cell's paragraphs (the nested
+    // table itself is a listed loss: ox_formats::inventory "nested tables").
+    use wordcraft_doc::{Cell, Table};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let mut inner = Table::new(2, 2, 300.0);
+    for (r, row) in [["1)", "Pflicht zur Folgenabschätzung"], ["2)", "Pflicht zur Konsultation"]].iter().enumerate() {
+        for (c, text) in row.iter().enumerate() {
+            inner.rows[r].cells[c] = Cell::with_text(text);
+        }
+    }
+    let mut outer = Table::new(1, 1, 400.0);
+    outer.rows[0].cells[0].blocks.push(Arc::new(Block::Table(inner)));
+    outer.rows[0].cells[0].blocks.insert(0, wordcraft_doc::para_block(Paragraph::with_text("Der Auftragsverarbeiter unterstützt:", CharProps::default())));
+    doc.body.push(Arc::new(Block::Table(outer)));
+    let out = adopt_and_export(&doc);
+    let all: Vec<String> = texts(&first_table(&out).rows[0].cells[0]);
+    for want in ["Der Auftragsverarbeiter unterstützt:", "1)", "Pflicht zur Folgenabschätzung", "2)", "Pflicht zur Konsultation"] {
+        assert!(all.iter().any(|t| t == want), "{want:?} lost: {all:?}");
+    }
+}
+
+#[test]
+fn numbering_turned_off_on_a_numbered_style_stays_off() {
+    // The KonsortSWD contract's clause headings use a heading style that numbers, with
+    // numbering turned off (numId 0) on each. The export dropped the "off", so they got numbers.
+    use wordcraft_doc::numbering::ListKind;
+    use wordcraft_doc::props::{NumRef, ParaProps};
+    use wordcraft_doc::styles::{Style, StyleKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let num = doc.numbering.add_list(ListKind::Numbered);
+    doc.styles.upsert(Style {
+        id: "Clause".into(),
+        name: "Clause".into(),
+        kind: StyleKind::Paragraph,
+        para: ParaProps { numbering: Some(NumRef { num, level: 0 }), ..ParaProps::default() },
+        ..Style::default()
+    });
+    let numbered = Paragraph::with_text("Clause 1. Scope", CharProps::default()).styled("Clause");
+    let mut plain = Paragraph::with_text("Clause 2. Interpretation", CharProps::default()).styled("Clause");
+    plain.props.numbering = Some(NumRef { num: 0, level: 0 });
+    doc.body.push(Arc::new(Block::Para(numbered)));
+    doc.body.push(Arc::new(Block::Para(plain)));
+    let out = adopt_and_export(&doc);
+    let off: Vec<bool> = out.body.iter().filter_map(|b| b.as_para()).filter(|p| !p.text.is_empty()).map(|p| p.props.numbering.is_some_and(|n| n.num == 0)).collect();
+    assert_eq!(off, [false, true]);
+}
+
+#[test]
+fn tracked_changes_come_in_accepted() {
+    // The KonsortSWD contract "mit Nachverfolgung": deleted text came in as live text, next to the
+    // insertion that replaced it ("Anhang Anhang EU-Standardvertragsklauseln …").
+    use wordcraft_doc::{Revision, RevisionKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    doc.revisions.push(Revision::new(RevisionKind::Delete, "Autor", "2024-01-01T00:00:00Z"));
+    doc.revisions.push(Revision::new(RevisionKind::Insert, "Autor", "2024-01-01T00:00:00Z"));
+    let mut p = Paragraph::with_text("gelten die im ", CharProps::default());
+    p.append(Paragraph::with_text("Anhang ", CharProps { del: Some(0), ..CharProps::default() }));
+    p.append(Paragraph::with_text("Anhang EU-Standardvertragsklauseln", CharProps { ins: Some(1), ..CharProps::default() }));
+    p.append(Paragraph::with_text(" beschriebenen Bedingungen", CharProps::default()));
+    doc.body.push(Arc::new(Block::Para(p)));
+    let out = adopt_and_export(&doc);
+    let text: Vec<String> = out.body.iter().filter_map(|b| b.as_para()).map(|p| p.plain_text()).filter(|t| !t.is_empty()).collect();
+    assert_eq!(text, ["gelten die im Anhang EU-Standardvertragsklauseln beschriebenen Bedingungen"]);
+}
+
+#[test]
+fn a_character_styles_formatting_stays_on_its_text() {
+    // The KonsortSWD contract makes text bold with a character style ("Fett"); the model has no
+    // character styles, and the text came back plain.
+    use wordcraft_doc::styles::{Style, StyleKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    doc.styles.upsert(Style {
+        id: "Fett".into(),
+        name: "Fett".into(),
+        kind: StyleKind::Character,
+        chr: CharProps { bold: Some(true), ..CharProps::default() },
+        ..Style::default()
+    });
+    let mut p = Paragraph::with_text("plain ", CharProps::default());
+    p.append(Paragraph::with_text("strong", CharProps { style: Some("Fett".into()), ..CharProps::default() }));
+    doc.body.push(Arc::new(Block::Para(p)));
+    let out = adopt_and_export(&doc);
+    let p = out.body.iter().filter_map(|b| b.as_para()).find(|p| p.plain_text() == "plain strong").expect("the paragraph");
+    let bold = |off: usize| {
+        let cp = p.props_of_char(off);
+        cp.bold == Some(true) || cp.style.as_deref().and_then(|s| out.styles.get(s)).is_some_and(|s| s.chr.bold == Some(true))
+    };
+    assert!(!bold(p.text.find("plain").unwrap()) && bold(p.text.find("strong").unwrap()), "{p:?}");
+}
+
+#[test]
+fn a_field_kept_as_a_range_stays_a_field() {
+    // The KonsortSWD contract: a REF field whose result holds a tracked insertion is read as a
+    // range (start, result text, end). The field was dropped; its result stayed as plain text.
+    use wordcraft_doc::{Revision, RevisionKind};
+    let mut doc = Document::new();
+    doc.body.clear();
+    doc.revisions.push(Revision::new(RevisionKind::Insert, "Autor", "2024-01-01T00:00:00Z"));
+    let mut p = Paragraph::with_text("see ", CharProps::default());
+    p.insert_object(4, InlineObject::FieldStart { instr: "REF _Ref153888714 \\h".into(), locked: false, dirty: false }, &CharProps::default()).unwrap();
+    p.append(Paragraph::with_text("Annex ", CharProps::default()));
+    p.append(Paragraph::with_text("A", CharProps { ins: Some(0), ..CharProps::default() }));
+    let end = p.text.len();
+    p.insert_object(end, InlineObject::FieldEnd, &CharProps::default()).unwrap();
+    p.append(Paragraph::with_text(" below", CharProps::default()));
+    doc.body.push(Arc::new(Block::Para(p)));
+    let out = adopt_and_export(&doc);
+    let p = out.body.iter().filter_map(|b| b.as_para()).find(|p| p.plain_text().contains("Annex A")).expect("the paragraph");
+    let instrs: Vec<String> = p
+        .objects
+        .iter()
+        .filter_map(|o| match o {
+            InlineObject::Field { instr, .. } | InlineObject::FieldStart { instr, .. } => Some(instr.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(instrs.iter().any(|i| i.contains("REF _Ref153888714")), "{instrs:?}");
+    assert_eq!(p.plain_text(), "see Annex A below");
+}
+
+#[test]
+fn a_link_starting_a_cell_isnt_spread_over_the_cell() {
+    // The paper's version tables: a cell starting with a linked accession number ("P12345.1"),
+    // then plain text. The cell's look took its first character's formatting, link included, so
+    // the export linked the whole cell. Links in cells aren't carried (a listed loss, "hyperlinks
+    // in table cells"); none is made up either.
+    use wordcraft_doc::{Cell, Table};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let mut t = Table::new(2, 1, 400.0);
+    t.rows[0].cells[0] = Cell::with_text("Example");
+    let mut p = Paragraph::with_text("P12345.1", CharProps { link: Some("http://www.uniprot.org/uniprot/P12345.1".into()), ..CharProps::default() });
+    p.append(Paragraph::with_text(" to P12345", CharProps::default()));
+    t.rows[1].cells[0].blocks = vec![wordcraft_doc::para_block(p)];
+    doc.body.push(Arc::new(Block::Table(t)));
+    let out = adopt_and_export(&doc);
+    let cell = &first_table(&out).rows[1].cells[0];
+    let p = cell.blocks.iter().find_map(|b| b.as_para()).unwrap();
+    let at = p.text.find(" to").unwrap();
+    assert!(p.props_of_char(at).link.is_none(), "{p:?}");
 }

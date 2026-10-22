@@ -443,13 +443,14 @@ fn unicode_survives_a_pptx_round_trip_code_point_for_code_point() {
 
 #[test]
 fn adopted_placeholders_take_their_layouts_position() {
-    // A real GOV.UK deck (examples/real, OGL v3): slide titles are placeholders with no position of
-    // their own; they used to be dropped without a word.
-    let path = example("../real/briefing.pptx");
-    let p = from_pptx(&std::fs::read(path).expect("examples/real/briefing.pptx")).expect("reads");
-    let (layer, report) = crate::adopt(&p, "real-deck", "briefing", header()).expect("adopts");
+    // The authored deck as python-pptx writes its content (examples/real/authored): titles and
+    // bodies are placeholders with no position of their own, as PowerPoint writes them. (Impress
+    // writes every position out.) They used to be dropped without a word.
+    let path = example("../real/authored/milleleaf-deck.python-pptx.pptx");
+    let p = from_pptx(&std::fs::read(path).expect("the authored deck")).expect("reads");
+    let (layer, report) = crate::adopt(&p, "real-deck", "milleleaf-deck", header()).expect("adopts");
     let text: String = layer.data.iter().filter_map(|n| n.attributes.get("deck::text")).map(|v| v.to_string()).collect();
-    for title in ["GCSE science grading", "Post-16 school/college measures", "Ofqual resources"] {
+    for title in ["What Milleleaf does", "How an edit comes back", "Talk to us"] {
         assert!(text.contains(title), "{title} lost; warnings: {:?}", report.warnings);
     }
     assert!(!report.warnings.iter().any(|w| w.contains("no position")), "{:?}", report.warnings);
@@ -457,36 +458,36 @@ fn adopted_placeholders_take_their_layouts_position() {
 
 #[test]
 fn adopted_text_takes_what_its_layout_gives_it() {
-    // The Ofqual/DfE briefing: bullets, levels and their colour come from the master; the boxes
-    // on slide 23 are filled and outlined, with centred text.
-    let bytes = std::fs::read(example("../real/briefing.pptx")).expect("fixture");
-    let p = from_pptx(&bytes).expect("reads");
-    let (layer, _) = crate::adopt(&p, "real-deck", "briefing", header()).expect("adopts");
+    // The deck as Impress saved it: bullets, levels and their colour come from the master; the
+    // boxes on slide 4 are filled and outlined, with centred text.
+    let p = from_pptx(&std::fs::read(example("../real/milleleaf-deck.impress.pptx")).expect("deck")).expect("reads");
+    let (layer, _) = crate::adopt(&p, "real-deck", "milleleaf-deck", header()).expect("adopts");
     let texts: Vec<&serde_json::Value> = layer.data.iter().filter_map(|n| n.attributes.get("deck::text")).collect();
     let paras = || texts.iter().flat_map(|t| t["paragraphs"].as_array().into_iter().flatten());
     let nested = paras()
-        .find(|p| p["runs"][0]["text"] == json!("Policy, purposes and priorities"))
-        .expect("a second-level bullet on slide 3");
+        .find(|p| p["runs"][0]["text"] == json!("Who changed what, and when, stays with the file"))
+        .expect("a second-level bullet on slide 2");
     assert_eq!(nested["level"], json!(1));
     assert_eq!(nested["bullet"], json!(true));
     assert!(nested["bulletColor"].is_string() && nested["marginLeftPt"].is_number(), "{nested}");
-    let english = layer
+    let adopt = layer
         .data
         .iter()
-        .find(|n| n.attributes.get("deck::text").is_some_and(|t| t["paragraphs"][0]["runs"][0]["text"] == json!("English")))
-        .expect("the English box");
-    assert_eq!(english.attributes["deck::shape"]["fill"], json!("#ccecff"));
-    assert!(english.attributes["deck::shape"]["stroke"].is_string());
-    assert_eq!(english.attributes["deck::text"]["verticalAlign"], json!("middle"));
+        .find(|n| n.attributes.get("deck::text").is_some_and(|t| t["paragraphs"][0]["runs"][0]["text"] == json!("Adopt")))
+        .expect("the Adopt box");
+    assert_eq!(adopt.attributes["deck::shape"]["fill"], json!("#97dbc2"));
+    assert_eq!(adopt.attributes["deck::shape"]["stroke"], json!("#09c8ba"));
+    assert_eq!(adopt.attributes["deck::text"]["verticalAlign"], json!("middle"));
 }
 
-/// The real briefing deck, adopted the way `ox adopt` does it (`examples/real/briefing.pptx`).
-fn briefing_node() -> Composed {
+/// The authored deck as Impress saved it, adopted the way `ox adopt` does it
+/// (`examples/real/milleleaf-deck.impress.pptx`).
+fn deck_node() -> Composed {
     let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
     // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
-    let root = "0eff38b6-b913-5af3-91ae-86226a64270e";
-    let p = from_pptx(&std::fs::read(real.join("briefing.pptx")).unwrap()).unwrap();
-    let (layer, _) = crate::adopt(&p, root, "briefing", header()).expect("adopts");
+    let root = "1384e197-120e-59ea-b738-9941afeb276f";
+    let p = from_pptx(&std::fs::read(real.join("milleleaf-deck.impress.pptx")).unwrap()).unwrap();
+    let (layer, _) = crate::adopt(&p, root, "milleleaf-deck", header()).expect("adopts");
     let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
     loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
     let flat = ox_core::compose::flatten(&loaded);
@@ -499,32 +500,46 @@ fn real_fixture(name: &str) -> Presentation {
     from_pptx(&std::fs::read(p).expect("fixture")).expect("reads")
 }
 
+/// A fixture only Microsoft Office can make (the Office packet): `None`, said out loud, until it's there.
+fn office_fixture(name: &str) -> Option<Presentation> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    if !p.exists() {
+        eprintln!("PENDING: examples/real/fixtures/{name} (a Microsoft Office re-save) isn't there yet; that part isn't checked");
+        return None;
+    }
+    Some(from_pptx(&std::fs::read(p).expect("fixture")).expect("reads"))
+}
+
 #[test]
 fn real_deck_resaves_are_no_change_and_an_edit_keeps_the_layouts_look() {
-    let node = briefing_node();
-    for name in ["briefing.libreoffice-resaved.pptx", "briefing.msoffice-resaved.pptx"] {
-        let (layer, report) = import(&node, &real_fixture(name), header()).expect("imports");
-        assert!(layer.data.is_empty() && report.changed.is_empty(), "{name}: {:?} {:?}", report.changed, report.removed);
+    let node = deck_node();
+    let (layer, report) = import(&node, &real_fixture("milleleaf-deck.libreoffice-resaved.pptx"), header()).expect("imports");
+    assert!(layer.data.is_empty() && report.changed.is_empty(), "LibreOffice: {:?} {:?}", report.changed, report.removed);
+    if let Some(p) = office_fixture("milleleaf-deck.msoffice-resaved.pptx") {
+        let (layer, report) = import(&node, &p, header()).expect("imports");
+        assert!(layer.data.is_empty() && report.changed.is_empty(), "PowerPoint: {:?} {:?}", report.changed, report.removed);
     }
-    // PowerPoint 16 (Mac): " (revised)" added to slide 1's subtitle frame. One frame changes, and
-    // its paragraphs keep the indents and spacing adopt took from the layout.
-    let (layer, report) = import(&node, &real_fixture("briefing.msoffice-edited.pptx"), header()).expect("imports");
-    assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
-    let paras = layer.data[0].attributes["deck::text"]["paragraphs"].as_array().unwrap().clone();
-    let text: String = paras.iter().flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default()).filter_map(|r| r["text"].as_str().map(String::from)).collect();
-    assert!(text.contains("(revised)"), "{text}");
-    assert!(paras.iter().all(|p| p.get("marginLeftPt").is_some() && p.get("spaceBefore").is_some()), "{paras:?}");
+    // PowerPoint 16 (Mac): " (revised)" added to slide 1's subtitle. One frame changes, and its
+    // paragraphs keep the indents and spacing adopt took from the layout.
+    if let Some(p) = office_fixture("milleleaf-deck.msoffice-edited.pptx") {
+        let (layer, report) = import(&node, &p, header()).expect("imports");
+        assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
+        let paras = layer.data[0].attributes["deck::text"]["paragraphs"].as_array().unwrap().clone();
+        let text: String = paras.iter().flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default()).filter_map(|r| r["text"].as_str().map(String::from)).collect();
+        assert!(text.contains("(revised)"), "{text}");
+        assert!(paras.iter().all(|p| p.get("marginLeftPt").is_some() && p.get("spaceBefore").is_some()), "{paras:?}");
+    }
 }
 
 #[test]
 fn real_deck_pictures_come_in_and_a_swapped_one_is_a_change() {
-    let node = briefing_node();
+    let node = deck_node();
     let frames: Vec<&Composed> = node.children.iter().flat_map(|s| &s.children).filter(|f| f.attributes.contains_key("deck::picture")).collect();
-    assert_eq!(frames.len(), 8);
-    // Ofqual's logo is cropped; the crop is carried.
+    assert_eq!(frames.len(), 3, "the mark twice and the chart picture");
+    // The chart picture is cropped; the crop is carried.
     assert!(frames.iter().any(|f| f.attributes["deck::picture"]["crop"].is_array()));
-    // Swap the bytes behind one picture, as if someone replaced it in PowerPoint.
-    let mut p = real_fixture("briefing.msoffice-resaved.pptx");
+    // Swap the bytes behind one picture, as if someone replaced it.
+    let mut p = real_fixture("milleleaf-deck.libreoffice-resaved.pptx");
     let swapped = b"\x89PNG\r\n\x1a\nnot really a picture".to_vec();
     let m = p.media.iter_mut().find(|m| m.content_type == "image/jpeg").expect("a jpeg");
     m.data = std::sync::Arc::new(swapped.clone());
@@ -538,19 +553,19 @@ fn real_deck_pictures_come_in_and_a_swapped_one_is_a_change() {
 #[test]
 fn a_stack_files_picture_is_compared_by_the_hash_of_its_file() {
     // A stack file names its pictures by path (nothing is stored by hash until a commit).
-    let mut node = briefing_node();
+    let mut node = deck_node();
     let dir = std::env::temp_dir().join(format!("ox-deck-pics-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("pics")).unwrap();
     let mut named = 0;
     let mut distinct = std::collections::BTreeSet::new();
+    let resaved = real_fixture("milleleaf-deck.libreoffice-resaved.pptx");
     for f in node.children.iter_mut().flat_map(|s| s.children.iter_mut()) {
         if let Some(p) = f.attributes.get_mut("deck::picture") {
             let blob = p["blob"].as_str().unwrap().trim_start_matches("sha256-").to_string();
             let p_rel = format!("pics/{blob}.bin");
             if named == 0 {
                 // Only the first one's file is there; the rest can't be read.
-                let p = real_fixture("briefing.msoffice-resaved.pptx");
-                let bytes = p.media.iter().find(|m| ox_core::integrity_of(&m.data) == format!("sha256-{blob}")).expect("its bytes").data.clone();
+                let bytes = resaved.media.iter().find(|m| ox_core::integrity_of(&m.data) == format!("sha256-{blob}")).expect("its bytes").data.clone();
                 std::fs::write(dir.join(&p_rel), &*bytes).unwrap();
             }
             distinct.insert(p_rel.clone());
@@ -558,13 +573,12 @@ fn a_stack_files_picture_is_compared_by_the_hash_of_its_file() {
             named += 1;
         }
     }
-    let resaved = real_fixture("briefing.msoffice-resaved.pptx");
     let (layer, report) = crate::import_in(&node, &resaved, header(), Some(&dir)).expect("imports");
     assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
     // One warning per picture that can't be read (the readable one's file may be shared).
     let readable = distinct.iter().filter(|p| dir.join(p).exists()).count();
     assert_eq!(report.warnings.iter().filter(|w| w.contains("can't be read")).count(), distinct.len() - readable, "{:?}", report.warnings);
-    assert!(named > distinct.len(), "the deck shows some pictures more than once");
+    assert!(named > distinct.len(), "the deck shows the mark twice");
 
     // Swap the readable one's bytes in the file: one change, by hash.
     let mut swapped = resaved.clone();
@@ -576,20 +590,20 @@ fn a_stack_files_picture_is_compared_by_the_hash_of_its_file() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-
 #[test]
 fn real_deck_tables_lines_and_links_come_in_and_edits_to_them_are_changes() {
     use deckcraft_model::text::Action;
-    let node = briefing_node();
+    let node = deck_node();
     let frames: Vec<&Composed> = node.children.iter().flat_map(|s| &s.children).collect();
     let tables: Vec<&Composed> = frames.iter().copied().filter(|f| f.attributes.contains_key("deck::table")).collect();
     let lines: Vec<&Composed> = frames.iter().copied().filter(|f| f.attributes.contains_key("deck::line")).collect();
-    assert_eq!((tables.len(), lines.len()), (2, 10));
-    // Two connectors on slide 24 are attached to the boxes they join.
+    assert_eq!((tables.len(), lines.len()), (2, 4));
+    // Three connectors on slide 4 are attached to the boxes they join; the dashed line isn't.
     let attached = lines.iter().filter(|l| l.attributes["deck::line"].get("from").is_some()).count();
-    assert_eq!(attached, 2);
+    assert_eq!(attached, 3);
     let ends: Vec<&str> = lines.iter().flat_map(|l| ["from", "to"].map(|k| l.attributes["deck::line"].get(k).and_then(|e| e["frame"].as_str()))).flatten().collect();
     assert!(ends.iter().all(|p| frames.iter().any(|f| f.path == *p)), "{ends:?}");
+    // Web and mail links on text come in (the jump to slide 1 is a listed loss).
     let links: Vec<String> = frames
         .iter()
         .filter_map(|f| f.attributes.get("deck::text"))
@@ -597,16 +611,17 @@ fn real_deck_tables_lines_and_links_come_in_and_edits_to_them_are_changes() {
         .flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default())
         .filter_map(|r| r["link"].as_str().map(String::from))
         .collect();
-    assert_eq!(links.len(), 3, "{links:?}");
-    assert!(links.iter().any(|l| l == "mailto:public.enquiries@Ofqual.gov.uk"), "{links:?}");
-    // The header row's style colours are worked out into the cells.
-    let head = &tables[0].attributes["deck::table"]["snapshot"][0][0];
-    assert!(head["paragraphs"][0]["runs"][0]["bold"] == json!(true) && head["look"]["fill"].is_object(), "{head}");
+    assert_eq!(links, ["https://milleleaf.com", "mailto:hello@milleleaf.com"]);
+    // Merged cells: "Format" spans two rows, "Saved by" two columns; the header row's style
+    // colours are worked out into the cells.
+    let snap = &tables[0].attributes["deck::table"]["snapshot"];
+    assert_eq!((snap[0][0]["look"]["rowSpan"].clone(), snap[0][1]["look"]["gridSpan"].clone()), (json!(2), json!(2)));
+    assert!(snap[0][1]["look"]["fill"].is_object() && snap[0][1]["paragraphs"][0]["runs"][0]["color"] == json!("#ffffff"), "{}", snap[0][1]);
 
-    // Edits made in PowerPoint's file: a cell's text, a connector's colour, a link's address.
-    let mut p = real_fixture("briefing.msoffice-resaved.pptx");
+    // Edits made in an editor's file: a cell's text, a connector's colour, a link's address.
+    let mut p = real_fixture("milleleaf-deck.libreoffice-resaved.pptx");
     let name = |f: &Composed| format!("{}{}", crate::NAME_PREFIX, f.path);
-    let (tname, lname) = (name(tables[0]), name(lines[0]));
+    let (tname, lname) = (name(tables[1]), name(lines[0]));
     for s in &mut p.slides {
         let s = std::sync::Arc::make_mut(s);
         for sh in &mut s.shapes {
@@ -632,7 +647,62 @@ fn real_deck_tables_lines_and_links_come_in_and_edits_to_them_are_changes() {
     let (layer, report) = import(&node, &p, header()).expect("imports");
     assert_eq!(report.changed.len(), 3, "{:?}", report.changed);
     let got = |path: &str, key: &str| layer.data.iter().find(|n| n.path == path).and_then(|n| n.attributes.get(key)).cloned().expect(path);
-    assert_eq!(got(&tables[0].path, "deck::table")["snapshot"][1][0]["text"], json!("Changed"));
+    assert_eq!(got(&tables[1].path, "deck::table")["snapshot"][1][0]["text"], json!("Changed"));
     assert_eq!(got(&lines[0].path, "deck::line")["line"]["fill"]["color"]["base"]["rgb"], json!({ "r": 255, "g": 0, "b": 0, "a": 255 }));
     assert!(layer.data.iter().any(|n| n.attributes.get("deck::text").is_some_and(|t| t.to_string().contains("mailto:someone@example.org"))));
+}
+
+#[test]
+fn a_groups_shapes_come_in_where_the_group_shows_them() {
+    // A DDI training deck (Zenodo 5180625, from the real-file search) holds a table and
+    // connectors inside a group: they were dropped with all their text. The model has no
+    // groups, so the shapes now come in on their own, placed where the group showed them.
+    use deckcraft_geom::Xfrm;
+    use deckcraft_model::{Shape, ShapeId, TextBody};
+    let mut p = from_pptx(&std::fs::read(example("../real/milleleaf-deck.impress.pptx")).unwrap()).unwrap();
+    let child = Shape {
+        id: ShapeId(901),
+        name: "inside".into(),
+        xfrm: Some(Xfrm::new(10.0, 10.0, 100.0, 50.0)),
+        text: Some(TextBody::from_text("in a group")),
+        ..Default::default()
+    };
+    // The group shows its child space (0, 0, 100, 50) twice as large, at (100, 100).
+    let group = Shape {
+        id: ShapeId(900),
+        name: "Group 1".into(),
+        xfrm: Some(Xfrm::new(100.0, 100.0, 200.0, 100.0)),
+        kind: ShapeKind::Group { children: vec![child], child: Xfrm::new(0.0, 0.0, 100.0, 50.0) },
+        ..Default::default()
+    };
+    std::sync::Arc::make_mut(&mut p.slides[0]).shapes.push(group);
+    let (layer, report) = crate::adopt(&p, "real-deck", "milleleaf-deck", header()).expect("adopts");
+    let n = layer
+        .data
+        .iter()
+        .find(|n| n.attributes.get("deck::text").is_some_and(|t| t.to_string().contains("in a group")))
+        .unwrap_or_else(|| panic!("the grouped text box was dropped: {:?}", report.warnings));
+    let g = &n.attributes["deck::frame"];
+    let near = |k: &str, pt: f64| (g[k].as_f64().unwrap() - crate::px(pt)).abs() < 0.02;
+    assert!(near("x", 120.0) && near("y", 120.0) && near("w", 200.0) && near("h", 100.0), "{g}");
+}
+
+#[test]
+fn an_adopted_decks_slide_size_comes_back_exactly() {
+    // A Navarra data-model deck (Zenodo 11519029, from the real-file search) is 1280 pt wide
+    // (16256000 EMU). Adopt rounded its width to 0.01 px, and the export made it 16256032 EMU.
+    let mut p = from_pptx(&std::fs::read(example("../real/milleleaf-deck.impress.pptx")).unwrap()).unwrap();
+    p.slide_size.width = 1280.0;
+    p.slide_size.height = 720.0;
+    let (layer, _) = crate::adopt(&p, "real-deck", "milleleaf-deck", header()).expect("adopts");
+    let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
+    loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
+    let flat = ox_core::compose::flatten(&loaded);
+    let trees = Composer::new(&flat).compose_all().expect("composes");
+    let d = ox_core::render::find(&trees, "real-deck").expect("deck").clone();
+    // Pictures as stand-ins: this is about the slide size.
+    let (out, _) = crate::export::export_with(&d, ox_core::PictureSource::StandIn(None)).expect("exports");
+    let back = from_pptx(&to_pptx(&out).expect("writes")).expect("reads");
+    let emu = |pt: f64| (pt * 12700.0).round() as i64;
+    assert_eq!((emu(back.slide_size.width), emu(back.slide_size.height)), (16256000, 9144000));
 }

@@ -68,9 +68,13 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
         let comments: Vec<Vec<u8>> =
             matching(|n| n == "word/comments.xml").iter().map(|n| part(n)).collect::<Result<_, _>>()?;
         let styles = if has("word/styles.xml") { Some(part("word/styles.xml")?) } else { None };
+        let theme = match matching(|n| numbered(n, "word/theme/theme")).first() {
+            Some(n) => Some(part(n)?),
+            None => None,
+        };
         let mut c = docx(&body, &hf, &notes, &comments, &names);
         if let Some(st) = styles {
-            default_style(&st, &mut c);
+            default_style(&st, theme.as_deref(), &mut c);
         }
         Ok(("docx", c))
     } else if has("xl/workbook.xml") {
@@ -84,7 +88,20 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
             .iter()
             .map(|n| part(n))
             .collect::<Result<_, _>>()?;
-        Ok(("xlsx", xlsx(&sheets, &styles, &wb, &comments, &names)))
+        // Charts GridCraft has no kind for (surface charts): it reads them as nothing.
+        let mut surface = 0u64;
+        for n in matching(|n| numbered(n, "xl/charts/chart")) {
+            let mut found = false;
+            walk(&part(&n)?, |ev| {
+                if let Ev::Open(_, b"surfaceChart" | b"surface3DChart", _) = ev {
+                    found = true;
+                }
+            });
+            surface += u64::from(found);
+        }
+        let mut c = xlsx(&sheets, &styles, &wb, &comments, &names);
+        c.insert("surface charts", surface);
+        Ok(("xlsx", c))
     } else if has("ppt/presentation.xml") {
         let slides: Vec<Vec<u8>> = matching(|n| numbered_req(n, "ppt/slides/slide"))
             .iter()
@@ -235,7 +252,32 @@ fn fnv(s: &str) -> u64 {
 
 /// The default paragraph style's font, size and justification (font and size falling back to
 /// the document defaults), and how many styles the document defines.
-fn default_style(st: &[u8], c: &mut Counts) {
+fn default_style(st: &[u8], theme: Option<&[u8]>, c: &mut Counts) {
+    // A font given as the theme's (asciiTheme="minorHAnsi") is the theme's Latin typeface: what a
+    // reader sees, and what an editor writing the name out writes.
+    let (mut minor, mut major, mut in_minor, mut in_major) = (None, None, false, false);
+    walk(theme.unwrap_or_default(), |ev| match ev {
+        Ev::Open(n, l, e) if n == A => match l {
+            b"minorFont" => in_minor = true,
+            b"majorFont" => in_major = true,
+            b"latin" if in_minor && minor.is_none() => minor = attr(e, b"typeface"),
+            b"latin" if in_major && major.is_none() => major = attr(e, b"typeface"),
+            _ => {}
+        },
+        Ev::Close(n, l) if n == A => match l {
+            b"minorFont" => in_minor = false,
+            b"majorFont" => in_major = false,
+            _ => {}
+        },
+        _ => {}
+    });
+    let font_of = |e: &BytesStart| {
+        attr(e, b"ascii").or_else(|| match attr(e, b"asciiTheme")?.as_str() {
+            t if t.starts_with("minor") => minor.clone(),
+            t if t.starts_with("major") => major.clone(),
+            _ => None,
+        })
+    };
     // Where we are: in docDefaults' run properties, or in the default paragraph style's rPr / pPr.
     let (mut in_dd, mut in_normal, mut in_rpr, mut in_ppr) = (false, false, false, false);
     let (mut n_font, mut n_size, mut n_jc, mut d_font, mut d_size) = (None, None, None, None, None);
@@ -250,8 +292,8 @@ fn default_style(st: &[u8], c: &mut Counts) {
             }
             b"rPr" => in_rpr = true,
             b"pPr" => in_ppr = true,
-            b"rFonts" if in_rpr && in_normal => n_font = attr(e, b"ascii"),
-            b"rFonts" if in_dd => d_font = attr(e, b"ascii"),
+            b"rFonts" if in_rpr && in_normal => n_font = font_of(e),
+            b"rFonts" if in_dd => d_font = font_of(e),
             b"sz" if in_rpr && in_normal => n_size = attr(e, b"val"),
             b"sz" if in_dd => d_size = attr(e, b"val"),
             b"jc" if in_ppr && in_normal => n_jc = attr(e, b"val"),
@@ -279,12 +321,12 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     // used, and bold text (w:t inside a run whose w:rPr has w:b that isn't off).
     let count = [
         "tbl", "tr", "tc", "gridSpan", "vMerge", "drawing", "pgSz", "pgMar", "numPr", "sectPr", "hyperlink",
-        "fldSimple", "instrText", "txbxContent",
+        "fldSimple", "txbxContent",
     ];
     let mut tags: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut paras: Vec<bool> = Vec::new();
     let mut nonempty = 0u64;
-    let mut styles = std::collections::BTreeSet::new();
+    let (mut styles, mut char_styles) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
     // Bold counts only a w:b in the run's own w:rPr (not in w:rPrChange, a tracked change).
     let (mut in_t, mut run_bold, mut depth) = (0usize, false, 0usize);
     let mut runs: Vec<usize> = Vec::new();
@@ -321,9 +363,21 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             }
             if l == b"tbl" {
                 tables += 1;
+                if tables > 1 {
+                    *tags.entry("nested tables").or_default() += 1;
+                }
+            }
+            if tables > 1 && l == b"tr" {
+                *tags.entry("rows in nested tables").or_default() += 1;
+            }
+            if tables > 1 && l == b"tc" {
+                *tags.entry("cells in nested tables").or_default() += 1;
             }
             if l == b"tc" {
                 tc_at.push(depth);
+            }
+            if l == b"hyperlink" && !tc_at.is_empty() {
+                *tags.entry("hyperlinks in table cells").or_default() += 1;
             }
             if l == b"shd"
                 && tc_at.last().map(|d| d + 2) == Some(depth)
@@ -331,17 +385,23 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             {
                 shaded += 1;
             }
-            if l == b"tblGrid" {
+            // A nested table's column widths go with it (counted as a nested table).
+            if l == b"tblGrid" && tables == 1 {
                 if grid_seen {
                     grids.push('|');
                 }
                 grid_seen = true;
             }
-            if l == b"gridCol" {
+            if l == b"gridCol" && tables == 1 {
                 if !grids.is_empty() && !grids.ends_with('|') {
                     grids.push(',');
                 }
                 grids.push_str(&attr(e, b"w").unwrap_or_default());
+            }
+            // A complex field is one fldChar begin, however many instrText pieces Word split
+            // its instruction into.
+            if l == b"fldChar" && attr(e, b"fldCharType").as_deref() == Some("begin") {
+                *tags.entry("fldChar begin").or_default() += 1;
             }
             match l {
                 b"pgSz" => page = [num(e, b"w"), num(e, b"h")],
@@ -363,11 +423,18 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
                     run_bold = false;
                 }
                 "b" if runs.last().map(|d| d + 2) == Some(depth) => run_bold = !matches!(attr(e, b"val").as_deref(), Some("0" | "false" | "off")),
-                "pStyle" | "rStyle" | "tblStyle" => {
+                "pStyle" | "tblStyle" => {
                     if let Some(v) = attr(e, b"val") {
                         styles.insert(v);
                     }
                 }
+                "rStyle" => {
+                    if let Some(v) = attr(e, b"val") {
+                        char_styles.insert(v);
+                    }
+                }
+                // Tracked insertions and deletions (moves too): the marks, not their text.
+                "ins" | "del" | "moveFrom" | "moveTo" => *tags.entry("tracked changes").or_default() += 1,
                 _ => {}
             }
         }
@@ -471,9 +538,15 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     c.insert("comments", comments.iter().map(|x| count_tag(x, W, b"comment")).sum());
     c.insert("list paragraphs (numPr)", g("numPr"));
     c.insert("styles used", styles.len() as u64);
+    c.insert("character styles used", char_styles.len() as u64);
+    c.insert("tracked changes (insertions and deletions)", g("tracked changes"));
     c.insert("sections", g("sectPr"));
+    c.insert("nested tables", g("nested tables"));
+    c.insert("rows in nested tables", g("rows in nested tables"));
+    c.insert("cells in nested tables", g("cells in nested tables"));
     c.insert("hyperlinks", g("hyperlink"));
-    c.insert("fields", g("fldSimple") + g("instrText"));
+    c.insert("hyperlinks in table cells", g("hyperlinks in table cells"));
+    c.insert("fields", g("fldSimple") + g("fldChar begin"));
     c.insert("text boxes", g("txbxContent"));
     c.insert("bold text chars", norm_len(&bold_text));
     c.insert("body text chars", norm_len(&text));
@@ -487,11 +560,16 @@ fn xf_looks(styles: &[u8]) -> Vec<[bool; 4]> {
     // Which list we're in and the depth of its items.
     let (mut list, mut depth): (&[u8], usize) = (b"", 0);
     let mut list_depth = 0usize;
+    // Custom formats that are General by another id (LibreOffice writes General as format 164).
+    let mut general: Vec<usize> = Vec::new();
     walk(styles, |ev| match ev {
         Ev::Open(n, l, e) => {
             depth += 1;
             if n != S {
                 return;
+            }
+            if l == b"numFmt" && attr(e, b"formatCode").is_some_and(|c| c.eq_ignore_ascii_case("general")) {
+                general.extend(attr(e, b"numFmtId").and_then(|v| v.parse::<usize>().ok()));
             }
             match l {
                 b"fonts" | b"fills" | b"borders" | b"cellXfs" if list.is_empty() => {
@@ -510,7 +588,8 @@ fn xf_looks(styles: &[u8]) -> Vec<[bool; 4]> {
                     b"borders" => border.push(false),
                     _ => {
                         let id = |k: &[u8]| attr(e, k).and_then(|v| v.parse().ok()).unwrap_or(0usize);
-                        xfs.push((id(b"fontId"), id(b"fillId"), id(b"borderId"), id(b"numFmtId") != 0));
+                        let nf = id(b"numFmtId");
+                        xfs.push((id(b"fontId"), id(b"fillId"), id(b"borderId"), nf != 0 && !general.contains(&nf)));
                     }
                 },
                 b"b" if list == b"fonts" && depth == list_depth + 2 => {
@@ -578,6 +657,8 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
                         has_value |= in_c;
                         return;
                     }
+                    // A what-if data table's anchor (`t="dataTable"`) holds no formula text.
+                    b"f" if attr(e, b"t").as_deref() == Some("dataTable") => "what-if data tables",
                     b"f" => "formulas",
                     b"mergeCell" => "merged ranges",
                     b"col" => "column width settings",
@@ -586,7 +667,10 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
                     b"conditionalFormatting" => "conditional formats",
                     b"dataValidation" => "data validations",
                     b"hyperlink" => "hyperlinks",
-                    b"sheetProtection" => "protected sheets",
+                    // Protection is on only with sheet="1"; without it the element only holds
+                    // the settings protection would use (Excel writes those too).
+                    b"autoFilter" => "autofilters",
+                    b"sheetProtection" if matches!(attr(e, b"sheet").as_deref(), Some("1" | "true")) => "protected sheets",
                     b"sheetView" if matches!(attr(e, b"showGridLines").as_deref(), Some("0" | "false")) => "sheets with gridlines off",
                     _ => return,
                 };
@@ -640,7 +724,9 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     // Names that point into another workbook (`[1]Sheet!A1`), through an external link.
     let (mut external_names, mut in_name) = (0u64, false);
     walk(wb, |ev| match ev {
-        Ev::Open(S, b"definedName", e) if !attr(e, b"name").unwrap_or_default().starts_with("ox_") => {
+        // Not Milleleaf's (`ox_…`), nor Excel's own record of a sheet's filter (`_xlnm._FilterDatabase`,
+        // which Excel writes for every autoFilter and rebuilds from it; counted as "autofilters").
+        Ev::Open(S, b"definedName", e) if !attr(e, b"name").is_some_and(|n| n.starts_with("ox_") || n == "_xlnm._FilterDatabase") => {
             own_names += 1;
             in_name = true;
         }
@@ -657,7 +743,7 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
         "cells in bold", "cells with a fill", "cells with borders", "cells with a number format",
         "cells with a value", "formulas", "merged ranges", "custom number formats", "cell styles (xf)", "fonts",
         "fills", "borders", "column width settings", "custom row heights", "frozen panes", "conditional formats",
-        "data validations", "hyperlinks",
+        "data validations", "hyperlinks", "what-if data tables", "autofilters",
     ] {
         c.insert(k, g(k));
     }
@@ -843,15 +929,24 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
             _ => {}
         });
     }
-    let mut slide_numbers = 0u64;
+    // A notes page counts when it holds text besides its slide number: a page with nothing typed
+    // on it (PowerPoint adds one with only the number) holds no notes.
+    let (mut slide_numbers, mut with_text) = (0u64, 0u64);
     for x in notes {
-        walk(x, |ev| {
-            if let Ev::Open(A, b"fld", e) = ev {
-                if attr(e, b"type").as_deref() == Some("slidenum") {
-                    slide_numbers += 1;
-                }
+        let (mut in_num, mut in_t, mut text) = (0usize, 0usize, false);
+        walk(x, |ev| match ev {
+            Ev::Open(A, b"fld", e) if attr(e, b"type").as_deref() == Some("slidenum") => {
+                slide_numbers += 1;
+                in_num += 1;
             }
+            Ev::Open(A, b"fld", _) if in_num > 0 => in_num += 1,
+            Ev::Close(A, b"fld") => in_num = in_num.saturating_sub(1),
+            Ev::Open(A, b"t", _) => in_t += 1,
+            Ev::Close(A, b"t") => in_t = in_t.saturating_sub(1),
+            Ev::Text(t) if in_t > 0 && in_num == 0 && !t.trim().is_empty() => text = true,
+            _ => {}
         });
+        with_text += u64::from(text);
     }
     let g = |k: &str| t.get(k).copied().unwrap_or(0);
     let media = |n: &str| n.starts_with("ppt/media/") && n.len() > 10;
@@ -863,7 +958,7 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
     c.insert("charts", count_parts(names, |n| numbered(n, "ppt/charts/chart")));
     c.insert("media files", count_parts(names, media));
     c.insert("_milleleaf shapes without text", g("_milleleaf shapes without text"));
-    c.insert("notes slides", count_parts(names, |n| numbered_req(n, "ppt/notesSlides/notesSlide")));
+    c.insert("notes slides", with_text);
     c.insert("notes slide-number fields", slide_numbers);
     c.insert("layouts", count_parts(names, |n| numbered_req(n, "ppt/slideLayouts/slideLayout")));
     c.insert("masters", count_parts(names, |n| numbered_req(n, "ppt/slideMasters/slideMaster")));
@@ -892,11 +987,14 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("tables", None),
             ("table rows", None),
             ("table cells", None),
+            ("nested tables", Some("their text is kept, as paragraphs of the cell they sit in; their rows, columns and formatting aren't")),
             ("page setups (size and margins)", None),
             ("sections", None),
             ("body text chars", None),
             // The export applies its own named styles; direct formatting is kept on runs.
             ("styles used", None),
+            ("character styles used", Some("their formatting is kept on each run; the style names aren't")),
+            ("tracked changes (insertions and deletions)", Some("they come in accepted: inserted text is kept, deleted text dropped; the marks (who, when) aren't kept")),
             ("bold text chars", None),
             ("list paragraphs (numPr)", None),
             ("page width (value, twips)", None),
@@ -918,16 +1016,18 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("header/footer text chars", None),
             ("footnote separator lines", None),
             ("media files", Some("pictures in the text, headers and footers are kept; embedded objects and other media aren't")),
-            ("hyperlinks", Some("web and mail links on text are kept; a link to a bookmark keeps its target, but bookmarks aren't carried")),
+            ("hyperlinks", Some("web and mail links on text are kept (not in table cells, counted on their own); a link to a bookmark keeps its target, but bookmarks aren't carried")),
         ],
         "xlsx" => &[
             ("sheets", None),
             ("cells with a value", None),
             ("formulas", None),
+            ("what-if data tables", Some("their cells' values are kept; the TABLE() that recalculates them isn't (GridCraft has no data tables)")),
             ("column width settings", Some("widths are kept; entries that only give columns a style are not (styles aren't carried yet)")),
             ("custom row heights", None),
             ("merged ranges", None),
             ("frozen panes", None),
+            ("autofilters", None),
             ("comments", None),
             ("data validations", None),
             ("defined names (not Milleleaf's)", None),

@@ -715,9 +715,12 @@ pub fn adopt(
     title: &str,
     header: Header,
 ) -> Result<(Layer, ImportReport), DeckError> {
+    // The slide size unrounded: px() rounds to 0.01 px, which moves a 1280 pt wide slide by
+    // 32 EMU (16256000 → 16256032), a different slide size to every reader.
+    let exact = |pt: f64| pt * crate::PX_PER_PT;
     let attr = json!({
-        "width": px(edited.slide_size.width),
-        "height": px(edited.slide_size.height),
+        "width": exact(edited.slide_size.width),
+        "height": exact(edited.slide_size.height),
         "unit": "px",
         "title": title,
     });
@@ -745,6 +748,67 @@ pub fn adopt(
     Ok((layer, report))
 }
 
+/// A child's box on the slide, given its group's box and child space (DeckCraft's ungroup).
+fn child_to_parent(group: &deckcraft_geom::Xfrm, ch: &deckcraft_geom::Xfrm, c: &deckcraft_geom::Xfrm) -> deckcraft_geom::Xfrm {
+    use deckcraft_geom::{Point, Rect};
+    let sx = if ch.w.abs() > 1e-9 { group.w / ch.w } else { 1.0 };
+    let sy = if ch.h.abs() > 1e-9 { group.h / ch.h } else { 1.0 };
+    let a = deckcraft_geom::group_child_affine(group, Rect::new(ch.x, ch.y, ch.x + ch.w, ch.y + ch.h));
+    let center = a * Point::new(c.x + c.w / 2.0, c.y + c.h / 2.0);
+    let (w, h) = (c.w * sx.abs(), c.h * sy.abs());
+    let mut rot = c.rot + group.rot;
+    let (mut fh, mut fv) = (c.flip_h, c.flip_v);
+    if group.flip_h {
+        fh = !fh;
+        rot = -c.rot + group.rot;
+    }
+    if group.flip_v {
+        fv = !fv;
+        rot = -rot + 2.0 * group.rot;
+    }
+    deckcraft_geom::Xfrm { x: center.x - w / 2.0, y: center.y - h / 2.0, w, h, rot: ((rot % 360.0) + 360.0) % 360.0, flip_h: fh, flip_v: fv }
+}
+
+/// Shapes with every group taken apart, each child where its group put it on the slide.
+fn flatten_groups(shapes: Vec<Shape>, depth: usize) -> Vec<Shape> {
+    let mut out = Vec::with_capacity(shapes.len());
+    for sh in shapes {
+        match (&sh.kind, sh.xfrm) {
+            (ShapeKind::Group { children, child }, Some(gx)) if depth < 64 => {
+                let kids = children
+                    .iter()
+                    .cloned()
+                    .map(|mut c| {
+                        if let Some(cx) = c.xfrm {
+                            c.xfrm = Some(child_to_parent(&gx, child, &cx));
+                        }
+                        c
+                    })
+                    .collect();
+                out.extend(flatten_groups(kids, depth + 1));
+            }
+            _ => out.push(sh),
+        }
+    }
+    out
+}
+
+/// The model has no groups: a group's shapes come in on their own, where the group showed them
+/// (the grouping itself is a listed loss, "groups").
+fn ungrouped(p: &Presentation) -> std::borrow::Cow<'_, Presentation> {
+    if !p.slides.iter().any(|s| s.shapes.iter().any(Shape::is_group)) {
+        return std::borrow::Cow::Borrowed(p);
+    }
+    let mut out = p.clone();
+    for s in &mut out.slides {
+        if s.shapes.iter().any(Shape::is_group) {
+            let s = std::sync::Arc::make_mut(s);
+            s.shapes = flatten_groups(std::mem::take(&mut s.shapes), 0);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 fn import_into(
     deck: &Composed,
     edited: &Presentation,
@@ -752,6 +816,7 @@ fn import_into(
     adopting: bool,
     assets: Option<&std::path::Path>,
 ) -> Result<(Layer, ImportReport), DeckError> {
+    let edited = &*ungrouped(edited);
     let mut report = ImportReport::default();
     for b in ox_core::unreadable_pictures(deck, assets) {
         report.warnings.push(format!("picture `{b}` can't be read, so it isn't compared: the stack's picture stays"));

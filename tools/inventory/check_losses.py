@@ -28,8 +28,16 @@ covered_by = {
     "slide text chars": ("table text chars", 1),
     "header/footer text chars": ("headers and footers (parts)", 10**9),
     "shapes (sp)": ("shapes without text", 1),
-    "notes text chars": ("notes slide-number fields", 4),
+    # A shape without text that had a fill or an outline takes it with it.
+    "shapes with a fill": ("shapes without text", 1),
+    "shapes with an outline": ("shapes without text", 1),
+    # A slide-number field's text: its digits, or LibreOffice's "<number>".
+    "notes text chars": ("notes slide-number fields", 8),
     "defined names (not Milleleaf's)": ("defined names into other workbooks", 1),
+    # A nested table's text stays in its cell; the table, its rows and cells go.
+    "tables": ("nested tables", 1),
+    "table rows": ("rows in nested tables", 1),
+    "table cells": ("cells in nested tables", 1),
 }
 text_loss_listed = any(k.endswith("text chars") or k in ("headers and footers (parts)", "tables") for k in listed)
 

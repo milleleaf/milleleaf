@@ -347,13 +347,14 @@ fn comments_merges_panes_and_names_added_in_excel_come_back() {
     assert!(a2.font.bold && a2.fill.pattern != gridcraft_model::PatternType::None, "the bold, filled cell exports as it was");
 }
 
-/// The real finance workbook, adopted the way `ox adopt` does it (`examples/real/finance.xlsx`).
-fn finance_node() -> Composed {
+/// The real life-cycle model (examples/real/lca-model.xlsx: a sodium-ion battery LCA, 9 sheets,
+/// 15,897 formulas, 58 charts), adopted the way `ox adopt` does it.
+fn lca_node() -> Composed {
     let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
     // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
-    let root = "382bc55d-0f5e-5e81-a9ba-10f117e753d2";
-    let wb = from_xlsx(&std::fs::read(real.join("finance.xlsx")).unwrap()).unwrap();
-    let (layer, _) = crate::adopt(&wb, root, "finance", header()).expect("adopts");
+    let root = "53b3afd9-1cce-56e1-a8f1-96cd7e5984e9";
+    let wb = from_xlsx(&std::fs::read(real.join("lca-model.xlsx")).unwrap()).unwrap();
+    let (layer, _) = crate::adopt(&wb, root, "lca-model", header()).expect("adopts");
     let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
     loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
     let flat = ox_core::compose::flatten(&loaded);
@@ -366,35 +367,53 @@ fn real_fixture(name: &str) -> Workbook {
     from_xlsx(&std::fs::read(p).expect("fixture")).expect("reads")
 }
 
+/// A fixture only Microsoft Office can make (the Office packet): `None`, said out loud, until it's there.
+fn office_fixture(name: &str) -> Option<Workbook> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    if !p.exists() {
+        eprintln!("PENDING: examples/real/fixtures/{name} (a Microsoft Office re-save) isn't there yet; that part isn't checked");
+        return None;
+    }
+    Some(from_xlsx(&std::fs::read(p).expect("fixture")).expect("reads"))
+}
+
 #[test]
-#[ignore = "about 2.5 min in a debug build (GridCraft recalculates 26k formulas); run.sh step 18 runs it"]
+#[ignore = "minutes in a debug build (GridCraft recalculates 16k formulas); step 18 of the hello-table script runs it"]
 fn real_workbook_resaves_are_no_change_and_page_setup_edits_come_back() {
-    let node = finance_node();
-    // The two floating pictures on its first sheet come in by hash.
+    let node = lca_node();
+    // The legend picture on the Graphs sheet comes in by hash.
     let pics: Vec<&serde_json::Value> = node.children.iter().filter_map(|c| c.attributes.get("grid::sheet")?.get("pictures")).flat_map(|p| p.as_array().into_iter().flatten()).collect();
-    assert_eq!(pics.len(), 2, "{pics:?}");
+    assert_eq!(pics.len(), 1, "{pics:?}");
     assert!(pics.iter().all(|p| p["blob"].as_str().unwrap().starts_with("sha256-")));
-    // Its nine line and pie charts come in, pointing at their cells.
+    // Its 50 bar, line, scatter and combo charts come in, pointing at their cells (its 8 surface
+    // charts are a listed loss: GridCraft has no surface charts).
     let charts: Vec<&serde_json::Value> = node.children.iter().filter_map(|c| c.attributes.get("grid::sheet")?.get("charts")).flat_map(|p| p.as_array().into_iter().flatten()).collect();
-    assert_eq!(charts.len(), 9);
-    assert_eq!(node.attributes["grid::workbook"]["theme"]["name"], json!("Office 2013 - 2022 Theme"), "its own theme, not GridCraft's");
-    // LibreOffice 24.2: recalculated digits, its own row heights, borders, styles, comment authors,
-    // header/footer codes… all its rewrites. It drops the structure lock: kept, with a warning.
-    let mut lo = real_fixture("finance.libreoffice-resaved.xlsx");
+    assert_eq!(charts.len(), 50);
+    assert_eq!(node.attributes["grid::workbook"]["theme"]["name"], json!("Office Theme"), "its own theme, not GridCraft's");
+    // LibreOffice 24.2: recalculated digits, its own styles (formula cells given their inputs'
+    // number format, rotated text's General alignment written as Left), chart colours with their
+    // shades, titles and categories written out: all its rewrites. Three charts it saves without
+    // their data: kept, with a warning.
+    let mut lo = real_fixture("lca-model.libreoffice-resaved.xlsx");
     let (layer, report) =
         crate::import_saved_by(&node, &mut lo, header(), Some("LibreOffice/24.2.7.2$Linux_X86_64"), None).expect("imports");
     assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
-    assert!(report.warnings.iter().any(|w| w.contains("structure lock")), "{:?}", report.warnings);
+    assert_eq!(report.warnings.iter().filter(|w| w.contains("without its data")).count(), 3, "{:?}", report.warnings);
 
-    // Excel 16 (Mac): sheet Output's left margin set to 1 in and its Standard Width to 12. Exactly
+    // Excel 16 (Mac): sheet Graphs' left margin set to 1 in and its Standard Width to 12. Exactly
     // that comes back; Excel's own rewrites (row heights, default width, trailing spaces) don't.
-    let mut xl = real_fixture("finance.msoffice-margins.xlsx");
-    let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel"), None).expect("imports");
-    assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
-    let gs = &layer.data[0].attributes["grid::sheet"];
-    assert_eq!(gs["name"], "Output");
-    assert_eq!(gs["print"]["margins"][0], json!(1.0));
-    assert_eq!(gs["defaults"]["colWidth"], json!(90.0), "12 characters");
+    if let Some(mut xl) = office_fixture("lca-model.msoffice-margins.xlsx") {
+        let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel"), None).expect("imports");
+        assert_eq!(report.changed.len(), 1, "{:?}", report.changed);
+        let gs = &layer.data[0].attributes["grid::sheet"];
+        assert_eq!(gs["name"], "Graphs");
+        assert_eq!(gs["print"]["margins"][0], json!(1.0));
+        assert_eq!(gs["defaults"]["colWidth"], json!(90.0), "12 characters");
+    }
+    if let Some(mut xl) = office_fixture("lca-model.msoffice-resaved.xlsx") {
+        let (layer, report) = crate::import_saved_by(&node, &mut xl, header(), Some("Microsoft Macintosh Excel"), None).expect("imports");
+        assert!(layer.data.is_empty() && report.changed.is_empty(), "{:?}", report.changed);
+    }
 }
 
 #[test]
@@ -591,4 +610,27 @@ fn an_unchanged_chart_exports_its_own_xml_and_a_changed_one_gridcrafts() {
     assert!(!xml.contains(MARK) && xml.contains("lineChart"));
     assert!(warnings.iter().any(|w| w.contains("chart 1 was changed")), "{warnings:?}");
     std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn a_sheets_filter_comes_back() {
+    // An Imperial College bibliography workbook (Zenodo 3754178, from the real-file search) has
+    // autoFilters on three sheets. They were dropped without a word (the inventory saw only the
+    // hidden _xlnm._FilterDatabase names Excel keeps for them going).
+    use gridcraft_core::RangeRef;
+    use gridcraft_model::AutoFilter;
+    let mut wb = Workbook::new();
+    let sh = wb.sheet_mut(0).unwrap();
+    sh.name = "Raw Data".into();
+    for (r, v) in ["Title", "a", "b"].iter().enumerate() {
+        sh.set_value(CellRef::new(r as u32, 0), GValue::text(*v));
+    }
+    sh.autofilter = Some(AutoFilter { range: RangeRef::parse("A1:A3").unwrap(), criteria: vec![] });
+    let look = crate::look::sheet_look(&wb.sheets[0], &mut crate::Pictures::new());
+    assert!(look.contains_key("autoFilter"), "{look:?}");
+    let mut out = Workbook::new();
+    out.sheet_mut(0).unwrap().name = "Raw Data".into();
+    crate::look::apply_look(out.sheet_mut(0).unwrap(), &look, "Raw Data", &mut vec![], ox_core::PictureSource::StandIn(None)).unwrap();
+    let back = from_xlsx(&to_xlsx(&out).unwrap()).unwrap();
+    assert_eq!(back.sheets[0].autofilter.as_ref().map(|f| f.range.to_string()), Some("A1:A3".to_string()));
 }

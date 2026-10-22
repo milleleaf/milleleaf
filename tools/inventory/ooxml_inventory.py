@@ -69,7 +69,20 @@ def default_style(z):
             if e is not None and e.get(W + attr) is not None:
                 return e.get(W + attr)
         return None
-    font = pick("rPr/rFonts", "ascii")
+    # A theme font (asciiTheme="minorHAnsi") is the theme's Latin typeface: what a reader sees.
+    tp = parts(z, r"word/theme/theme\d*\.xml")
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    def theme_font(t):
+        if not tp or not t or not t.startswith(("minor", "major")):
+            return None
+        f = xml(z, tp[0]).find(f".//{A}{t[:5]}Font/{A}latin")
+        return f.get("typeface") if f is not None else None
+    font = None
+    for root in (normal, dd):
+        e = None if root is None else (root.find(f"{W}rPr/{W}rFonts") if root is normal else root.find(W + "rFonts"))
+        if e is not None and (e.get(W + "ascii") or e.get(W + "asciiTheme")):
+            font = e.get(W + "ascii") or theme_font(e.get(W + "asciiTheme"))
+            break
     size = pick("rPr/sz", "val")
     jc = pick("pPr/jc", "val")
     return {
@@ -83,7 +96,8 @@ def docx(z):
     body = [xml(z, "word/document.xml")]
     hf = [xml(z, n) for n in parts(z, r"word/(header|footer)\d*\.xml")]
     notes = [xml(z, n) for n in parts(z, r"word/(footnotes|endnotes)\.xml")]
-    styles_used = {e.get(W + "val") for r in body for tag in ("pStyle", "rStyle", "tblStyle") for e in r.iter(W + tag)}
+    styles_used = {e.get(W + "val") for r in body for tag in ("pStyle", "tblStyle") for e in r.iter(W + tag)}
+    char_styles_used = {e.get(W + "val") for r in body for e in r.iter(W + "rStyle")}
     paras = [p for r in body for p in r.iter(W + "p")]
     in_tables = {id(p) for r in body for t in r.iter(W + "tbl") for p in t.iter(W + "p")}
     ppr = [p.find(W + "pPr") for p in paras if id(p) not in in_tables]
@@ -94,9 +108,12 @@ def docx(z):
     pg = ([None] + [e for r in body for e in r.iter(W + "pgSz")])[-1]
     pm = ([None] + [e for r in body for e in r.iter(W + "pgMar")])[-1]
     val = lambda e, k: int(float(e.get(W + k, 0))) if e is not None else 0
+    # Tables inside a table cell (counted on their own; their column widths aren't in the hash).
+    nested = {id(t2) for r in body for t in r.iter(W + "tbl") for tc in t.iter(W + "tc") for t2 in tc.iter(W + "tbl")}
+    nested_tbls = [t for r in body for t in r.iter(W + "tbl") if id(t) in nested]
     return {
         **default_style(z),
-        "table column widths (value, hash)": fnv("|".join(",".join(g.get(W + "w", "") for g in t.iter(W + "gridCol")) for r in body for t in r.iter(W + "tblGrid"))),
+        "table column widths (value, hash)": fnv("|".join(",".join(g.get(W + "w", "") for g in t.findall(f"{W}tblGrid/{W}gridCol")) for r in body for t in r.iter(W + "tbl") if id(t) not in nested)),
         "table cells with shading": sum(1 for r in body for tc in r.iter(W + "tc") for sh in tc.findall(f"{W}tcPr/{W}shd") if sh.get(W + "fill") not in (None, "auto", "FFFFFF", "ffffff")),
         "style definitions": count([xml(z, "word/styles.xml")], W + "style") if "word/styles.xml" in z.namelist() else 0,
         "page width (value, twips)": val(pg, "w"),
@@ -108,6 +125,9 @@ def docx(z):
         "table cell paragraphs with alignment, spacing or indents": sum(1 for x in cell_ppr if formatted(x)),
         "paragraphs (non-empty)": sum(1 for p in paras if "".join(t.text or "" for t in p.iter(W + "t")).strip()),
         "tables": count(body, W + "tbl"),
+        "nested tables": len(nested_tbls),
+        "rows in nested tables": sum(len(t.findall(W + "tr")) for t in nested_tbls),
+        "cells in nested tables": sum(len(tr.findall(W + "tc")) for t in nested_tbls for tr in t.findall(W + "tr")),
         "table rows": count(body, W + "tr"),
         "table cells": count(body, W + "tc"),
         "merged cells (gridSpan/vMerge)": count(body, W + "gridSpan") + count(body, W + "vMerge"),
@@ -123,9 +143,14 @@ def docx(z):
         "comments": count([xml(z, n) for n in parts(z, r"word/comments\.xml")], W + "comment"),
         "list paragraphs (numPr)": count(body, W + "numPr"),
         "styles used": len(styles_used - {None}),
+        "character styles used": len(char_styles_used - {None}),
+        # Tracked insertions and deletions (moves too): the marks, not their text.
+        "tracked changes (insertions and deletions)": sum(count(body, W + t) for t in ("ins", "del", "moveFrom", "moveTo")),
         "sections": count(body, W + "sectPr"),
         "hyperlinks": count(body, W + "hyperlink"),
-        "fields": count(body, W + "fldSimple") + count(body, W + "instrText"),
+        "hyperlinks in table cells": len({id(h) for r in body for tc in r.iter(W + "tc") for h in tc.iter(W + "hyperlink")}),
+        # A complex field is one fldChar begin, however many instrText pieces its instruction is split into.
+        "fields": count(body, W + "fldSimple") + sum(1 for r in body for e in r.iter(W + "fldChar") if e.get(W + "fldCharType") == "begin"),
         "text boxes": count(body, W + "txbxContent"),
         # Bold text, not bold elements: <w:b> also sits on paragraph marks and as w:val="0", and
         # a re-export may merge adjacent runs, so counting elements isn't a measure of loss.
@@ -166,7 +191,9 @@ def cell_looks(styles, sheets):
         return f.find(S + "gradientFill") is not None or (p is not None and p.get("patternType") not in (None, "none", "gray125"))
     fill = [filled(f) for f in items["fills"]]
     border = [any(e.get("style") not in (None, "none") for e in b) for b in items["borders"]]
-    xfs = [(int(x.get("fontId", 0)), int(x.get("fillId", 0)), int(x.get("borderId", 0)), int(x.get("numFmtId", 0))) for x in items["cellXfs"]]
+    # Custom formats that are General by another id (LibreOffice writes General as format 164).
+    general = {int(f.get("numFmtId")) for f in st.iter(S + "numFmt") if (f.get("formatCode") or "").lower() == "general"}
+    xfs = [(int(x.get("fontId", 0)), int(x.get("fillId", 0)), int(x.get("borderId", 0)), 0 if int(x.get("numFmtId", 0)) in general else int(x.get("numFmtId", 0))) for x in items["cellXfs"]]
     n = {"cells in bold": 0, "cells with a fill": 0, "cells with borders": 0, "cells with a number format": 0}
     at = lambda lst, i: lst[i] if 0 <= i < len(lst) else False
     for sh in sheets:
@@ -191,7 +218,9 @@ def xlsx(z):
     return {
         "sheets": len(sheets),
         "cells with a value": sum(1 for c in cells if c.find(S + "v") is not None or c.find(S + "is") is not None),
-        "formulas": count(sheets, S + "f"),
+        "formulas": sum(1 for r in sheets for f in r.iter(S + "f") if f.get("t") != "dataTable"),
+        # A what-if data table's anchor (t="dataTable") holds no formula text.
+        "what-if data tables": sum(1 for r in sheets for f in r.iter(S + "f") if f.get("t") == "dataTable"),
         "merged ranges": count(sheets, S + "mergeCell"),
         "custom number formats": count(styles, S + "numFmt"),
         **cell_looks(styles, sheets),
@@ -202,18 +231,23 @@ def xlsx(z):
         "column width settings": count(sheets, S + "col"),
         "custom row heights": sum(1 for s in sheets for r in s.iter(S + "row") if r.get("customHeight") in ("1", "true")),
         "frozen panes": count(sheets, S + "pane"),
+        "autofilters": count(sheets, S + "autoFilter"),
         # Excel 2010 keeps some (cross-sheet lists, newer rule types) in an x14 extension.
         "conditional formats": count(sheets, S + "conditionalFormatting") + count(sheets, X14 + "conditionalFormatting"),
         "data validations": count(sheets, S + "dataValidation") + count(sheets, X14 + "dataValidation"),
         "hyperlinks": count(sheets, S + "hyperlink"),
         # Milleleaf's own identity names (ox_…) would hide the loss of the file's own names.
         "hidden sheets": sum(1 for w in wbx for e in w.iter(S + "sheet") if e.get("state") in ("hidden", "veryHidden")),
-        "protected sheets": count(sheets, S + "sheetProtection"),
+        # Protection is on only with sheet="1"; without it the element only holds the settings.
+        "protected sheets": sum(1 for r in sheets for e in r.iter(S + "sheetProtection") if e.get("sheet") in ("1", "true")),
         "workbook structure locked": sum(1 for w in wbx for e in w.iter(S + "workbookProtection") if e.get("lockStructure") in ("1", "true")),
         "sheets with gridlines off": sum(1 for sh in sheets for v in sh.iter(S + "sheetView") if v.get("showGridLines") in ("0", "false")),
-        "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_")),
+        # Nor Excel's own record of a sheet's filter (written for every autoFilter, rebuilt from it).
+        "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_") and d.get("name") != "_xlnm._FilterDatabase"),
         "defined names into other workbooks": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("ox_") and re.search(r"\[\d+\]", d.text or "")),
         "charts": len(parts(z, r"xl/charts/chart\d*\.xml")),
+        # Charts GridCraft has no kind for: it reads them as nothing.
+        "surface charts": sum(1 for n in parts(z, r"xl/charts/chart\d*\.xml") if any(e.tag.split("}")[-1] in ("surfaceChart", "surface3DChart") for e in xml(z, n).iter())),
         "drawings": len(parts(z, r"xl/drawings/drawing\d*\.xml")),
         "media files": len(parts(z, r"xl/media/.+")),
         "external links": len(parts(z, r"xl/externalLinks/externalLink\d*\.xml")),
@@ -272,7 +306,9 @@ def pptx(z):
         "table cells": count(slides, A + "tc"),
         "charts": len(parts(z, r"ppt/charts/chart\d*\.xml")),
         "media files": len(parts(z, r"ppt/media/.+")),
-        "notes slides": len(notes),
+        # A notes page counts when it holds text besides its slide number (PowerPoint adds pages
+        # holding only the number).
+        "notes slides": sum(1 for r in notes if any((t.text or "").strip() for t in r.iter(A + "t") if not any(t in f.iter() for f in r.iter(A + "fld") if f.get("type") == "slidenum"))),
         "notes text chars": len(text_of(notes, A + "t")),
         "notes slide-number fields": sum(1 for r in notes for f in r.iter(A + "fld") if f.get("type") == "slidenum"),
         "layouts": len(parts(z, r"ppt/slideLayouts/slideLayout\d+\.xml")),

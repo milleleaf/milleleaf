@@ -326,14 +326,16 @@ done
 rm -rf "$TMP"
 
 echo; echo "== 18. Editor re-saves of the real files import as no change; real edits come back"
-#    fixtures in examples/real/fixtures: Word 16.114, Excel and PowerPoint 16 (Mac), LibreOffice 24.2
+#    fixtures in examples/real/fixtures: LibreOffice 24.2 re-saves (made on the box), and Word, Excel and
+#    PowerPoint 16 (Mac) re-saves and edits. A Microsoft Office fixture not made yet is said out loud
+#    (PENDING) and its part skipped; see examples/real/SOURCES.md
 OUT=$(mktemp)
-( cd ../.. && cargo test -q -p ox-wordcraft blank_line && cargo test -q -p ox-deckcraft real_deck \
-    && cargo test -q -p ox-gridcraft real_workbook -- --ignored ) > "$OUT" 2>&1 \
+( cd ../.. && cargo test -q -p ox-wordcraft blank_line -- --nocapture && cargo test -q -p ox-deckcraft real_deck -- --nocapture \
+    && cargo test -q -p ox-gridcraft real_workbook -- --ignored --nocapture ) > "$OUT" 2>&1 \
   || { cat "$OUT"; echo "real-file re-save test failed"; exit 1; }
 # each filter must have run a test (a filter that matches nothing passes with 0)
 [ "$(grep -cE 'test result: ok\. [1-9]' "$OUT")" -ge 3 ] || { cat "$OUT"; echo "a real-file test didn't run"; exit 1; }
-grep -E 'test result: ok\. [1-9]' "$OUT"; rm -f "$OUT"
+grep -E 'test result: ok\. [1-9]|^PENDING' "$OUT"; rm -f "$OUT"
 
 echo; echo "== 19. DocLang (M2.7): the composed project for AI tools, checked by the official validator"
 #    one-way: content in DocLang elements, the rest as <custom> JSON; .dclx packs the pictures
