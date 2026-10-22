@@ -352,9 +352,63 @@ fn table_style_look(t: &mut Table, wt: &Map<String, Value>, lists: &HashMap<Stri
                 } else {
                     p.props = props;
                 }
+                let links: Vec<&Value> = look.get("links").and_then(Value::as_array).into_iter().flatten()
+                    .filter(|l| l.get("para").and_then(Value::as_u64) == Some(i as u64))
+                    .collect();
+                if !links.is_empty() {
+                    let missed = link_cell_para(p, &links);
+                    if missed > 0 {
+                        bad("a table cell's links", &format!("{missed} no longer match the cell's text"));
+                    }
+                }
             }
         }
     }
+}
+
+/// Puts a cell paragraph's links back (`{start, end, text, link}`, characters; see the importer's
+/// `cell_links`): each on its text where it was, else on that text's first occurrence (the cell's
+/// data changed). How many of them found no text.
+fn link_cell_para(p: &mut Paragraph, links: &[&Value]) -> usize {
+    let chars: Vec<char> = p.plain_text().chars().collect();
+    let mut at: Vec<Option<&str>> = vec![None; chars.len()];
+    let mut missed = 0;
+    for l in links {
+        let (Some(text), Some(link)) = (l.get("text").and_then(Value::as_str), l.get("link").and_then(Value::as_str)) else {
+            missed += 1;
+            continue;
+        };
+        let want: Vec<char> = text.chars().collect();
+        let start = l.get("start").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let found = (chars.get(start..start + want.len()) == Some(&want[..]) && !want.is_empty()).then_some(start)
+            .or_else(|| (!want.is_empty()).then(|| chars.windows(want.len()).position(|w| w == &want[..])).flatten());
+        match found {
+            Some(s) => at[s..s + want.len()].iter_mut().for_each(|x| *x = Some(link)),
+            None => missed += 1,
+        }
+    }
+    if at.iter().all(Option::is_none) {
+        return missed;
+    }
+    // A cell paragraph has one formatting (its look's); rebuild it in stretches of one link.
+    let base = p.props_of_char(0).clone();
+    let mut q: Option<Paragraph> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let j = (i..chars.len()).find(|&j| at[j] != at[i]).unwrap_or(chars.len());
+        let seg: String = chars[i..j].iter().collect();
+        let piece = Paragraph::with_text(&seg, CharProps { link: at[i].map(String::from), ..base.clone() });
+        match q.as_mut() {
+            Some(q) => q.append(piece),
+            None => q = Some(piece),
+        }
+        i = j;
+    }
+    if let Some(mut q) = q {
+        q.props = p.props.clone();
+        *p = q;
+    }
+    missed
 }
 
 /// Applies `word::table.merges` (`{row, col, rows, cols}` on the grid) to a table with one cell

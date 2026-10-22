@@ -800,28 +800,51 @@ fn cell_paras(c: &wordcraft_doc::Cell) -> Vec<&Paragraph> {
     out
 }
 
-fn cell_text(c: &wordcraft_doc::Cell) -> String {
-    cell_paras(c)
-        .into_iter()
-        .map(|p| {
-            // What it shows (a field's result for its object), accepted: deleted text isn't
-            // the cell's.
-            let (mut out, mut k) = (String::new(), 0usize);
-            for (off, c) in p.text.char_indices() {
-                let obj = (c == OBJ).then(|| p.objects.get(k));
-                k += usize::from(c == OBJ);
-                if p.props_of_char(off).del.is_some() {
-                    continue;
-                }
-                match obj {
-                    Some(o) => out.push_str(o.map(|o| o.plain_text()).unwrap_or_default()),
-                    None => out.push(c),
-                }
+/// What a cell paragraph shows (a field's result for its object), accepted: deleted text isn't the
+/// cell's. With the links on it: `(start, end, address)` in characters, adjacent stretches with one
+/// address joined (editors split a link into pieces as they like).
+fn shown_para(p: &Paragraph) -> (String, Vec<(usize, usize, String)>) {
+    let (mut out, mut k, mut n) = (String::new(), 0usize, 0usize);
+    let mut links: Vec<(usize, usize, String)> = Vec::new();
+    for (off, c) in p.text.char_indices() {
+        let obj = (c == OBJ).then(|| p.objects.get(k));
+        k += usize::from(c == OBJ);
+        let cp = p.props_of_char(off);
+        if cp.del.is_some() {
+            continue;
+        }
+        let s = match obj {
+            Some(o) => o.map(|o| o.plain_text()).unwrap_or_default().to_string(),
+            None => c.to_string(),
+        };
+        let len = s.chars().count();
+        out.push_str(&s);
+        if let Some(l) = cp.link.as_ref().filter(|_| len > 0) {
+            match links.last_mut() {
+                Some(last) if last.1 == n && &last.2 == l => last.1 += len,
+                _ => links.push((n, n + len, l.clone())),
             }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+        }
+        n += len;
+    }
+    (out, links)
+}
+
+fn cell_text(c: &wordcraft_doc::Cell) -> String {
+    cell_paras(c).into_iter().map(|p| shown_para(p).0).collect::<Vec<_>>().join("\n")
+}
+
+/// A cell's links, by its paragraphs (see [`shown_para`]): `{para, start, end, text, link}`.
+pub(crate) fn cell_links(c: &wordcraft_doc::Cell) -> Vec<Value> {
+    let mut out = Vec::new();
+    for (i, p) in cell_paras(c).into_iter().enumerate() {
+        let (text, links) = shown_para(p);
+        for (s, e, l) in links {
+            let t: String = text.chars().skip(s).take(e - s).collect();
+            out.push(json!({ "para": i, "start": s, "end": e, "text": t, "link": l }));
+        }
+    }
+    out
 }
 
 /// The table's text on its grid: a cell spanning columns fills its first column and leaves the
@@ -856,8 +879,8 @@ fn table_look(t: &Table) -> Map<String, Value> {
 
 /// How a table is drawn: its column widths (`grid`, points), its own properties (`props`:
 /// borders, alignment, cell margins, shading… WordCraft's form) and each cell's (`cells`, by row
-/// and cell: the cell's properties, its first paragraph's formatting and character format, and
-/// its paragraphs' lists when any is in one). `list_of` names a numbering instance's list.
+/// and cell: the cell's properties, its first paragraph's formatting and character format, its
+/// paragraphs' lists when any is in one, and its links). `list_of` names a numbering instance's list.
 fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> String) -> Map<String, Value> {
     let strip = |v: Option<Value>, keys: &[&str]| -> Option<Value> {
         let mut v = v?;
@@ -898,6 +921,10 @@ fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> S
                             .collect();
                         if para_lists.iter().any(Value::is_object) {
                             cm.insert("lists".into(), Value::Array(para_lists));
+                        }
+                        let links = cell_links(c);
+                        if !links.is_empty() {
+                            cm.insert("links".into(), Value::Array(links));
                         }
                         if let Some(p) = c.blocks.iter().find_map(|b| b.as_para()) {
                             if let Some(f) = para_format(doc, p) {
@@ -1689,6 +1716,20 @@ fn import_into(
                             };
                             for (k, v) in table_style_look(edited, t, &mut list_of) {
                                 wt.insert(k, v);
+                            }
+                        } else {
+                            // Links in cells come back with the rest of the look, not on their
+                            // own: say when the file's differ rather than drop them silently.
+                            let ours: Vec<Value> = old.get("cells").and_then(Value::as_array).into_iter().flatten()
+                                .flat_map(|r| r.as_array().cloned().unwrap_or_default())
+                                .flat_map(|c| c.get("links").and_then(Value::as_array).cloned().unwrap_or_default())
+                                .collect();
+                            let file: Vec<Value> = t.rows.iter().flat_map(|r| &r.cells).flat_map(cell_links).collect();
+                            if !ox_core::same(&Value::Array(ours.clone()), &Value::Array(file.clone())) {
+                                report.warnings.push(format!(
+                                    "{}: the links in its cells differ from the stack's ({} in the file, {} in the stack); a link edit inside a table cell isn't read back on its own yet, so the stack's links are kept",
+                                    c.path, file.len(), ours.len()
+                                ));
                             }
                         }
                         if !ox_core::same(&Value::Object(wt.clone()), &Value::Object(old.clone())) {

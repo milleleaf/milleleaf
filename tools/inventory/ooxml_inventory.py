@@ -92,8 +92,40 @@ def default_style(z):
     }
 
 
+R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+
+def hyperlinks(z, body):
+    """(links, links in table cells), a link counted once however many w:hyperlink pieces an editor
+    stored it in: a piece with the address of the one before it in the paragraph, with no text
+    between them, is the same link (the Rust counter does the same)."""
+    rels = "word/_rels/document.xml.rels"
+    targets = {r.get("Id"): r.get("Target") or "" for r in xml(z, rels)} if rels in z.namelist() else {}
+    n, in_cells = 0, 0
+    def walk(e, last, link, cell):
+        nonlocal n, in_cells
+        if e.tag == W + "p":
+            last = None
+        if e.tag == W + "hyperlink":
+            key = targets.get(e.get(R + "id"), "") + "#" + (e.get(W + "anchor") or "")
+            if key != last:
+                n += 1
+                in_cells += cell
+            last, link = key, True
+        if e.tag == W + "t" and not link and e.text:
+            last = None
+        cell = cell or e.tag == W + "tc"
+        for c in e:
+            last = walk(c, last, link, cell)
+        return None if e.tag == W + "p" else last
+    for r in body:
+        walk(r, None, False, False)
+    return n, in_cells
+
+
 def docx(z):
     body = [xml(z, "word/document.xml")]
+    links = hyperlinks(z, body)
     hf = [xml(z, n) for n in parts(z, r"word/(header|footer)\d*\.xml")]
     notes = [xml(z, n) for n in parts(z, r"word/(footnotes|endnotes)\.xml")]
     styles_used = {e.get(W + "val") for r in body for tag in ("pStyle", "tblStyle") for e in r.iter(W + tag)}
@@ -147,8 +179,8 @@ def docx(z):
         # Tracked insertions and deletions (moves too): the marks, not their text.
         "tracked changes (insertions and deletions)": sum(count(body, W + t) for t in ("ins", "del", "moveFrom", "moveTo")),
         "sections": count(body, W + "sectPr"),
-        "hyperlinks": count(body, W + "hyperlink"),
-        "hyperlinks in table cells": len({id(h) for r in body for tc in r.iter(W + "tc") for h in tc.iter(W + "hyperlink")}),
+        "hyperlinks": links[0],
+        "hyperlinks in table cells": links[1],
         # A complex field is one fldChar begin, however many instrText pieces its instruction is split into.
         "fields": count(body, W + "fldSimple") + sum(1 for r in body for e in r.iter(W + "fldChar") if e.get(W + "fldCharType") == "begin"),
         "text boxes": count(body, W + "txbxContent"),

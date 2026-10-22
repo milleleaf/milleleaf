@@ -42,7 +42,7 @@ web-based life science data" by Julie McMurry et al. (36 authors), Zenodo, 2015,
 https://doi.org/10.5281/zenodo.31765, licensed under CC BY 4.0. Unmodified.
 
 **Inventory:** 180 non-empty paragraphs, 17 of them in heading styles. 6 tables (32 rows, 76 cells),
-some cells holding several paragraphs and bulleted lists. 35 list paragraphs. 132 hyperlinks. 1
+some cells holding several paragraphs and bulleted lists. 35 list paragraphs. 132 hyperlinks (110 links: Word stored some in pieces; 18 in table cells). 1
 picture: a figure, the authors' own table of identifier examples (a PNG made for the paper). 1 header
 part (the page number), a footnote separator, 3 fields, 2 character styles. US Letter, Normal at
 11 pt, justified. No comments, no merged cells.
