@@ -560,11 +560,16 @@ fn xf_looks(styles: &[u8]) -> Vec<[bool; 4]> {
     // Which list we're in and the depth of its items.
     let (mut list, mut depth): (&[u8], usize) = (b"", 0);
     let mut list_depth = 0usize;
+    // Custom formats that are General by another id (LibreOffice writes General as format 164).
+    let mut general: Vec<usize> = Vec::new();
     walk(styles, |ev| match ev {
         Ev::Open(n, l, e) => {
             depth += 1;
             if n != S {
                 return;
+            }
+            if l == b"numFmt" && attr(e, b"formatCode").is_some_and(|c| c.eq_ignore_ascii_case("general")) {
+                general.extend(attr(e, b"numFmtId").and_then(|v| v.parse::<usize>().ok()));
             }
             match l {
                 b"fonts" | b"fills" | b"borders" | b"cellXfs" if list.is_empty() => {
@@ -583,7 +588,8 @@ fn xf_looks(styles: &[u8]) -> Vec<[bool; 4]> {
                     b"borders" => border.push(false),
                     _ => {
                         let id = |k: &[u8]| attr(e, k).and_then(|v| v.parse().ok()).unwrap_or(0usize);
-                        xfs.push((id(b"fontId"), id(b"fillId"), id(b"borderId"), id(b"numFmtId") != 0));
+                        let nf = id(b"numFmtId");
+                        xfs.push((id(b"fontId"), id(b"fillId"), id(b"borderId"), nf != 0 && !general.contains(&nf)));
                     }
                 },
                 b"b" if list == b"fonts" && depth == list_depth + 2 => {

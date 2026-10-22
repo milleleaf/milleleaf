@@ -191,7 +191,9 @@ def cell_looks(styles, sheets):
         return f.find(S + "gradientFill") is not None or (p is not None and p.get("patternType") not in (None, "none", "gray125"))
     fill = [filled(f) for f in items["fills"]]
     border = [any(e.get("style") not in (None, "none") for e in b) for b in items["borders"]]
-    xfs = [(int(x.get("fontId", 0)), int(x.get("fillId", 0)), int(x.get("borderId", 0)), int(x.get("numFmtId", 0))) for x in items["cellXfs"]]
+    # Custom formats that are General by another id (LibreOffice writes General as format 164).
+    general = {int(f.get("numFmtId")) for f in st.iter(S + "numFmt") if (f.get("formatCode") or "").lower() == "general"}
+    xfs = [(int(x.get("fontId", 0)), int(x.get("fillId", 0)), int(x.get("borderId", 0)), 0 if int(x.get("numFmtId", 0)) in general else int(x.get("numFmtId", 0))) for x in items["cellXfs"]]
     n = {"cells in bold": 0, "cells with a fill": 0, "cells with borders": 0, "cells with a number format": 0}
     at = lambda lst, i: lst[i] if 0 <= i < len(lst) else False
     for sh in sheets:

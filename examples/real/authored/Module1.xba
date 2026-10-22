@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="Module1" script:language="StarBasic">
+REM A small deck authored in Impress itself (no file from elsewhere): titles, a two-level list,
+REM filled boxes joined by connectors, a table with merged cells, web and mail links, notes.
+REM Saved as .odp and .pptx by Impress. OUTDIR comes from the environment variable DECK_OUT.
+
+Global gDoc As Object
+
+Function Prop(n As String, v) As com.sun.star.beans.PropertyValue
+	Dim p As New com.sun.star.beans.PropertyValue
+	p.Name = n
+	p.Value = v
+	Prop = p
+End Function
+
+Sub AddUrl(oShape, label As String, url As String)
+	Dim oText, oCursor, oField
+	oText = oShape.getText()
+	oCursor = oText.createTextCursor()
+	oCursor.gotoEnd(False)
+	oField = gDoc.createInstance("com.sun.star.text.TextField.URL")
+	oField.Representation = label
+	oField.URL = url
+	oText.insertTextContent(oCursor, oField, False)
+End Sub
+
+Sub Notes(oPage, s As String)
+	Dim oNotes
+	oNotes = oPage.getNotesPage()
+	oNotes.getByIndex(1).setString(s)
+End Sub
+
+Function Box(oDoc, oPage, x As Long, label As String)
+	Dim oShape, size As New com.sun.star.awt.Size, pos As New com.sun.star.awt.Point
+	oShape = oDoc.createInstance("com.sun.star.drawing.RectangleShape")
+	size.Width = 5000 : size.Height = 2500
+	pos.X = x : pos.Y = 8000
+	oShape.setSize(size)
+	oShape.setPosition(pos)
+	oPage.add(oShape)
+	oShape.FillColor = RGB(151, 219, 194)
+	oShape.LineColor = RGB(9, 200, 186)
+	oShape.LineWidth = 70
+	oShape.CornerRadius = 400
+	oShape.setString(label)
+	oShape.CharColor = RGB(11, 19, 38)
+	oShape.TextHorizontalAdjust = com.sun.star.drawing.TextHorizontalAdjust.CENTER
+	oShape.TextVerticalAdjust = com.sun.star.drawing.TextVerticalAdjust.CENTER
+	Box = oShape
+End Function
+
+Sub Main
+	Dim outDir As String
+	outDir = Environ("DECK_OUT")
+	Dim oDoc, oPages, oPage, oShape, oConn, i As Integer
+	oDoc = StarDesktop.loadComponentFromURL("private:factory/simpress", "_blank", 0, Array(Prop("Hidden", True)))
+	gDoc = oDoc
+	oPages = oDoc.getDrawPages()
+
+	REM 1. Title slide
+	oPage = oPages.getByIndex(0)
+	oPage.Layout = 0
+	oPage.getByIndex(0).setString("Milleleaf, made in Impress")
+	oPage.getByIndex(1).setString("A deck LibreOffice wrote itself")
+	Notes(oPage, "This deck was authored by a LibreOffice Basic macro, not by a library.")
+
+	REM 2. Title and a two-level list, with a web link
+	oPage = oPages.insertNewByIndex(0)
+	oPage.Layout = 1
+	oPage.getByIndex(0).setString("What it checks")
+	oShape = oPage.getByIndex(1)
+	oShape.setString("Titles and lists" &amp; Chr(13) &amp; "Second level" &amp; Chr(13) &amp; "Links: ")
+	Dim oEnum, oPara, n As Integer
+	oEnum = oShape.getText().createEnumeration()
+	n = 0
+	Do While oEnum.hasMoreElements()
+		oPara = oEnum.nextElement()
+		If n = 1 Then oPara.NumberingLevel = 1
+		n = n + 1
+	Loop
+	AddUrl(oShape, "milleleaf.com", "https://milleleaf.com")
+	Notes(oPage, "The second line is a level-two bullet; the link is a URL field.")
+
+	REM 3. Boxes joined by connectors
+	oPage = oPages.insertNewByIndex(1)
+	oPage.Layout = 19
+	oPage.getByIndex(0).setString("Boxes and connectors")
+	Dim b(2)
+	b(0) = Box(oDoc, oPage, 1500, "Adopt")
+	b(1) = Box(oDoc, oPage, 10500, "Edit")
+	b(2) = Box(oDoc, oPage, 19500, "Import")
+	For i = 0 To 1
+		oConn = oDoc.createInstance("com.sun.star.drawing.ConnectorShape")
+		oPage.add(oConn)
+		oConn.StartShape = b(i)
+		oConn.StartGluePointIndex = 1
+		oConn.EndShape = b(i + 1)
+		oConn.EndGluePointIndex = 3
+		oConn.EdgeKind = com.sun.star.drawing.ConnectorType.STANDARD
+		oConn.LineEndName = "Arrow"
+	Next i
+	Notes(oPage, "Each connector is glued to the boxes it joins.")
+
+	REM 4. A table with merged cells, and a mail link
+	oPage = oPages.insertNewByIndex(2)
+	oPage.Layout = 19
+	oPage.getByIndex(0).setString("A table")
+	Dim oTable, oModel, size As New com.sun.star.awt.Size, pos As New com.sun.star.awt.Point
+	oTable = oDoc.createInstance("com.sun.star.drawing.TableShape")
+	oPage.add(oTable)
+	size.Width = 18000 : size.Height = 4500
+	pos.X = 2000 : pos.Y = 5000
+	oTable.setSize(size)
+	oTable.setPosition(pos)
+	oModel = oTable.Model
+	Dim r As Integer, c As Integer
+	oModel.getRows().insertByIndex(0, 2)
+	oModel.getColumns().insertByIndex(0, 2)
+	For c = 0 To 2
+		oModel.getColumns().getByIndex(c).Width = 6000
+	Next c
+	For r = 0 To 2
+		oModel.getRows().getByIndex(r).Height = 1200
+	Next r
+	Dim texts
+	texts = Array(Array("Format", "Saved by", ""), Array("", "Impress", "PowerPoint"), Array("Slides", "kept", "kept"))
+	For r = 0 To 2
+		For c = 0 To 2
+			oModel.getCellByPosition(c, r).setString(texts(r)(c))
+		Next c
+	Next r
+	Dim oCursor
+	oCursor = oModel.createCursorByRange(oModel.getCellRangeByPosition(1, 0, 2, 0))
+	oCursor.merge()
+	oCursor = oModel.createCursorByRange(oModel.getCellRangeByPosition(0, 0, 0, 1))
+	oCursor.merge()
+	oShape = oDoc.createInstance("com.sun.star.drawing.TextShape")
+	size.Width = 12000 : size.Height = 1200
+	pos.X = 2000 : pos.Y = 10500
+	oShape.setSize(size)
+	oShape.setPosition(pos)
+	oPage.add(oShape)
+	oShape.setString("Write to ")
+	AddUrl(oShape, "hello@milleleaf.com", "mailto:hello@milleleaf.com")
+	Notes(oPage, "The header cells are merged across and down.")
+
+	oDoc.storeToURL(ConvertToURL(outDir &amp; "/milleleaf-impress-native.odp"), Array(Prop("FilterName", "impress8")))
+	oDoc.storeToURL(ConvertToURL(outDir &amp; "/milleleaf-impress-native.pptx"), Array(Prop("FilterName", "Impress MS PowerPoint 2007 XML")))
+	oDoc.close(True)
+End Sub
+</script:module>

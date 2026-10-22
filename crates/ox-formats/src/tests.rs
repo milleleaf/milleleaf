@@ -130,11 +130,12 @@ fn inventory_counts_real_files_and_lists_losses() {
     let l = lost(k, &c);
     assert!(l.contains(&"hyperlinks") && !l.contains(&"formulas"), "{l:?}");
 
-    let (k, c) = inventory(&real("briefing.pptx")).unwrap();
-    assert_eq!((c["slides"], c["shapes (sp)"], c["shapes without text"], c["notes slide-number fields"]), (28, 59, 1, 28));
-    assert_eq!(c["table text chars"], 2152);
+    // The authored deck as Impress saved it: 9 slides with notes, 2 tables, 4 connectors, 4 charts.
+    let (k, c) = inventory(&real("milleleaf-deck.impress.pptx")).unwrap();
+    assert_eq!((c["slides"], c["shapes (sp)"], c["shapes without text"], c["notes slide-number fields"]), (9, 21, 1, 9));
+    assert_eq!((c["table cells"], c["table text chars"], c["connectors"], c["charts"], c["hyperlinks"]), (18, 160, 4, 4, 3));
     let l = lost(k, &c);
-    assert!(l.contains(&"shapes without text") && l.contains(&"tables") && !l.contains(&"slides"), "{l:?}");
+    assert!(l.contains(&"shapes without text") && l.contains(&"tables") && l.contains(&"charts") && !l.contains(&"slides"), "{l:?}");
 
     // On import, only what the file holds beyond Milleleaf's own export is reported; an empty
     // shape that isn't Milleleaf's (named ox:…) was added by someone, so it still is.
