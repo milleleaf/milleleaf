@@ -90,6 +90,7 @@ macro_rules! resave {
         #[test] fn $test() {
             if pending($edited) { return; }
             let r=compare_pair($source,$edited);
+            assert_eq!(r["summary"], "No content changes. The file was re-saved.");
             assert!(r["changes"].as_array().unwrap().is_empty(),"{}",serde_json::to_string(&r["changes"].as_array().unwrap().iter().map(|c|json!({"place":c["place"],"description":c["description"]})).collect::<Vec<_>>()).unwrap());
         }
     }
@@ -272,7 +273,17 @@ fn edited_fixture_reports() {
             // rewrites: its plain re-save (`real_workbook_resaved_b`) changes nothing.
             "real/fixtures/lca-model.msoffice-margins.xlsx" => {
                 let mut v = vec![("Sheet Graphs", "Page setup changed: left margin:")];
-                v.extend(["Chart 1 resized: width 396.00 → 446.00 px", "Chart 2 resized: width 396.00 → 446.00 px", "Chart 3 resized: width 396.00 → 446.00 px", "Chart 4 resized: width 396.00 → 446.00 px", "Chart 5 resized: width 396.00 → 446.00 px", "Pictures changed"].map(|d| ("Sheet Graphs", d)));
+                v.extend(
+                    [
+                        "Chart 1 resized: width 396.00 → 446.00 px",
+                        "Chart 2 resized: width 396.00 → 446.00 px",
+                        "Chart 3 resized: width 396.00 → 446.00 px",
+                        "Chart 4 resized: width 396.00 → 446.00 px",
+                        "Chart 5 resized: width 396.00 → 446.00 px",
+                        "Pictures changed",
+                    ]
+                    .map(|d| ("Sheet Graphs", d)),
+                );
                 v
             }
             // The maintainer pressed Enter at the end of "Throughout this document…" (the third body
@@ -287,6 +298,20 @@ fn edited_fixture_reports() {
             }
             _ => panic!("fixture needs an exact expectation"),
         };
+        for item in r["changes"].as_array().unwrap() {
+            assert!(
+                item["locator"].as_str().is_some_and(|s| !s.is_empty()),
+                "{edited}: missing locator: {item}"
+            );
+            assert!(
+                item["context"]["before"]["lines"].is_array(),
+                "{edited}: missing before context"
+            );
+            assert!(
+                item["context"]["after"]["lines"].is_array(),
+                "{edited}: missing after context"
+            );
+        }
         let mut actual = r["changes"].as_array().unwrap().clone();
         assert_eq!(
             actual.len(),
@@ -310,14 +335,90 @@ fn edited_fixture_reports() {
                 .unwrap_or_else(|| panic!("{edited}: missing {place}: {description}"));
             actual.remove(i);
         }
+        if edited.ends_with("paper.msoffice-blank-line.docx") {
+            assert_eq!(
+                r["summary"],
+                "One change: an empty line was added after ‘Throughout this document…’. Nothing else changed."
+            );
+            let change = &r["changes"][0];
+            assert!(
+                change["locator"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Under ‘Introduction’")
+            );
+            assert!(
+                change["locator"]
+                    .as_str()
+                    .unwrap()
+                    .contains("after the paragraph starting ‘Throughout this document")
+            );
+            assert_eq!(change["spacing_only"], true);
+            assert!(
+                change["context"]["before"]["lines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|l| l["text"]
+                        .as_str()
+                        .is_some_and(|t| t.starts_with("Throughout this document")))
+            );
+            assert!(
+                change["context"]["after"]["lines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|l| l["text"] == "⏎ Empty line" && l["changed"] == true)
+            );
+        }
+        if edited.ends_with("milleleaf-deck.msoffice-edited.pptx") {
+            assert_eq!(r["summary"], "One change: text changed on slide 1.");
+            let change = &r["changes"][0];
+            assert!(
+                change["locator"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("Slide 1: ‘")
+            );
+            assert!(change["locator"].as_str().unwrap().contains("object ‘"));
+            assert!(
+                change["context"]["after"]["lines"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("(revised)")
+            );
+        }
         if edited.ends_with("lca-model.msoffice-margins.xlsx") {
-            let change = |d: &str| r["changes"].as_array().unwrap().iter().find(|c| c["description"].as_str().unwrap().contains(d)).unwrap().clone();
+            assert_eq!(
+                r["summary"],
+                "7 changes on sheet ‘Graphs’: page setup, 5 chart sizes, 1 picture size."
+            );
+            assert!(r["changes"].as_array().unwrap().iter().all(|c| {
+                c["locator"]
+                    .as_str()
+                    .is_some_and(|l| l.starts_with("Sheet ‘Graphs’"))
+            }));
+            let change = |d: &str| {
+                r["changes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|c| c["description"].as_str().unwrap().contains(d))
+                    .unwrap()
+                    .clone()
+            };
             let page = change("Page setup");
             assert_eq!(page["after"]["print"]["margins"][0], json!(1.0));
             assert_eq!(page["after"]["defaults"]["colWidth"], json!(90.0));
             // The legend picture spans the same cells, so it widens with them: 361.24 → 411.24.
             let pictures = change("Pictures changed");
-            assert_eq!((pictures["before"][0]["w"].clone(), pictures["after"][0]["w"].clone()), (json!(361.24), json!(411.24)));
+            assert_eq!(
+                (
+                    pictures["before"][0]["w"].clone(),
+                    pictures["after"][0]["w"].clone()
+                ),
+                (json!(361.24), json!(411.24))
+            );
         }
     }
 }

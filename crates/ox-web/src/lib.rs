@@ -16,6 +16,7 @@ const MAX_EXPANDED: u64 = 256 * 1024 * 1024;
 const MAX_PARTS: usize = 20_000;
 
 type Pictures = BTreeMap<String, (String, Vec<u8>)>;
+mod context;
 mod describe;
 
 struct Adopted {
@@ -27,6 +28,7 @@ struct Adopted {
     warnings: Vec<String>,
     pictures: Pictures,
     parts: BTreeMap<String, String>,
+    modified: Option<String>,
 }
 
 fn header(kind: &str, author: &str, at: &str) -> Header {
@@ -78,6 +80,46 @@ fn parts(bytes: &[u8]) -> Result<BTreeMap<String, String>> {
     Ok(out)
 }
 
+// Core timestamps order the two files; absence leaves the browser's lastModified fallback.
+fn modified(bytes: &[u8]) -> Option<String> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
+    let mut xml = String::new();
+    archive
+        .by_name("docProps/core.xml")
+        .ok()?
+        .take(MAX_EXPANDED + 1)
+        .read_to_string(&mut xml)
+        .ok()?;
+    // Resolve the namespace instead of assuming the producer's prefix spelling.
+    let namespace = "http://purl.org/dc/terms/";
+    for token in xml.split("xmlns:").skip(1) {
+        let (prefix, declaration) = token.split_once('=')?;
+        let declaration = declaration.trim_start();
+        let quote = declaration.chars().next()?;
+        if !['\"', '\''].contains(&quote) {
+            continue;
+        }
+        if declaration[1..].split(quote).next() != Some(namespace) {
+            continue;
+        }
+        let opening = format!("<{}:modified", prefix.trim());
+        if let Some(start) = xml.find(&opening) {
+            let body = xml[start..].split_once('>')?.1;
+            let value = body.split('<').next()?.trim();
+            if !value.is_empty() {
+                return Some(value.into());
+            }
+        }
+    }
+    None
+}
+
+#[wasm_bindgen]
+pub fn file_metadata(bytes: &[u8]) -> std::result::Result<String, JsError> {
+    parts(bytes).map_err(|e| JsError::new(&e))?;
+    Ok(json!({"modified": modified(bytes)}).to_string())
+}
+
 fn read(bytes: &[u8], h: Header) -> Result<Adopted> {
     let parts = parts(bytes)?;
     let (format, counts) = inventory(bytes)?;
@@ -115,6 +157,7 @@ fn read(bytes: &[u8], h: Header) -> Result<Adopted> {
         warnings,
         pictures,
         parts,
+        modified: modified(bytes),
     })
 }
 
@@ -153,7 +196,7 @@ fn inventory_changes(a: &Counts, b: &Counts) -> Vec<Value> {
 
 fn summary(a: &Adopted) -> Value {
     json!({"format": a.format, "hash": a.hash, "inventory": a.counts,
-        "adapter_losses": losses(&a.format, &a.counts, None), "warnings": a.warnings})
+        "adapter_losses": losses(&a.format, &a.counts, None), "warnings": a.warnings, "modified": a.modified})
 }
 
 fn compare_file(a: &Adopted, bytes: &[u8], h: Header) -> Result<(Layer, Value)> {
@@ -210,6 +253,7 @@ fn compare_file(a: &Adopted, bytes: &[u8], h: Header) -> Result<(Layer, Value)> 
         .compose(&a.root, None, &mut Vec::new())
         .map_err(|e| e.to_string())?;
     let mut changes = describe::describe(&before, &after, &normalized);
+    context::enrich(&before, &after, &mut changes, &a.pictures, &pictures);
     for change in &mut changes {
         let matching = import_report["matches"]
             .as_array()
@@ -247,7 +291,7 @@ fn compare_file(a: &Adopted, bytes: &[u8], h: Header) -> Result<(Layer, Value)> 
     );
     warnings.push("Inventory differences describe the edited file against the original; a reduction may be an intentional edit. Adapter limitations describe Milleleaf, not another app. Equal counts do not prove preservation.".into());
     let mut report = json!({"format": format, "original_hash": a.hash, "edited_hash": ox_core::integrity_of(bytes),
-        "changes": changes, "inventory_changes": inventory_changes(&a.counts, &counts),
+        "summary": context::summary(format, &changes), "changes": changes, "inventory_changes": inventory_changes(&a.counts, &counts),
         "inventory": {"original": a.counts, "edited": counts},
         "adapter_losses": {"original": losses(format, &a.counts, None), "edited": losses(format, &counts, None)},
         "part_changes": part_changes, "warnings": warnings, "import_report": import_report});

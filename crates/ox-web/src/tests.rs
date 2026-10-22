@@ -176,3 +176,33 @@ fn an_unmarked_workbooks_new_cell_is_not_silently_ignored() {
             .any(|c| c["place"] == "Sheet Q3, cell C21" && c["kind"] == "added")
     );
 }
+
+#[test]
+fn file_modified_uses_the_dublin_core_namespace_and_handles_absence() {
+    use std::io::Write;
+    let archive = |xml: Option<&str>| {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        if let Some(xml) = xml {
+            zip.start_file(
+                "docProps/core.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(xml.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    };
+    let xml = r#"<core xmlns:date='http://purl.org/dc/terms/'><date:modified>2026-10-22T08:30:00Z</date:modified></core>"#;
+    assert_eq!(
+        modified(&archive(Some(xml))),
+        Some("2026-10-22T08:30:00Z".into())
+    );
+    assert_eq!(modified(&archive(Some("<core/>"))), None);
+    assert_eq!(modified(&archive(None)), None);
+    assert_eq!(
+        modified(&archive(Some(
+            "<core xmlns:date='https://example.test/other'><date:modified>wrong</date:modified></core>"
+        ))),
+        None
+    );
+}
