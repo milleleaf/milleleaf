@@ -486,6 +486,11 @@ fn row_heights_excel_works_out_dont_resize_a_chart_and_a_new_standard_width_does
     assert_eq!(report.changed.len(), 1, "{report:?}");
     let chart = &layer.data[0].attributes["grid::sheet"]["charts"][0];
     assert!((chart["anchor"]["width"].as_f64().unwrap() - wide as f64).abs() < 0.01, "{chart}");
+    // Only its size changed: otherwise it's the model's chart, not GridCraft's reading of the
+    // file's (which writes the theme colour as RGB).
+    let mut model = node.children[0].attributes["grid::sheet"]["charts"][0].clone();
+    model["anchor"] = chart["anchor"].clone();
+    assert_eq!(chart, &model);
 }
 
 #[test]
