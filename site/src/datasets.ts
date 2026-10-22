@@ -108,10 +108,10 @@ export const datasets: Dataset[] = [
     source: 'Taiwan MOI; SPC; ÅSUB; ABS; INSEE; Statistics Jersey; Morocco HCP', kaggle: 'world-places',
   },
   {
-    name: 'sa-fire', group: 'other',
+    name: 'sa-fire', group: 'open',
     description: 'Fire history, last-fire boundaries, emergency markers and bushfire management areas.',
     area: 'South Australia', updated: 'Weekly check; rebuilt on change',
-    licences: [{ label: 'Mixed; see card', href: 'https://huggingface.co/datasets/milleleaf/sa-fire' }],
+    licences: [{ label: "CC BY 4.0 (one source's 2015 zip notes CC BY 3.0 AU; see card)", href: 'https://huggingface.co/datasets/milleleaf/sa-fire' }],
     source: 'Department for Environment and Water; SA Country Fire Service', kaggle: 'sa-fire',
   },
   {

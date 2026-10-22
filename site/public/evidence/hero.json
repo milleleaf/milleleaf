@@ -1,0 +1,424 @@
+{
+  "generatedAt": "2026-10-22T02:00:12.022737+00:00",
+  "fixture": "examples/hello-table/fixtures/report.libreoffice-edited.docx",
+  "baseline": "examples/hello-table/project.ox.json",
+  "commands": [
+    "cargo run -q -p ox-cli -- docx-export examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 --out /tmp/milleleaf-site-hero-omj9obql/original.docx",
+    "cargo run -q -p ox-cli -- docx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 examples/hello-table/fixtures/report.libreoffice-edited.docx --out /tmp/milleleaf-site-hero-omj9obql/edited.json --report /tmp/milleleaf-site-hero-omj9obql/edited-report.json --author libreoffice --id site/hero/edited",
+    "soffice -env:UserInstallation=file:///tmp/milleleaf-site-hero-omj9obql/lo-profile --headless --convert-to docx --outdir /tmp/milleleaf-site-hero-omj9obql/saved examples/hello-table/fixtures/report.libreoffice-edited.docx",
+    "cargo run -q -p ox-cli -- docx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 /tmp/milleleaf-site-hero-omj9obql/saved/report.libreoffice-edited.docx --out /tmp/milleleaf-site-hero-omj9obql/resaved.json --report /tmp/milleleaf-site-hero-omj9obql/resaved-report.json --author libreoffice --id site/hero/resaved",
+    "cargo run -q -p ox-cli -- init /tmp/milleleaf-site-hero-omj9obql/project --from examples/hello-table/project.ox.json",
+    "cargo run -q -p ox-cli -- key new fixture-reviewer /tmp/milleleaf-site-hero-omj9obql/project",
+    "cargo run -q -p ox-cli -- commit /tmp/milleleaf-site-hero-omj9obql/project /tmp/milleleaf-site-hero-omj9obql/resaved.json --sign --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 9f058b186f5b504bbbff81c305b32a4cb758bed30018f0c36a50586b86c68882 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 62729fef2ee88d6665abb8611bd539ac466f63393f0c23d6dd47fb429ae3e43e --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project ef9a7f5628a28b6dc51515830a4846248b2fd97efe2cad4e4e9a39d3740fedce --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 3b9760cebb7dd628ae6fc7a9b40dcec80f4d4561db1d27bb515bca2efee1b8b3 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project f7d603230fb1d8441749a44ac078fa3b8195bf6031beb395b62154e85eed4293 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- verify /tmp/milleleaf-site-hero-omj9obql/project --require"
+  ],
+  "frames": [
+    {
+      "label": "Original",
+      "app": "Milleleaf / WordCraft",
+      "sha256": "df11e5c197f3e5aa301abe83a07318a6df31d4d61cc2c18df3d9266e9c672aee",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "text": "Q3 results"
+        },
+        {
+          "kind": "paragraph",
+          "text": "Total revenue for the quarter was $1,250,500 across 3 regions."
+        },
+        {
+          "kind": "table",
+          "rows": [
+            [
+              "Region",
+              "Revenue"
+            ],
+            [
+              "Adelaide",
+              "$412,000"
+            ],
+            [
+              "Hong Kong",
+              "$541,500"
+            ],
+            [
+              "Singapore",
+              "$297,000"
+            ]
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "text": "Revenue by region (AUD)"
+        }
+      ],
+      "paragraphDiffs": [
+        [
+          {
+            "kind": "same",
+            "text": "Q3 results "
+          }
+        ],
+        [
+          {
+            "kind": "same",
+            "text": "Total revenue for the quarter was $1,250,500 across 3 regions. "
+          }
+        ],
+        [
+          {
+            "kind": "same",
+            "text": "Revenue by region (AUD) "
+          }
+        ]
+      ],
+      "rewrites": [],
+      "report": {}
+    },
+    {
+      "label": "Edited",
+      "app": "LibreOffice fixture",
+      "sha256": "7819adeea1d513baa7435f78450833d858d5c84121d2e85953dd040fb325533a",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "text": "Q3 results"
+        },
+        {
+          "kind": "paragraph",
+          "text": "Group revenue for the quarter was $1,250,500 across 3 regions."
+        },
+        {
+          "kind": "table",
+          "rows": [
+            [
+              "Region",
+              "Revenue"
+            ],
+            [
+              "Adelaide",
+              "$412,000"
+            ],
+            [
+              "Hong Kong",
+              "$999"
+            ],
+            [
+              "Singapore",
+              "$297,000"
+            ]
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "text": "Revenue by region (AUD)"
+        },
+        {
+          "kind": "paragraph",
+          "text": "Prepared for the October board meeting."
+        }
+      ],
+      "paragraphDiffs": [
+        [
+          {
+            "kind": "same",
+            "text": "Q3 results "
+          }
+        ],
+        [
+          {
+            "kind": "removed",
+            "text": "Total "
+          },
+          {
+            "kind": "added",
+            "text": "Group "
+          },
+          {
+            "kind": "same",
+            "text": "revenue for the quarter was $1,250,500 across 3 regions. "
+          }
+        ],
+        [
+          {
+            "kind": "same",
+            "text": "Revenue by region (AUD) "
+          }
+        ],
+        [
+          {
+            "kind": "removed",
+            "text": " "
+          },
+          {
+            "kind": "added",
+            "text": "Prepared for the October board meeting. "
+          }
+        ]
+      ],
+      "rewrites": [
+        {
+          "part": "word/document.xml",
+          "before": "b27e7b6f790126689f7d88e5435d9043a21249490f83beec53871097beb2d118",
+          "after": "2bd2b88824998aa5d04b2481ba305c2e070bce0abf4d06e4569e5e12a3b55344"
+        },
+        {
+          "part": "word/styles.xml",
+          "before": "d44743958357591dc5dbb53d525a5e705a0f7d5920b91d8480d4a4b9d7f5ebee",
+          "after": "227004ead8197bcc8756052966a7b22403b55fb77c676e39a9ea866a5a3080a7"
+        }
+      ],
+      "report": {
+        "changed": [
+          "3f1c2a90-0000-4c1e-9a00-000000000023"
+        ],
+        "added": [
+          "d937430e-aaf1-5306-8149-126a3369a536"
+        ],
+        "removed": [],
+        "conflicts": [
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000022",
+            "message": "linked table was edited in the document; the source wins — edit it in the workbook, or detach the link"
+          }
+        ],
+        "warnings": [],
+        "stale": false,
+        "matches": [
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000021",
+            "confidence": "certain",
+            "by": "content control tag"
+          },
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000023",
+            "confidence": "certain",
+            "by": "content control tag"
+          },
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000022",
+            "confidence": "certain",
+            "by": "content control tag in its first cell"
+          }
+        ],
+        "losses": []
+      }
+    },
+    {
+      "label": "Re-saved",
+      "app": "LibreOffice on the box",
+      "sha256": "0f79acf4ee74855420fb5b87ea18e97db12a4d2a52320fe0995f7a390c5452b7",
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "text": "Q3 results"
+        },
+        {
+          "kind": "paragraph",
+          "text": "Group revenue for the quarter was $1,250,500 across 3 regions."
+        },
+        {
+          "kind": "table",
+          "rows": [
+            [
+              "Region",
+              "Revenue"
+            ],
+            [
+              "Adelaide",
+              "$412,000"
+            ],
+            [
+              "Hong Kong",
+              "$999"
+            ],
+            [
+              "Singapore",
+              "$297,000"
+            ]
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "text": "Revenue by region (AUD)"
+        },
+        {
+          "kind": "paragraph",
+          "text": "Prepared for the October board meeting."
+        }
+      ],
+      "paragraphDiffs": [
+        [
+          {
+            "kind": "same",
+            "text": "Q3 results "
+          }
+        ],
+        [
+          {
+            "kind": "removed",
+            "text": "Total "
+          },
+          {
+            "kind": "added",
+            "text": "Group "
+          },
+          {
+            "kind": "same",
+            "text": "revenue for the quarter was $1,250,500 across 3 regions. "
+          }
+        ],
+        [
+          {
+            "kind": "same",
+            "text": "Revenue by region (AUD) "
+          }
+        ],
+        [
+          {
+            "kind": "removed",
+            "text": " "
+          },
+          {
+            "kind": "added",
+            "text": "Prepared for the October board meeting. "
+          }
+        ]
+      ],
+      "rewrites": [
+        {
+          "part": "word/document.xml",
+          "before": "b27e7b6f790126689f7d88e5435d9043a21249490f83beec53871097beb2d118",
+          "after": "c2e916fef28d97aef770184b0f8ea240e7ec9a1b160b897e15eac22797cc4f80"
+        },
+        {
+          "part": "word/styles.xml",
+          "before": "d44743958357591dc5dbb53d525a5e705a0f7d5920b91d8480d4a4b9d7f5ebee",
+          "after": "eca5740973c91285d5be072169e1c822ad8b8569cfafbe67416b32db8d6f260b"
+        }
+      ],
+      "report": {
+        "changed": [
+          "3f1c2a90-0000-4c1e-9a00-000000000023"
+        ],
+        "added": [
+          "d937430e-aaf1-5306-8149-126a3369a536"
+        ],
+        "removed": [],
+        "conflicts": [
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000022",
+            "message": "linked table was edited in the document; the source wins — edit it in the workbook, or detach the link"
+          }
+        ],
+        "warnings": [],
+        "stale": false,
+        "matches": [
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000021",
+            "confidence": "certain",
+            "by": "content control tag"
+          },
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000023",
+            "confidence": "certain",
+            "by": "content control tag"
+          },
+          {
+            "path": "3f1c2a90-0000-4c1e-9a00-000000000022",
+            "confidence": "certain",
+            "by": "content control tag in its first cell"
+          }
+        ],
+        "losses": []
+      }
+    }
+  ],
+  "signed": {
+    "signer": "fixture-reviewer",
+    "at": "2026-10-22T02:00:11Z",
+    "layer": "sha256-86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5",
+    "signature": {
+      "layer": "sha256-86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5",
+      "key": "ed25519:phkwAQaE6fgOx+wND8DU2kgcrnckZ9fV1q3A4fK2dxI=",
+      "signer": "fixture-reviewer",
+      "signature": "lNX5dFBxQI+UClVYfZcLlrTWOddpwKYJ3TrK5pXtdAdvDYw/4/p38oa/6+7eOgyWlAj/UAU+1SaFOZfdr3LiAQ==",
+      "at": "2026-10-22T02:00:11Z"
+    },
+    "verification": "62729fef2ee8  milleleaf/schema/office                     signed by fixture-reviewer (hybrid)\nf7d603230fb1  milleleaf/examples/hello-table/base         signed by fixture-reviewer (hybrid)\nef9a7f5628a2  proposal/deck                                signed by fixture-reviewer (hybrid)\n3b9760cebb7d  milleleaf/examples/hello-table/finance-review signed by fixture-reviewer (hybrid)\n9f058b186f5b  milleleaf/examples/hello-table/pack         signed by fixture-reviewer (hybrid)\n86c8a0bc2d94  site/hero/resaved                            signed by fixture-reviewer (hybrid)\n",
+    "exitCode": 0,
+    "scope": "Fresh fixture test key. Build-time verification, not a trusted time-stamp or approval."
+  },
+  "rawLayer": {
+    "data": [
+      {
+        "children": {
+          "p-d937430e": "d937430e-aaf1-5306-8149-126a3369a536"
+        },
+        "order": [
+          "heading",
+          "summary",
+          "revenue-table",
+          "p-d937430e"
+        ],
+        "path": "3f1c2a90-0000-4c1e-9a00-000000000020"
+      },
+      {
+        "attributes": {
+          "word::paragraph": {
+            "runs": [
+              {
+                "text": "Group revenue for the quarter was "
+              },
+              {
+                "field": "total"
+              },
+              {
+                "text": " across "
+              },
+              {
+                "field": "regions"
+              },
+              {
+                "text": " regions."
+              }
+            ],
+            "style": "Normal"
+          }
+        },
+        "path": "3f1c2a90-0000-4c1e-9a00-000000000023"
+      },
+      {
+        "attributes": {
+          "word::paragraph": {
+            "runs": [
+              {
+                "italic": true,
+                "text": "Prepared for the October board meeting."
+              }
+            ],
+            "style": "Normal"
+          }
+        },
+        "path": "d937430e-aaf1-5306-8149-126a3369a536"
+      }
+    ],
+    "header": {
+      "author": "libreoffice",
+      "dataVersion": "1.0.0",
+      "id": "site/hero/resaved",
+      "kind": "edit",
+      "oxVersion": "ox_alpha",
+      "timestamp": "2026-10-22"
+    },
+    "imports": [],
+    "schemas": {}
+  },
+  "layerBytes": "{\"data\":[{\"children\":{\"p-d937430e\":\"d937430e-aaf1-5306-8149-126a3369a536\"},\"order\":[\"heading\",\"summary\",\"revenue-table\",\"p-d937430e\"],\"path\":\"3f1c2a90-0000-4c1e-9a00-000000000020\"},{\"attributes\":{\"word::paragraph\":{\"runs\":[{\"text\":\"Group revenue for the quarter was \"},{\"field\":\"total\"},{\"text\":\" across \"},{\"field\":\"regions\"},{\"text\":\" regions.\"}],\"style\":\"Normal\"}},\"path\":\"3f1c2a90-0000-4c1e-9a00-000000000023\"},{\"attributes\":{\"word::paragraph\":{\"runs\":[{\"italic\":true,\"text\":\"Prepared for the October board meeting.\"}],\"style\":\"Normal\"}},\"path\":\"d937430e-aaf1-5306-8149-126a3369a536\"}],\"header\":{\"author\":\"libreoffice\",\"dataVersion\":\"1.0.0\",\"id\":\"site/hero/resaved\",\"kind\":\"edit\",\"oxVersion\":\"ox_alpha\",\"timestamp\":\"2026-10-22\"},\"imports\":[],\"schemas\":{}}"
+}

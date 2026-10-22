@@ -1,5 +1,5 @@
 // Reusable leaves own their shadow trees; React owns the page.
-const shared = `:host{font:inherit;color:inherit}*{box-sizing:border-box}button{font:inherit;cursor:pointer;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 13px}button:focus-visible{outline:3px solid var(--focus);outline-offset:4px}`
+const shared = `:host{font:inherit;color:inherit}*{box-sizing:border-box}button{font:inherit;cursor:pointer;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:0;padding:10px 13px}button:focus-visible{outline:3px solid var(--focus);outline-offset:4px}`
 
 export function registerElements() {
   if (customElements.get('ml-theme')) return
@@ -35,7 +35,7 @@ export function registerElements() {
         // Static hosts can answer a missing path with the website's own HTML.
         if (html.includes('name="milleleaf-site"') || !/<(?:html|body|script)[\s>]/i.test(html)) return
         const root = this.shadowRoot!
-        root.innerHTML = `<style>:host{display:block}iframe{width:100%;height:640px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}</style>`
+        root.innerHTML = `<style>:host{display:block}iframe{width:100%;height:640px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}</style>`
         const frame = document.createElement('iframe')
         frame.src = src
         frame.title = title
@@ -44,21 +44,64 @@ export function registerElements() {
       } catch { /* Keep the server-rendered availability message visible. */ }
     }
   }
-  class LayerView extends HTMLElement {
+  class RevisionSelector extends HTMLElement {
+    private config = { labels: [] as string[], selected: 1 }
+    set options(value: { labels: string[]; selected: number }) { this.config = value; this.render() }
+    connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }); this.render() }
+    private render() {
+      if (!this.shadowRoot || !this.config.labels.length) return
+      this.shadowRoot.innerHTML = `<style>${shared}:host{display:block}nav{display:flex;gap:6px;flex-wrap:wrap}button{font-size:13px;color:var(--tool-ink);background:transparent;border-color:var(--tool-ink);padding:10px 12px}button[aria-pressed=true]{background:var(--tool-ink);color:var(--mint)}@media(max-width:800px){nav{display:grid;grid-template-columns:1fr 1fr}button{font-size:11px;padding:9px 5px;text-align:left}}</style><nav aria-label="Fixture revisions"></nav>`
+      this.config.labels.forEach((label, i) => {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.textContent = `${i + 1}. ${label}`
+        button.setAttribute('aria-pressed', String(i === this.config.selected))
+        button.addEventListener('click', () => {
+          this.config.selected = i
+          this.shadowRoot!.querySelectorAll('button').forEach((b, n) => b.setAttribute('aria-pressed', String(n === i)))
+          this.dispatchEvent(new CustomEvent('revision-select', { detail: { index: i }, bubbles: true, composed: true }))
+        })
+        button.addEventListener('keydown', event => {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+          event.preventDefault()
+          const next = (i + (event.key === 'ArrowRight' ? 1 : -1) + this.config.labels.length) % this.config.labels.length
+          const target = this.shadowRoot!.querySelectorAll('button')[next]
+          target.focus(); target.click()
+        })
+        this.shadowRoot!.querySelector('nav')!.append(button)
+      })
+    }
+  }
+  class VerifyLayer extends HTMLElement {
+    private config?: { bytes: string; layer: string; key: string; signature: string }
+    set options(value: { bytes: string; layer: string; key: string; signature: string }) { this.config = value }
     connectedCallback() {
       if (this.shadowRoot) return
-      const root = this.attachShadow({ mode: 'open' })
-      root.innerHTML = `<style>${shared}:host{display:block}nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px}button{font-size:12px;background:transparent}button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}.sheet{padding:22px;background:var(--bg);border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:5px}.label{font:11px monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}h3{font-size:25px;margin:14px 0}p{line-height:1.7;margin:0;color:var(--muted)}.value{font:42px monospace;letter-spacing:-.07em;margin:18px 0}.meta{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:15px;font:12px monospace}</style><nav aria-label="Example presentations"><button type="button" aria-pressed="true">Workbook</button><button type="button" aria-pressed="false">Report</button><button type="button" aria-pressed="false">Deck</button></nav><div class="sheet" aria-live="polite"></div>`
-      const names = ['Workbook', 'Report', 'Deck']
-      const render = (i: number) => {
-        root.querySelectorAll('button').forEach((b, n) => b.setAttribute('aria-pressed', String(n === i)))
-        root.querySelector('.sheet')!.innerHTML = `<div class="label">${names[i]} · its own presentation</div><h3>${['A figure in a cell', 'A figure in your report', 'A figure on a slide'][i]}</h3><div class="value">42,800</div><p>One source value. Each place carries its own style.</p><div class="meta"><span>source: project figure</span><span>layer 01</span></div>`
-      }
-      root.querySelectorAll('button').forEach((b, i) => b.addEventListener('click', () => render(i)))
-      render(0)
+      const view = this.attachShadow({ mode: 'open' })
+      view.innerHTML = `<style>${shared}:host{display:block;max-width:220px}button{color:var(--mint);border-color:var(--mint);background:transparent;font-size:12px;padding:10px}p{font-size:11px;line-height:1.5;margin:8px 0;color:var(--mint)}</style><button type="button">Check in this browser</button><p role="status">SHA-256 + Ed25519. Full hybrid check ran with ox.</p>`
+      view.querySelector('button')!.addEventListener('click', async () => {
+        const button = view.querySelector('button')!
+        const status = view.querySelector('p')!
+        button.disabled = true
+        try {
+          if (!this.config) throw new Error('Evidence is still loading. Try again.')
+          const data = this.config
+          const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data.bytes)))).map(n => n.toString(16).padStart(2, '0')).join('')
+          if ('sha256-' + hash !== data.layer) throw new Error('Layer hash does not match.')
+          const decode = (text: string) => Uint8Array.from(atob(text), c => c.charCodeAt(0)).buffer as ArrayBuffer
+          const key = await crypto.subtle.importKey('raw', decode(data.key.split(':')[1]), 'Ed25519', false, ['verify'])
+          const valid = await crypto.subtle.verify('Ed25519', key, decode(data.signature), new TextEncoder().encode('Milleleaf layer signature v1\n' + data.layer))
+          if (!valid) throw new Error('Signature does not match.')
+          status.textContent = '✓ Layer hash and Ed25519 signature match in this browser.'
+          this.dispatchEvent(new CustomEvent('verification-result', { detail: { valid: true }, bubbles: true, composed: true }))
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : 'This browser could not run the check.'
+        } finally { button.disabled = false }
+      })
     }
   }
   customElements.define('ml-theme', ThemeSwitch)
   customElements.define('ml-demo', DemoFrame)
-  customElements.define('ml-layers', LayerView)
+  customElements.define('ml-revisions', RevisionSelector)
+  customElements.define('ml-verify', VerifyLayer)
 }
