@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { json, useEngine } from './engine'
-import { fileSize, Status } from './status'
+import { fileSize, Status, tooBig } from './status'
 
 // Demo A: compare two versions of a file, in the browser. Element ids are what web checks select by.
 type Dated = { file: File; time: number; source: string }
@@ -148,6 +148,7 @@ export function CompareDemo() {
     operation(`Reading and comparing ${files.map(f => `${f.name} (${fileSize(f.size)})`).join(' and ')} in this browser…`, async () => {
       if (files.length > 2) throw new Error('Choose two versions of the same document.')
       if (files.some(f => !/\.(docx|xlsx|pptx)$/i.test(f.name))) throw new Error('Choose DOCX, XLSX or PPTX files.')
+      files.forEach(tooBig)
       const chosen = files.length === 2 ? files : pair.original ? [pair.original, files[0]] : files
       const dated: Dated[] = []
       for (const file of chosen) {
@@ -207,7 +208,7 @@ export function CompareDemo() {
     <section className="workflow" aria-label="Compare two versions">
       <div className="drop-area">
         <label className={`drop${dragging ? ' dragging' : ''}`} id="files-drop" htmlFor="files" onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={drop}>
-          <strong>Drop both versions here</strong><span className="drop-note">Or choose two DOCX, XLSX or PPTX files. Earlier modified time goes first. Large files (tens of MB) take longer and need more browser memory.</span>
+          <strong>Drop both versions here</strong><span className="drop-note">Or choose two DOCX, XLSX or PPTX files. Up to 64 MiB per file. Earlier modified time goes first. Large files take longer.</span>
           <input id="files" type="file" multiple accept=".docx,.xlsx,.pptx" disabled={!ready || busy} onChange={e => loadFiles(e.target.files)} />
         </label>
         <p className="privacy">Your files stay on this device. Nothing is uploaded: the comparison runs in your browser. <a href="#privacy-check" onClick={() => { if (privacy.current) privacy.current.open = true }}>How to check</a></p>

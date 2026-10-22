@@ -66,6 +66,16 @@ try {
   await titled.goto(origin);
   await ready(titled);
   assert.equal(await titled.title(), 'Compare two versions: demo | Milleleaf');
+  // A file over 64 MiB is refused before it is read.
+  const big = await titled.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(64 * 1024 * 1024 + 1)], 'big.docx'));
+    return transfer;
+  });
+  await titled.locator('#files-drop').dispatchEvent('drop', { dataTransfer: big });
+  await big.dispose();
+  await titled.waitForFunction(() => !document.getElementById('error').hidden);
+  assert.match(await titled.locator('#error').textContent(), /big\.docx is 64\.0 MB\. This demo accepts files up to 64 MiB\./);
   await titled.close();
   console.log('PASS page: site layout, title, engine ready');
   for (const [name, original, edited, expectedCount] of cases) {

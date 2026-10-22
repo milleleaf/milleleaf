@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { json, saveFile, useEngine } from './engine'
-import { fileSize, Status } from './status'
+import { fileSize, Status, tooBig } from './status'
 
 // Demo B: one workbook source feeds a report and a deck; edits come back as layers.
 // Element ids are what web checks select by.
@@ -8,7 +8,6 @@ const text = (value: any): string => value == null ? '' : typeof value === 'obje
 const number = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 21 })
 const show = (value: any) => typeof value === 'number' && Number.isFinite(value) ? number.format(value) : text(value)
 const now = () => new Date().toISOString()
-const tooBig = (file: File) => { if (file.size > 64 * 1024 * 1024) throw new Error('This demo accepts files up to 64 MiB.') }
 
 // A workbook can raise hundreds of cell notes (for example #DIV/0! results); group repeats by message.
 function Notes({ warnings, className }: { warnings: any[]; className?: string }) {
