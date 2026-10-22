@@ -330,7 +330,7 @@ echo; echo "== 18. Editor re-saves of the real files import as no change; real e
 #    PowerPoint 16 (Mac) re-saves and edits. A Microsoft Office fixture not made yet is said out loud
 #    (PENDING) and its part skipped; see examples/real/SOURCES.md
 OUT=$(mktemp)
-( cd ../.. && cargo test -q -p ox-wordcraft blank_line -- --nocapture && cargo test -q -p ox-deckcraft real_deck \
+( cd ../.. && cargo test -q -p ox-wordcraft blank_line -- --nocapture && cargo test -q -p ox-deckcraft real_deck -- --nocapture \
     && cargo test -q -p ox-gridcraft real_workbook -- --ignored --nocapture ) > "$OUT" 2>&1 \
   || { cat "$OUT"; echo "real-file re-save test failed"; exit 1; }
 # each filter must have run a test (a filter that matches nothing passes with 0)
