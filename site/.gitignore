@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.rsbuild/
+_shots/
+_out/
+src/routeTree.gen.ts
