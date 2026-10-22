@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { pages } from './content'
+import { DatasetTables } from './dataset-tables'
 
 const github = 'https://github.com/milleleaf'
 const nav = [['Demo', '/demo'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['GitHub', github]]
@@ -56,7 +57,7 @@ function DemoPage() {
 function Content({ path }: { path: string }) {
   const page = pages.find(p => p.path === path)!
   const parent = path.startsWith('/data/') ? ['Data', '/data'] : path.startsWith('/docs/') ? ['Docs', '/docs'] : null
-  return <main id="main" className="wrap content-page">{parent && <nav className="breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><a href={parent[1]}>{parent[0]}</a><span aria-hidden="true">/</span><span aria-current="page">{page.kicker.replace(' · planned', '')}</span></nav>}<div className="page-heading"><p className="eyebrow">{page.kicker}</p><h1>{page.title}</h1><p className="lead">{page.intro}</p></div><div className="article-layout"><aside><nav aria-label="On this page"><span className="mono">ON THIS PAGE</span>{page.sections.map((s, i) => <a href={'#' + slug(s.title)} key={s.title}><span>{String(i + 1).padStart(2, '0')}</span>{s.title}</a>)}</nav></aside><article className="article-body">{page.sections.map((s, i) => <section id={slug(s.title)} key={s.title}><span className="section-index mono">{String(i + 1).padStart(2, '0')}</span><h2>{s.title}</h2>{s.body.map(p => <p key={p}>{p}</p>)}{s.links && <div className="article-links">{s.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</section>)}</article></div></main>
+  return <main id="main" className="wrap content-page">{parent && <nav className="breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><a href={parent[1]}>{parent[0]}</a><span aria-hidden="true">/</span><span aria-current="page">{page.kicker.replace(' · planned', '')}</span></nav>}<div className="page-heading"><p className="eyebrow">{page.kicker}</p><h1>{page.title}</h1><p className="lead">{page.intro}</p></div>{path === '/data/datasets' ? <DatasetTables /> : <div className="article-layout"><aside><nav aria-label="On this page"><span className="mono">ON THIS PAGE</span>{page.sections.map((s, i) => <a href={'#' + slug(s.title)} key={s.title}><span>{String(i + 1).padStart(2, '0')}</span>{s.title}</a>)}</nav></aside><article className="article-body">{page.sections.map((s, i) => <section id={slug(s.title)} key={s.title}><span className="section-index mono">{String(i + 1).padStart(2, '0')}</span><h2>{s.title}</h2>{s.body.map(p => <p key={p}>{p}</p>)}{s.links && <div className="article-links">{s.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</section>)}</article></div>}</main>
 }
 
 export function App({ path }: { path: string }) {

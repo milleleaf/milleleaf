@@ -4,7 +4,7 @@ import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
 const paths = ['/', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about']
-const headings = ['Make content once.See what comes back.', 'A round trip,in your browser.', 'One source. Changes you can review.', 'Data you can inspect.', 'What survives the save?', 'Real places. Sources in view.', 'Open data, with its terms attached.', 'Claims need evidence.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built, checked, still to come.', 'Useful tools. Evidence in view.']
+const headings = ['Make content once.See what comes back.', 'A round trip,in your browser.', 'One source. Changes you can review.', 'Data you can inspect.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Claims need evidence.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built, checked, still to come.', 'Useful tools. Evidence in view.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -26,6 +26,25 @@ try {
     console.log(`PASS static HTML, JavaScript disabled: ${path}`)
   }
   assert.equal((await staticPage.goto(origin + '/not-a-page')).status(), 404)
+  await staticPage.goto(origin + '/data/datasets')
+  const tables = staticPage.locator('.dataset-table')
+  assert.equal(await tables.count(), 2)
+  assert.equal(await tables.nth(0).locator('tbody tr').count(), 13)
+  assert.equal(await tables.nth(1).locator('tbody tr').count(), 3)
+  assert.deepEqual(await tables.nth(0).locator('thead th').allTextContents(), ['Dataset', 'What it is', 'Area', 'Updated', 'Licence', 'Source', 'Links'])
+  const otherNames = await tables.nth(1).locator('tbody th').allTextContents()
+  assert.deepEqual(otherNames, ['sa-fire', 'world-building-green', 'world-places-nc'])
+  assert.equal(await tables.nth(1).locator('tr').filter({ hasText: 'sa-fire' }).locator('[data-label="Licence"]').textContent(), 'Mixed; see card')
+  assert.equal(await staticPage.locator('.section-index, .article-layout aside').count(), 0)
+  assert(!(await staticPage.locator('main').innerText()).includes('needs review'))
+  assert(await staticPage.getByText('The World Heritage view is not affiliated with or endorsed by UNESCO.', { exact: true }).isVisible())
+  assert.equal(await tables.nth(1).getByRole('link', { name: 'world-places-nc GitHub pipeline', exact: true }).getAttribute('href'), 'https://github.com/milleleaf/world-places')
+  const security = await staticPage.request.get(origin + '/.well-known/security.txt')
+  assert.equal(security.status(), 200)
+  assert.equal(await security.text(), await readFile('public/.well-known/security.txt', 'utf8'))
+  assert((await security.text()).includes('Contact: mailto:security@milleleaf.com'))
+  await staticPage.goto(origin + '/about')
+  assert((await staticPage.locator('main').innerText()).includes('security@milleleaf.com'))
   await nojs.close()
 
   for (const href of internal) {
@@ -55,6 +74,18 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow ${path} ${width} ${theme}`)
       assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior), 'auto')
       assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), theme)
+      if (path === '/data/datasets') {
+        assert.equal(await page.locator('.dataset-table tbody tr').count(), 16)
+        for (const row of await page.locator('.dataset-table tbody tr').all()) {
+          assert.equal(await row.locator('th, td').count(), 7)
+          assert(await row.locator('[data-label="Licence"]').isVisible())
+          const bounds = await row.boundingBox()
+          assert(bounds.x >= 0 && bounds.x + bounds.width <= width, 'Dataset row stays within viewport')
+        }
+        if (width === 400) {
+          assert.equal(await page.locator('.dataset-table tbody td[data-label="Updated"]').first().evaluate(el => getComputedStyle(el, '::before').content), '"Updated"')
+        }
+      }
       const name = `${path === '/' ? 'home' : path.slice(1).replaceAll('/', '-')}-${width}-${theme}.png`
       await page.screenshot({ path: '_shots/' + name, fullPage: true, animations: 'disabled' })
       captures.push({ path, width, theme, file: name })
@@ -100,7 +131,7 @@ try {
   assert.deepEqual(failures, [], 'Browser console, page and asset errors')
   const pkg = JSON.parse(await readFile('package.json', 'utf8'))
   for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) assert(/^\d+\.\d+\.\d+$/.test(version), `Unpinned ${name}`)
-  const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'shadow leaf controls', 'demo absent/present/host-fallback states', 'reduced motion', 'exact package pins'], captures }
+  const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'dataset tables: 13 open, 3 other, seven fields each', 'dataset mobile cards and licence boundaries', 'UNESCO disclaimer and shared pipeline link', 'security contact and security.txt preserved', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'shadow leaf controls', 'demo absent/present/host-fallback states', 'reduced motion', 'exact package pins'], captures }
   await writeFile('_shots/results.json', JSON.stringify(result, null, 2) + '\n')
   await writeFile('_shots/gallery.html', `<!doctype html><html lang="en"><meta charset="utf-8"><title>Milleleaf release captures</title><style>body{font:16px sans-serif;background:#e6eded;padding:24px}main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}img{width:100%;height:480px;object-fit:contain;object-position:top;background:#fff}a{color:#174536}figure{margin:0}figcaption{padding:12px 0}@media(max-width:800px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style><h1>Milleleaf · final captures</h1><p>12 pages × 2 widths × 2 themes. Full-page images; open each for detail.</p><main>${captures.map(c => `<figure><a href="${c.file}"><img src="${c.file}" alt="${c.path}, ${c.width}px, ${c.theme}" loading="lazy"><figcaption>${c.path} · ${c.width}px · ${c.theme}</figcaption></a></figure>`).join('')}</main></html>`)
   console.log('PASS: 12 static pages, 48 screenshots, interaction and integration checks; zero unexpected browser errors.')

@@ -8,3 +8,39 @@
 @media(max-width:1100px){.wrap{width:calc(100% - 64px)}.site-header{gap:18px}.desktop-nav{gap:16px}.desktop-nav a{font-size:12px}.header-tools .button{display:none}.hero{gap:35px;padding-block:60px}.hero h1{font-size:59px}.split,.status-strip{gap:50px}.article-layout{gap:40px;grid-template-columns:220px 1fr}.open-grid{gap:30px}}
 @media(max-width:800px){.wrap{width:calc(100% - 40px)}.site-header{min-height:86px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;position:relative}.brand{font-size:23px;gap:8px}.brand img{width:31px;height:31px}.desktop-nav{display:none}.mobile-menu{display:block}.mobile-menu summary{list-style:none;cursor:pointer;border:1px solid var(--line);padding:8px 11px;font-size:13px;border-radius:6px}.mobile-menu summary::-webkit-details-marker{display:none}.mobile-menu[open] summary{background:var(--accent-bg)}.mobile-menu nav{position:absolute;top:75px;left:0;right:0;background:var(--surface);border:1px solid var(--line);padding:15px 20px;z-index:5;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.mobile-menu nav a{padding:8px 0;font-size:14px;color:var(--ink);text-decoration:none}.hero{grid-template-columns:1fr;gap:38px;padding-block:43px 50px}.hero h1{font-size:clamp(44px,9vw,68px)}.desktop-break{display:none}.hero .lead{max-width:590px}.hero-copy .lead{font-size:19px}.hero .caption{font-size:11px}.hero-demo{padding:19px;max-width:590px;width:calc(100% - 8px)}.hero-demo .demo-placeholder{padding:23px 18px}.hero-demo .demo-placeholder h2{font-size:34px}.app-strip .wrap{gap:10px;display:block}.app-strip .mono{display:block;margin-bottom:8px}.app-strip p{font-size:13px;line-height:1.9}.app-strip p span{padding-inline:4px}.app-strip a{display:inline-block;margin-top:7px}.section{padding-block:50px}.split,.status-strip{grid-template-columns:1fr;gap:30px}.split>div>p:not(.eyebrow){max-width:none}.illustration{padding:20px}h2{font-size:36px}.eyebrow{font-size:10px}.section-heading{display:block}.section-heading>.text-link{display:inline-block;margin-bottom:20px}.proof-section .measure{font-size:16px}table{font-size:12px}td,th{padding:14px 7px}thead th{font-size:9px}.tag{font-size:10px;padding:3px 5px}.feature-grid,.open-grid{grid-template-columns:1fr;gap:0}.feature-grid article,.feature-grid article+article{border-left:0;border-bottom:1px solid var(--line);padding:24px 0}.feature-grid h2{margin:16px 0;font-size:28px}.feature-grid p{max-width:550px}.open-grid{margin-top:12px}.open-grid article{padding:26px 0;border-top:1px solid var(--line)}.open-grid h3{margin-bottom:16px}.open-grid p{margin-bottom:14px}.status-strip>div:last-child{padding-top:0}.status-strip h2{font-size:34px}.content-page{padding-top:33px;padding-bottom:55px}.page-heading{padding:8px 0 32px}.page-heading h1{font-size:44px}.page-heading .lead{font-size:19px}.article-layout{display:block}.article-layout aside{padding-top:25px;padding-bottom:20px;border-bottom:1px solid var(--line)}.article-layout aside nav{position:static}.article-layout aside a{padding:7px 0}.article-layout aside .mono{margin-bottom:12px}.article-body section{padding:30px 0}.article-body h2{font-size:28px}.article-body p{font-size:16px}.breadcrumbs{margin-bottom:28px;font-size:11px;gap:8px}.demo-page-host .demo-placeholder{padding:25px 20px}.demo-page-host .demo-placeholder h2{font-size:37px}.content-page>h1{font-size:46px}.content-page>.lead{font-size:19px}.footer-grid{grid-template-columns:1fr 1fr;gap:30px 18px;padding-block:35px}.footer-grid>div:first-child{grid-column:1/-1}.footer-grid>div:first-child p{margin:10px 0}.footer-bottom{display:block;line-height:1.8}.footer-bottom span{display:block}.footer-grid>div>a:not(.brand),.footer-grid>div>span{font-size:12px}.footer-grid .brand{font-size:25px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important}}
+
+/* The dataset register is a page-specific table, with labelled rows on phones. */
+.dataset-catalogue section{padding:30px 0 45px;border-top:1px solid var(--line)}
+.dataset-catalogue h2{font-size:29px;line-height:1.4;letter-spacing:-.025em;margin-bottom:25px}
+.dataset-catalogue h2 span{font-size:17px;font-weight:400;letter-spacing:0;color:var(--muted)}
+.dataset-table-container{max-width:100%;overflow-x:auto}
+.dataset-table{font-size:13px;line-height:1.6;table-layout:fixed}
+.dataset-table th,.dataset-table td{padding:18px 12px;overflow-wrap:anywhere}
+.dataset-table th:first-child,.dataset-table td:first-child{width:16%;padding-left:12px}
+.dataset-table th:nth-child(2){width:18%}
+.dataset-table th:nth-child(3){width:8%}
+.dataset-table th:nth-child(4){width:11%}
+.dataset-table th:nth-child(5){width:17%}
+.dataset-table th:nth-child(6){width:19%}
+.dataset-table th:last-child,.dataset-table td:last-child{width:11%;padding-right:12px}
+.dataset-table thead th{font-size:10px;letter-spacing:.04em;white-space:nowrap}
+.dataset-table tbody th{font-weight:600;text-align:left}
+.dataset-table tbody td{color:var(--muted)}
+.dataset-table tbody tr:nth-child(odd){background:var(--surface)}
+.dataset-table ul{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+.dataset-table a{font-size:inherit}
+.dataset-note{font-size:13px;color:var(--muted);margin:18px 0 0}
+@media(max-width:800px){
+  .dataset-catalogue section{padding:25px 0 35px}
+  .dataset-catalogue h2{font-size:28px;line-height:1.25}
+  .dataset-catalogue h2 span{font-size:16px;line-height:1.6}
+  .dataset-table,.dataset-table tbody{display:block;width:100%}
+  .dataset-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .dataset-table tbody tr{display:block;border:1px solid var(--line);border-radius:5px;background:var(--surface);margin-bottom:20px;padding:17px}
+  .dataset-table tbody th,.dataset-table tbody td{display:block;width:100%;border:0;padding:9px 0;font-size:14px;overflow-wrap:anywhere}
+  .dataset-table tbody th:first-child{width:100%;padding:0 0 14px;border-bottom:1px solid var(--line);font-size:19px;margin-bottom:7px}
+  .dataset-table tbody td:last-child{width:100%;padding:9px 0 0}
+  .dataset-table tbody td::before{content:attr(data-label);display:block;color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+  .dataset-table tbody td[data-label="Links"] ul{display:flex;flex-wrap:wrap;gap:10px 17px}
+  .dataset-table ul{gap:5px}
+}
