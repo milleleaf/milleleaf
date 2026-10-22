@@ -1,5 +1,5 @@
-import init, { Demo, file_metadata } from './pkg/ox_web.js';
-import wasmBytes from './pkg/ox_web_bytes.js';
+import init, { Demo, file_metadata } from './pkg/milleleaf_web.js';
+import wasmBytes from './pkg/milleleaf_web_bytes.js';
 
 let demo;
 const ready = init({ module_or_path: wasmBytes }).then(() => { demo = new Demo(); });

@@ -1,6 +1,6 @@
 """Run on the box, from site/: python3 scripts/generate-hero.py.
 
-Uses the actual ox CLI, the tracked LibreOffice report fixture and a fresh
+Uses the actual mleaf CLI, the tracked LibreOffice report fixture and a fresh
 LibreOffice re-save. Private test keys live only in a temporary directory.
 """
 import datetime
@@ -20,7 +20,7 @@ WORKBOOK = '3f1c2a90-0000-4c1e-9a00-000000000010'
 TABLE = '3f1c2a90-0000-4c1e-9a00-000000000012'
 DECK = '2af44a75-c514-5c87-b208-689fa8b15950'
 EXAMPLE = ROOT / 'examples/hello-table'
-PROJECT = EXAMPLE / 'project.ox.json'
+PROJECT = EXAMPLE / 'project.mleaf.json'
 FIXTURE = EXAMPLE / 'fixtures/report.libreoffice-edited.docx'
 NS = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 commands = []
@@ -33,8 +33,8 @@ def run(args, env=None):
     return result.stdout
 
 
-def ox(*args):
-    return run(['cargo', 'run', '-q', '-p', 'ox-cli', '--', *args], os.environ.copy())
+def mleaf(*args):
+    return run(['cargo', 'run', '-q', '-p', 'milleleaf-cli', '--', *args], os.environ.copy())
 
 
 def digest(data):
@@ -84,12 +84,12 @@ def segments(before, after):
 
 def flow_snapshot(project, work, label):
     """Check the actual exported tables and chart against the composed source."""
-    source = json.loads(ox('get', project, TABLE))['attributes']['office::data::table']
+    source = json.loads(mleaf('get', project, TABLE))['attributes']['office::data::table']
     rows = [[str(row[0]), float(row[1])] for row in source['rows']]
     report = work / (label + '.docx')
     deck = work / (label + '.pptx')
-    ox('docx-export', project, REPORT, '--out', report)
-    ox('pptx-export', project, DECK, '--out', deck)
+    mleaf('docx-export', project, REPORT, '--out', report)
+    mleaf('pptx-export', project, DECK, '--out', deck)
     report_blocks = document(report)
     report_rows = next(b['rows'] for b in report_blocks if b['kind'] == 'table')
     ns = {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
@@ -126,10 +126,10 @@ def flow_snapshot(project, work, label):
 
 with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
     work = Path(folder)
-    os.environ['OX_KEYS'] = str(work / 'keys')
+    os.environ['MLEAF_KEYS'] = str(work / 'keys')
     original = work / 'original.docx'
-    ox('docx-export', PROJECT, REPORT, '--out', original)
-    ox('docx-import', PROJECT, REPORT, FIXTURE, '--out', work / 'edited.json',
+    mleaf('docx-export', PROJECT, REPORT, '--out', original)
+    mleaf('docx-import', PROJECT, REPORT, FIXTURE, '--out', work / 'edited.json',
        '--report', work / 'edited-report.json', '--author', 'libreoffice', '--id', 'site/hero/edited')
     saved = work / 'saved'
     saved.mkdir()
@@ -137,22 +137,22 @@ with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
          '--convert-to', 'docx', '--outdir', saved, FIXTURE])
     resaved = saved / FIXTURE.name
     assert resaved.exists(), 'LibreOffice must produce a real re-save'
-    ox('docx-import', PROJECT, REPORT, resaved, '--out', work / 'resaved.json',
+    mleaf('docx-import', PROJECT, REPORT, resaved, '--out', work / 'resaved.json',
        '--report', work / 'resaved-report.json', '--author', 'libreoffice', '--id', 'site/hero/resaved')
     edited_report = json.loads((work / 'edited-report.json').read_text())
     saved_report = json.loads((work / 'resaved-report.json').read_text())
     assert edited_report['changed'] and edited_report['conflicts'], 'Choose a fixture with text changes and a cell conflict'
     store = work / 'project'
-    ox('init', store, '--from', PROJECT)
-    ox('key', 'new', 'fixture-reviewer', store)
-    ox('commit', store, work / 'resaved.json', '--sign', '--key', 'fixture-reviewer')
+    mleaf('init', store, '--from', PROJECT)
+    mleaf('key', 'new', 'fixture-reviewer', store)
+    mleaf('commit', store, work / 'resaved.json', '--sign', '--key', 'fixture-reviewer')
     # Verify all layers under the default signature policy, not just a painted check.
-    for layer in (store / '.ox/layers').glob('*.json'):
-        ox('sign', store, layer.stem, '--key', 'fixture-reviewer')
-    verification = ox('verify', store, '--require')
-    signed_layer = next(p for p in (store / '.ox/layers').glob('*.json')
+    for layer in (store / '.mleaf/layers').glob('*.json'):
+        mleaf('sign', store, layer.stem, '--key', 'fixture-reviewer')
+    verification = mleaf('verify', store, '--require')
+    signed_layer = next(p for p in (store / '.mleaf/layers').glob('*.json')
                         if json.loads(p.read_text())['header']['id'] == 'site/hero/resaved')
-    signature = next(json.loads(p.read_text()) for p in (store / '.ox/sigs' / signed_layer.stem).glob('*.json')
+    signature = next(json.loads(p.read_text()) for p in (store / '.mleaf/sigs' / signed_layer.stem).glob('*.json')
                      if not json.loads(p.read_text()).get('alg'))
     original_blocks = document(original)
     def frame(label, app, path, report):
@@ -164,14 +164,14 @@ with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
                 'rewrites': rewrites(original, path), 'report': report}
     # A real Calc edit feeds two other app writers in the same project.
     flow_store = work / 'flow-project'
-    ox('init', flow_store, '--from', PROJECT)
+    mleaf('init', flow_store, '--from', PROJECT)
     flow_before = flow_snapshot(flow_store, work, 'flow-before')
     workbook_layer = work / 'workbook-edit.json'
     workbook_report = work / 'workbook-report.json'
-    ox('xlsx-import', PROJECT, WORKBOOK, EXAMPLE / 'fixtures/finance.libreoffice-edited.xlsx',
+    mleaf('xlsx-import', PROJECT, WORKBOOK, EXAMPLE / 'fixtures/finance.libreoffice-edited.xlsx',
        '--out', workbook_layer, '--report', workbook_report,
        '--author', 'libreoffice', '--id', 'site/hero/workbook')
-    ox('commit', flow_store, workbook_layer)
+    mleaf('commit', flow_store, workbook_layer)
     flow_after = flow_snapshot(flow_store, work, 'flow-after')
     assert flow_before['source']['rows'] != flow_after['source']['rows'], 'Workbook must really change'
     flow = {'fixture': 'examples/hello-table/fixtures/finance.libreoffice-edited.xlsx',
@@ -184,7 +184,7 @@ with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
         'flow': flow,
         'generatedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'fixture': 'examples/hello-table/fixtures/report.libreoffice-edited.docx',
-        'baseline': 'examples/hello-table/project.ox.json',
+        'baseline': 'examples/hello-table/project.mleaf.json',
         'commands': commands,
         'frames': [frame('Original', 'Milleleaf / WordCraft', original, {}),
                    frame('Edited', 'LibreOffice fixture', FIXTURE, edited_report),
@@ -201,4 +201,4 @@ with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
     public = ROOT / 'site/public/evidence/hero.json'
     public.parent.mkdir(parents=True, exist_ok=True)
     public.write_text(target.read_text())
-    print('Hero evidence: actual edited report, real re-save, signed layer; ox verify --require exit 0.')
+    print('Hero evidence: actual edited report, real re-save, signed layer; mleaf verify --require exit 0.')

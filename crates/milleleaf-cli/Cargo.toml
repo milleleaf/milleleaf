@@ -1,0 +1,34 @@
+[package]
+name = "milleleaf-cli"
+description = "mleaf command-line tool: compose, validate, inspect and render Milleleaf layer stacks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mleaf"
+path = "src/main.rs"
+
+[dependencies]
+milleleaf-core = { workspace = true }
+milleleaf-wordcraft = { workspace = true }
+milleleaf-gridcraft = { workspace = true }
+milleleaf-deckcraft = { workspace = true }
+milleleaf-pack = { workspace = true }
+milleleaf-odf = { workspace = true }
+milleleaf-store = { workspace = true }
+milleleaf-formats = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
+# TLS for https time-stamp calendars and Bitcoin header sources: the BoringSSL that milleleaf-seal already
+# links (same pin, no new crate in the tree).
+boring = "=5.3.0"
+# Basic auth for a Bitcoin Core node (already in the tree through milleleaf-store).
+base64 = "0.22"
+# Mozilla's root certificates for https where the system has none (Windows; 18 Oct 2026). Data under
+# CDLA-Permissive-2.0; the project notes "Transport".
+webpki-root-certs = "=1.0.9"
+
+[dev-dependencies]
+sha2 = { workspace = true }

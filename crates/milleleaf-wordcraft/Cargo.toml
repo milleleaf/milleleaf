@@ -1,0 +1,22 @@
+[package]
+name = "milleleaf-wordcraft"
+description = "Milleleaf ↔ WordCraft adapter: composed Milleleaf documents to WordCraft/DOCX, and edited DOCX back to an Milleleaf layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["other-formats"]
+# DOCX needs no PDF renderer; the other writers are native-only in the browser demo.
+other-formats = ["dep:wordcraft-formats"]
+
+[dependencies]
+milleleaf-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+# Pinned: WordCraft moves fast. Bump deliberately and rerun the tests.
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }
+wordcraft-formats = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706", optional = true }
+wordcraft-docx = { git = "https://github.com/storytold/wordcraft", rev = "eae242176108d328c5dd81fbc10370c51ab90706" }

@@ -12,7 +12,7 @@ Third-party material
 This repository and the programs built from it include third-party material under its own licence,
 listed below. The per-file list (author, source, licence) is in ATTRIBUTION.md.
 
-Built into the ox program (through its dependencies):
+Built into the mleaf program (through its dependencies):
 Inter, JetBrains Mono, Source Sans 3 and Source Serif 4 fonts (WordCraft) and Dancing Script
   (PDFCraft) — SIL Open Font License 1.1. See licenses/OFL-*.txt.
 Mozilla root certificates (webpki-root-certs 1.0.9) — Community Data License Agreement Permissive 2.0.
@@ -29,11 +29,11 @@ Test files and examples:
 Real-world Office files in examples/real/ (paper.docx, lca-model.xlsx, lcoh-calculator.xlsx and the
   re-saves derived from them) — Creative Commons Attribution 4.0, by their authors. See
   examples/real/SOURCES.md for each file's attribution and examples/real/LICENSE-CC-BY-4.0.txt.
-NIST ACVP-Server test vectors (crates/ox-store/testdata/pq-vectors.json) — NIST software notice;
-  source: NIST. See crates/ox-store/testdata/NOTICE-NIST.txt.
-Wycheproof test vectors (crates/ox-store/testdata/pq-vectors.json) — Apache License 2.0. See
+NIST ACVP-Server test vectors (crates/milleleaf-store/testdata/pq-vectors.json) — NIST software notice;
+  source: NIST. See crates/milleleaf-store/testdata/NOTICE-NIST.txt.
+Wycheproof test vectors (crates/milleleaf-store/testdata/pq-vectors.json) — Apache License 2.0. See
   LICENSE-APACHE.
-X-Wing HPKE test vector (crates/ox-seal/vectors/) — from the IETF draft-ietf-hpke-pq repository;
+X-Wing HPKE test vector (crates/milleleaf-seal/vectors/) — from the IETF draft-ietf-hpke-pq repository;
   see ATTRIBUTION.md.
 
 Design credits

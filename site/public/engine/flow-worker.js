@@ -1,5 +1,5 @@
-import init, { FlowSession } from './pkg/ox_web.js';
-import wasmBytes from './pkg/ox_web_bytes.js';
+import init, { FlowSession } from './pkg/milleleaf_web.js';
+import wasmBytes from './pkg/milleleaf_web_bytes.js';
 
 let flow;
 // The engine arrives as a script module, not fetch(), so the page can forbid every network request.

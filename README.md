@@ -31,17 +31,17 @@ the same version.
 | Path | What |
 |---|---|
 | `schema/ox.tsp` | TypeSpec for the file format; compiles to JSON Schema with `@typespec/compiler` and `@typespec/json-schema` 1.17.0 |
-| `schema/office.ox.json` | Attribute schemas: `office::`, `grid::`, `word::`, `deck::`, `ox::` |
-| `crates/ox-core` | Rust: load stacks (imports, integrity), flatten, compose with provenance, validate, render HTML |
-| `crates/ox-cli` | `ox layers / validate / compose / get / render / pack`, `docx-`, `xlsx-`, `pptx-` `export` / `import`, and the store: `init / commit / head / log / blame / checkpoint / verify / sign / key` |
-| `crates/ox-formats` | Format registry: every route in and out, what it keeps, what it needs, and the best one on this machine |
-| `crates/ox-store` | Revision store in a project's `.ox/` folder |
-| `crates/ox-wordcraft` | WordCraft adapter: composed document → DOCX with node identity in content controls; edited DOCX → minimal edit layer |
-| `crates/ox-gridcraft` | GridCraft adapter: composed workbook → recalculated XLSX with node identity in defined names; edited XLSX → edit layer recalculated by GridCraft's calc engine |
-| `crates/ox-pack` | One composed snapshot → each part's PDF through WordCraft, GridCraft and DeckCraft → one bookmarked PDF assembled with PdfCraft, with an "About this pack" page |
-| `crates/ox-odf` | ODT, ODS and ODP for every export and import, converted through LibreOffice, which keeps the identity markers the Craft apps' ODF code drops |
-| `crates/ox-deckcraft` | DeckCraft adapter: composed deck → PPTX with native tables and charts drawn from the data; edited PPTX → edit layer |
-| `tools/html2ox` | Node + Playwright: measure an HTML deck into a proposal layer + loss report; `compare.mjs` for round-trip checks |
+| `schema/office.mleaf.json` | Attribute schemas: `office::`, `grid::`, `word::`, `deck::`, `mleaf::` |
+| `crates/milleleaf-core` | Rust: load stacks (imports, integrity), flatten, compose with provenance, validate, render HTML |
+| `crates/milleleaf-cli` | `mleaf layers / validate / compose / get / render / pack`, `docx-`, `xlsx-`, `pptx-` `export` / `import`, and the store: `init / commit / head / log / blame / checkpoint / verify / sign / key` |
+| `crates/milleleaf-formats` | Format registry: every route in and out, what it keeps, what it needs, and the best one on this machine |
+| `crates/milleleaf-store` | Revision store in a project's `.mleaf/` folder |
+| `crates/milleleaf-wordcraft` | WordCraft adapter: composed document → DOCX with node identity in content controls; edited DOCX → minimal edit layer |
+| `crates/milleleaf-gridcraft` | GridCraft adapter: composed workbook → recalculated XLSX with node identity in defined names; edited XLSX → edit layer recalculated by GridCraft's calc engine |
+| `crates/milleleaf-pack` | One composed snapshot → each part's PDF through WordCraft, GridCraft and DeckCraft → one bookmarked PDF assembled with PdfCraft, with an "About this pack" page |
+| `crates/milleleaf-odf` | ODT, ODS and ODP for every export and import, converted through LibreOffice, which keeps the identity markers the Craft apps' ODF code drops |
+| `crates/milleleaf-deckcraft` | DeckCraft adapter: composed deck → PPTX with native tables and charts drawn from the data; edited PPTX → edit layer |
+| `tools/html2mleaf` | Node + Playwright: measure an HTML deck into a proposal layer + loss report; `compare.mjs` for round-trip checks |
 | `examples/hello-table` | Workbook → report → agent HTML deck → finance correction → Word, Excel and PowerPoint edits made in LibreOffice, end to end |
 
 ## Try it
@@ -52,22 +52,22 @@ LibreOffice, for OpenDocument files.
 
 ```sh
 cargo test
-cd tools/html2ox && npm install && npx playwright install chromium && cd ../..
+cd tools/html2mleaf && npm install && npx playwright install chromium && cd ../..
 examples/hello-table/run.sh
 ```
 
-`run.sh` measures `deck.html` again and checks it against the stored `deck.proposal.ox.json` (the same nodes and text; geometry that moves with the installed browser and fonts is only a warning), stacks that proposal with the base workbook +
+`run.sh` measures `deck.html` again and checks it against the stored `deck.proposal.mleaf.json` (the same nodes and text; geometry that moves with the installed browser and fonts is only a warning), stacks that proposal with the base workbook +
 report and a finance review that restates Hong Kong revenue, shows that the slide table's rows
 come from the finance layer *via* the workbook table, renders `composed-deck.html` and
 `composed-report.html` (both now say $541,500 and $1,250,500), then re-imports the rendered
 deck and checks nothing changed. It then exports the report as `report.docx` through
 WordCraft and imports a copy edited in LibreOffice: the reworded summary and a new paragraph come
-back as `word-edit.ox.json`, while the number typed over the linked table is reported as a
+back as `word-edit.mleaf.json`, while the number typed over the linked table is reported as a
 conflict, because the workbook owns it. Next it exports the workbook as `finance.xlsx` through
 GridCraft and imports a copy edited in LibreOffice (Singapore restated, a Perth row inserted,
-the sheet renamed) as `grid-edit.ox.json`, recalculated by GridCraft, and the deck as
-`deck.pptx` through DeckCraft, with a copy edited in Impress coming back as `deck-edit.ox.json`.
-Finally `with-edits.ox.json` stacks all three: the report, the workbook and the deck are
+the sheet renamed) as `grid-edit.mleaf.json`, recalculated by GridCraft, and the deck as
+`deck.pptx` through DeckCraft, with a copy edited in Impress coming back as `deck-edit.mleaf.json`.
+Finally `with-edits.mleaf.json` stacks all three: the report, the workbook and the deck are
 re-exported with every edit, and the slide's table, its chart and "across 4 regions" all show
 the Perth row the workbook gained. The last step publishes `board-pack.pdf`: report, workbook
 and deck from that one snapshot, bookmarked, page-numbered, with a page listing every layer
@@ -77,7 +77,7 @@ Microsoft Word, Excel and PowerPoint 16 give the same edit layers too. Last, it 
 into a revision store: commits the edits (one signed), has a stale Word edit refused and then
 rebased, blames the Q3 total on the slide back through the finance review to the workbook edit,
 checkpoints, verifies, and checks the store composes exactly like the stack files. Step 16
-prints `ox formats`, makes one-way copies (Markdown; ODT without LibreOffice), shows an ODP
+prints `mleaf formats`, makes one-way copies (Markdown; ODT without LibreOffice), shows an ODP
 import refused without LibreOffice, and shows Impress's slide matches as best guesses.
 
 ## Next Done: the Microsoft Office proof (M0), the revision store (M1), and honest

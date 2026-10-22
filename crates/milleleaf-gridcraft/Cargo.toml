@@ -1,0 +1,21 @@
+[package]
+name = "milleleaf-gridcraft"
+description = "Milleleaf ↔ GridCraft adapter: composed Milleleaf workbooks to GridCraft/XLSX, and edited XLSX back to a recalculated Milleleaf layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+milleleaf-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+quick-xml = "=0.41.0"
+zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
+# Pinned: GridCraft moves fast. Bump deliberately and rerun the tests.
+gridcraft-core = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-model = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-formula = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-calc = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }
+gridcraft-xlsx = { git = "https://github.com/storytold/gridcraft", rev = "8ffff19dda63d85348d4b4ec552b8857b82109b1" }

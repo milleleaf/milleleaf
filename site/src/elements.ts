@@ -55,7 +55,7 @@ export function registerElements() {
     connectedCallback() {
       if (this.shadowRoot) return
       const view = this.attachShadow({ mode: 'open' })
-      view.innerHTML = `<style>${shared}:host{display:block;max-width:220px}button{color:var(--mint);border-color:var(--mint);background:transparent;font-size:12px;padding:10px}p{font-size:11px;line-height:1.5;margin:8px 0;color:var(--mint)}</style><button type="button">Check in this browser</button><p role="status">SHA-256 + Ed25519. Full hybrid check ran with ox.</p>`
+      view.innerHTML = `<style>${shared}:host{display:block;max-width:220px}button{color:var(--mint);border-color:var(--mint);background:transparent;font-size:12px;padding:10px}p{font-size:11px;line-height:1.5;margin:8px 0;color:var(--mint)}</style><button type="button">Check in this browser</button><p role="status">SHA-256 + Ed25519. Full hybrid check ran with mleaf.</p>`
       view.querySelector('button')!.addEventListener('click', async () => {
         const button = view.querySelector('button')!
         const status = view.querySelector('p')!
@@ -67,7 +67,7 @@ export function registerElements() {
           if ('sha256-' + hash !== data.layer) throw new Error('Layer hash does not match.')
           const decode = (text: string) => Uint8Array.from(atob(text), c => c.charCodeAt(0)).buffer as ArrayBuffer
           const key = await crypto.subtle.importKey('raw', decode(data.key.split(':')[1]), 'Ed25519', false, ['verify'])
-          const valid = await crypto.subtle.verify('Ed25519', key, decode(data.signature), new TextEncoder().encode('Milleleaf layer signature v1\n' + data.layer))
+          const valid = await crypto.subtle.verify('Ed25519', key, decode(data.signature), new TextEncoder().encode('milleleaf layer signature v1\n' + data.layer))
           if (!valid) throw new Error('Signature does not match.')
           status.textContent = '✓ Layer hash and Ed25519 signature match in this browser.'
           this.dispatchEvent(new CustomEvent('verification-result', { detail: { valid: true }, bubbles: true, composed: true }))

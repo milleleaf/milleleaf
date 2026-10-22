@@ -1,0 +1,78 @@
+{
+  "header": {
+    "id": "edit/finance-libreoffice",
+    "mleafVersion": "mleaf_alpha",
+    "dataVersion": "1.0.0",
+    "author": "libreoffice",
+    "timestamp": "2026-10-16",
+    "kind": "edit"
+  },
+  "imports": [],
+  "schemas": {},
+  "data": [
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000011",
+      "attributes": {
+        "grid::sheet": {
+          "name": "Q3 2026"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000012",
+      "attributes": {
+        "grid::range": {
+          "sheet": "Q3 2026",
+          "ref": "A1:B5"
+        },
+        "office::data::table": {
+          "columns": [
+            {
+              "name": "Region",
+              "type": "text"
+            },
+            {
+              "name": "Revenue",
+              "type": "currency"
+            }
+          ],
+          "rows": [
+            [
+              "Adelaide",
+              412000
+            ],
+            [
+              "Hong Kong",
+              541500
+            ],
+            [
+              "Perth",
+              120000
+            ],
+            [
+              "Singapore",
+              305250
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000013",
+      "attributes": {
+        "grid::range": {
+          "sheet": "Q3 2026",
+          "ref": "B6"
+        },
+        "office::data::value": {
+          "value": 1378750,
+          "unit": "AUD",
+          "format": "currency"
+        },
+        "grid::formula": {
+          "text": "=SUM(B2:B5)"
+        }
+      }
+    }
+  ]
+}

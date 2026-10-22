@@ -83,7 +83,7 @@ export function Comparison() {
     <div className="comparison-legend"><span><i className="added-key" /> Text changed</span><span><i className="conflict-key" /> Linked value conflict</span><span>Select and inspect the actual content below.</span></div>
     <div className="document-pair"><DocumentSheet frame={hero.frames[0]} original /><DocumentSheet frame={frame} /></div>
     <aside className={`signature-receipt ${selected === 3 ? 'selected-receipt' : ''}`} aria-label="Signed import layer">
-      <div className="verified-seal" aria-hidden="true">✓</div><div><strong>Layer verified by ox</strong><p>{hero.signed.signer} <span>·</span> <time dateTime={hero.signed.at}>{hero.signed.at.replace('T', ' ').replace('Z', ' UTC')}</time></p><code className="layer-hash">{hero.signed.layer}</code><p className="signature-scope">Fixture test key. Hybrid signatures checked at build time. Linked overrides stay flagged, not applied. Signing time is not a trusted time-stamp.</p></div><ml-verify ref={verifier} />
+      <div className="verified-seal" aria-hidden="true">✓</div><div><strong>Layer verified by mleaf</strong><p>{hero.signed.signer} <span>·</span> <time dateTime={hero.signed.at}>{hero.signed.at.replace('T', ' ').replace('Z', ' UTC')}</time></p><code className="layer-hash">{hero.signed.layer}</code><p className="signature-scope">Fixture test key. Hybrid signatures checked at build time. Linked overrides stay flagged, not applied. Signing time is not a trusted time-stamp.</p></div><ml-verify ref={verifier} />
     </aside>
   </section>
 }

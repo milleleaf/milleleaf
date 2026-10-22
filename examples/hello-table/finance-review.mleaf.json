@@ -1,0 +1,60 @@
+{
+  "header": {
+    "id": "milleleaf/examples/hello-table/finance-review",
+    "mleafVersion": "mleaf_alpha",
+    "dataVersion": "1.0.0",
+    "author": "finance",
+    "timestamp": "2026-10-15",
+    "kind": "review"
+  },
+  "imports": [],
+  "schemas": {},
+  "data": [
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000012",
+      "attributes": {
+        "office::data::table": {
+          "columns": [
+            {
+              "name": "Region",
+              "type": "text"
+            },
+            {
+              "name": "Revenue",
+              "type": "currency"
+            }
+          ],
+          "rows": [
+            [
+              "Adelaide",
+              412000
+            ],
+            [
+              "Hong Kong",
+              541500
+            ],
+            [
+              "Singapore",
+              297000
+            ]
+          ]
+        },
+        "mleaf::review": {
+          "author": "Finance",
+          "note": "Hong Kong restated after FX close",
+          "status": "approved"
+        }
+      }
+    },
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000013",
+      "attributes": {
+        "office::data::value": {
+          "value": 1250500,
+          "unit": "AUD",
+          "format": "currency"
+        }
+      }
+    }
+  ]
+}

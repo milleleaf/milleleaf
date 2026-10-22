@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ox-core", "crates/ox-cli", "crates/ox-wordcraft", "crates/ox-gridcraft", "crates/ox-deckcraft", "crates/ox-pack", "crates/ox-odf", "crates/ox-store", "crates/ox-formats", "crates/ox-seal", "crates/ox-headers", "crates/ox-web"]
+members = ["crates/milleleaf-core", "crates/milleleaf-cli", "crates/milleleaf-wordcraft", "crates/milleleaf-gridcraft", "crates/milleleaf-deckcraft", "crates/milleleaf-pack", "crates/milleleaf-odf", "crates/milleleaf-store", "crates/milleleaf-formats", "crates/milleleaf-seal", "crates/milleleaf-headers", "crates/milleleaf-web"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,15 +8,15 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-ox-core = { path = "crates/ox-core" }
-ox-wordcraft = { path = "crates/ox-wordcraft" }
-ox-gridcraft = { path = "crates/ox-gridcraft" }
-ox-deckcraft = { path = "crates/ox-deckcraft" }
-ox-pack = { path = "crates/ox-pack" }
-ox-odf = { path = "crates/ox-odf" }
-ox-store = { path = "crates/ox-store" }
-ox-formats = { path = "crates/ox-formats" }
-ox-seal = { path = "crates/ox-seal" }
+milleleaf-core = { path = "crates/milleleaf-core" }
+milleleaf-wordcraft = { path = "crates/milleleaf-wordcraft" }
+milleleaf-gridcraft = { path = "crates/milleleaf-gridcraft" }
+milleleaf-deckcraft = { path = "crates/milleleaf-deckcraft" }
+milleleaf-pack = { path = "crates/milleleaf-pack" }
+milleleaf-odf = { path = "crates/milleleaf-odf" }
+milleleaf-store = { path = "crates/milleleaf-store" }
+milleleaf-formats = { path = "crates/milleleaf-formats" }
+milleleaf-seal = { path = "crates/milleleaf-seal" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

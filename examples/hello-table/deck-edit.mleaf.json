@@ -1,0 +1,216 @@
+{
+  "header": {
+    "id": "edit/deck-impress",
+    "mleafVersion": "mleaf_alpha",
+    "dataVersion": "1.0.0",
+    "author": "impress",
+    "timestamp": "2026-10-16",
+    "kind": "edit"
+  },
+  "imports": [],
+  "schemas": {},
+  "data": [
+    {
+      "path": "79cf7543-79e8-551e-992b-1899612ea818",
+      "attributes": {
+        "deck::frame": {
+          "x": 96.0,
+          "y": 287.81,
+          "w": 999.95,
+          "h": 86.97,
+          "z": 0
+        }
+      }
+    },
+    {
+      "path": "b9f29acd-4be0-5345-b388-cb314338fa55",
+      "children": {
+        "shape-1": null
+      },
+      "order": [
+        "text-1",
+        "text-2"
+      ],
+      "attributes": {
+        "deck::slide": {
+          "name": "title",
+          "background": "#0f3d5e",
+          "notes": "Open with the headline, then hand over to Finance."
+        },
+        "mleaf::match": {
+          "confidence": "best-guess",
+          "by": "slide 1: 2 of its 2 named frame(s) came from this slide"
+        }
+      }
+    },
+    {
+      "path": "1f3d316c-9724-5069-b314-93f167a63dbb",
+      "attributes": {
+        "deck::text": {
+          "role": "body",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5,
+                  "text": "Group revenue: "
+                },
+                {
+                  "field": "field-1",
+                  "bold": true,
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                },
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5,
+                  "text": " across "
+                },
+                {
+                  "field": "field-2",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                },
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5,
+                  "text": " regions."
+                }
+              ],
+              "align": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "fe7234e8-6154-5a93-9672-691664c55a4c",
+      "attributes": {
+        "deck::text": {
+          "role": "body",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21.0,
+                  "text": "Close Hong Kong FX restatement"
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "level": 0
+            },
+            {
+              "runs": [
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21.0,
+                  "text": "Singapore pipeline review (two deals)"
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "level": 0
+            },
+            {
+              "runs": [
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21.0,
+                  "text": "Two enterprise renewals in November"
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "level": 1
+            },
+            {
+              "runs": [
+                {
+                  "italic": true,
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21.0,
+                  "text": "Board decision:"
+                },
+                {
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21.0,
+                  "text": " Adelaide expansion"
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "level": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "0bb0d5e8-b81d-507c-a836-b288f5b53468",
+      "attributes": {
+        "deck::frame": {
+          "x": 75.59,
+          "y": 566.93,
+          "w": 453.54,
+          "h": 45.35,
+          "z": 3
+        },
+        "deck::text": {
+          "role": "body",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "color": "#000000",
+                  "font": "Arial",
+                  "sizePt": 18.0,
+                  "text": "Owner: Finance"
+                }
+              ],
+              "align": "left",
+              "marginLeftPt": 0.0,
+              "indentPt": 0.0
+            }
+          ],
+          "insets": {
+            "left": 9.45,
+            "top": 4.72,
+            "right": 9.45,
+            "bottom": 4.72
+          }
+        }
+      }
+    },
+    {
+      "path": "ad37e397-d236-5002-af7e-3682fbb922af",
+      "children": {
+        "text-0bb0d5e8": "0bb0d5e8-b81d-507c-a836-b288f5b53468"
+      },
+      "order": [
+        "text-1",
+        "text-2",
+        "trend",
+        "text-0bb0d5e8"
+      ],
+      "attributes": {
+        "mleaf::match": {
+          "confidence": "best-guess",
+          "by": "slide 3: 3 of its 3 named frame(s) came from this slide"
+        }
+      }
+    }
+  ]
+}

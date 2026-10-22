@@ -1,0 +1,16 @@
+[package]
+name = "milleleaf-odf"
+description = "OpenDocument (ODT/ODS/ODP) for Milleleaf through LibreOffice, keeping node identity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+milleleaf-core = { workspace = true }
+milleleaf-wordcraft = { workspace = true }
+milleleaf-gridcraft = { workspace = true }
+milleleaf-deckcraft = { workspace = true }
+serde_json = { workspace = true }

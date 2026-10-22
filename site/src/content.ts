@@ -80,7 +80,7 @@ export const pages: ContentPage[] = [
     intro: 'The browser demo is coming with the first release. Public CLI installation instructions will follow the office repository’s release.',
     sections: [
       { title: 'Begin with a small project', body: ['The planned example puts the same figures in a report, workbook and deck. Its public files and download are still being prepared. Use files you may share.'], links: [{ label: 'Demo', href: '/demo' }] },
-      { title: 'Edit in your app', body: ['Checked routes include Word, Excel and PowerPoint 16 for Mac and LibreOffice through the Craft adapters.', 'The ox formats command reports available routes and missing tools. The CLI is not public yet.'] },
+      { title: 'Edit in your app', body: ['Checked routes include Word, Excel and PowerPoint 16 for Mac and LibreOffice through the Craft adapters.', 'The mleaf formats command reports available routes and missing tools. The CLI is not public yet.'] },
       { title: 'Inspect the imported layer', body: ['Read conflicts, best-guess matches and listed losses before accepting a result. Keep the original file: checks cover specific fixtures, and some features remain unsupported.'], links: [{ label: 'Support limits', href: '/status' }, { label: 'Layers and reports', href: '/how-it-works' }] },
     ],
   },

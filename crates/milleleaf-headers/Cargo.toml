@@ -1,0 +1,18 @@
+[package]
+name = "milleleaf-headers"
+description = "Keeps the per-user Bitcoin header file for mleaf verify --online's light-client source (BIP 157 peers, headers only)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "milleleaf-headers"
+path = "src/main.rs"
+
+# A separate binary so tokio, libsecp256k1 (C) and the P2P code stay out of `mleaf`
+#. Provenance: the project notes, "Light client".
+[dependencies]
+milleleaf-store = { workspace = true }
+bip157 = "=0.7.0"
+bitcoin = { version = "=0.32.102", default-features = false, features = ["std"] }
+tokio = { version = "=1.53.3", default-features = false, features = ["rt-multi-thread", "macros"] }

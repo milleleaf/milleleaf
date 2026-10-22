@@ -1,0 +1,523 @@
+{
+  "header": {
+    "id": "proposal/deck",
+    "mleafVersion": "mleaf_alpha",
+    "dataVersion": "1.0.0",
+    "author": "agent",
+    "timestamp": "2026-10-15",
+    "kind": "proposal"
+  },
+  "imports": [
+    {
+      "uri": "base.mleaf.json",
+      "integrity": "sha256-70e3cab4ac875fd0595194b80f2ebc7452a53e8d73ddea6717653395b5d2f5e3"
+    }
+  ],
+  "schemas": {},
+  "data": [
+    {
+      "path": "3f1c2a90-0000-4c1e-9a00-000000000001",
+      "children": {
+        "board-deck": "2af44a75-c514-5c87-b208-689fa8b15950"
+      }
+    },
+    {
+      "path": "2af44a75-c514-5c87-b208-689fa8b15950",
+      "children": {
+        "title": "b9f29acd-4be0-5345-b388-cb314338fa55",
+        "revenue": "aa108021-6b33-5ae3-a0db-12b17e9592c4",
+        "next-steps": "ad37e397-d236-5002-af7e-3682fbb922af"
+      },
+      "order": [
+        "title",
+        "revenue",
+        "next-steps"
+      ],
+      "attributes": {
+        "deck::deck": {
+          "width": 1280,
+          "height": 720,
+          "unit": "px",
+          "title": "Q3 Board Pack"
+        },
+        "mleaf::source": {
+          "format": "html-deck/0",
+          "file": "deck.html",
+          "sha256": "b052512d0b274ecda45171d95e511ffbfe72a0157fae894cb49afa9582cfe1b4"
+        }
+      }
+    },
+    {
+      "path": "ed7bca33-ef98-5495-a223-3046476144b1",
+      "attributes": {
+        "deck::frame": {
+          "x": 96,
+          "y": 228,
+          "w": 120,
+          "h": 8,
+          "z": 0
+        },
+        "deck::shape": {
+          "kind": "roundRect",
+          "fill": "#f2b134",
+          "radius": 4
+        }
+      }
+    },
+    {
+      "path": "79cf7543-79e8-551e-992b-1899612ea818",
+      "attributes": {
+        "deck::frame": {
+          "x": 96,
+          "y": 250,
+          "w": 1000,
+          "h": 87,
+          "z": 1
+        },
+        "deck::text": {
+          "role": "title",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Q3 Board Pack",
+                  "bold": true,
+                  "color": "#ffffff",
+                  "font": "Inter",
+                  "sizePt": 54
+                }
+              ],
+              "align": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "b73a0317-a900-5035-8af5-41d456a76424",
+      "attributes": {
+        "deck::frame": {
+          "x": 96,
+          "y": 360,
+          "w": 1000,
+          "h": 34,
+          "z": 2
+        },
+        "deck::text": {
+          "role": "body",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Finance & operations · October 2026",
+                  "color": "#ffffff",
+                  "font": "Inter",
+                  "sizePt": 21
+                }
+              ],
+              "align": "left"
+            }
+          ]
+        },
+        "mleaf::loss": [
+          {
+            "code": "opacity",
+            "severity": "info",
+            "message": "opacity 0.9 dropped"
+          }
+        ]
+      }
+    },
+    {
+      "path": "b9f29acd-4be0-5345-b388-cb314338fa55",
+      "children": {
+        "shape-1": "ed7bca33-ef98-5495-a223-3046476144b1",
+        "text-1": "79cf7543-79e8-551e-992b-1899612ea818",
+        "text-2": "b73a0317-a900-5035-8af5-41d456a76424"
+      },
+      "order": [
+        "shape-1",
+        "text-1",
+        "text-2"
+      ],
+      "attributes": {
+        "deck::slide": {
+          "name": "title",
+          "background": "#0f3d5e",
+          "notes": "Open with the headline: revenue up across all three regions."
+        },
+        "mleaf::loss": [
+          {
+            "code": "gradient",
+            "severity": "warning",
+            "message": "slide background gradient/image not carried; used its first colour"
+          }
+        ]
+      }
+    },
+    {
+      "path": "9b9cc37c-57d8-5294-896e-305ec1757883",
+      "attributes": {
+        "deck::frame": {
+          "x": 80,
+          "y": 56,
+          "w": 398,
+          "h": 54,
+          "z": 0
+        },
+        "deck::text": {
+          "role": "title",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Revenue by region",
+                  "bold": true,
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 33
+                }
+              ],
+              "align": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "987b7602-b694-53d2-b390-57f9d8ca3870",
+      "attributes": {
+        "deck::frame": {
+          "x": 80,
+          "y": 170,
+          "w": 520,
+          "h": 204,
+          "z": 1
+        },
+        "deck::table": {
+          "style": {
+            "font": "Inter",
+            "sizePt": 16.5
+          }
+        },
+        "mleaf::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000012",
+          "mode": "live"
+        },
+        "mleaf::loss": [
+          {
+            "code": "shadow",
+            "severity": "info",
+            "message": "box-shadow dropped"
+          },
+          {
+            "code": "linked-table",
+            "severity": "info",
+            "message": "table content comes from 3f1c2a90-0000-4c1e-9a00-000000000012; the HTML's copy (4 rows) was not imported"
+          }
+        ]
+      },
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000012"
+      }
+    },
+    {
+      "path": "23ddaa1c-1c51-5324-8860-64ed833aa77f",
+      "attributes": {
+        "deck::frame": {
+          "x": 680,
+          "y": 170,
+          "w": 520,
+          "h": 300,
+          "z": 2
+        },
+        "deck::chart": {
+          "kind": "column",
+          "category": "Region",
+          "values": [
+            "Revenue"
+          ],
+          "title": "Revenue by region"
+        },
+        "mleaf::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000012",
+          "mode": "live"
+        },
+        "mleaf::loss": [
+          {
+            "code": "linked-chart",
+            "severity": "info",
+            "message": "chart is drawn from 3f1c2a90-0000-4c1e-9a00-000000000012; the HTML's picture was not imported"
+          }
+        ]
+      },
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000012"
+      }
+    },
+    {
+      "path": "f877c191-c3d2-567e-8a2f-fcf5b3966f5c",
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000013"
+      },
+      "attributes": {
+        "mleaf::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000013",
+          "mode": "live"
+        }
+      }
+    },
+    {
+      "path": "a8d39b39-1ecf-529a-b4b8-6a03f04bf572",
+      "inherits": {
+        "source": "3f1c2a90-0000-4c1e-9a00-000000000031"
+      },
+      "attributes": {
+        "mleaf::link": {
+          "source": "3f1c2a90-0000-4c1e-9a00-000000000031",
+          "mode": "live"
+        }
+      }
+    },
+    {
+      "path": "1f3d316c-9724-5069-b314-93f167a63dbb",
+      "attributes": {
+        "deck::frame": {
+          "x": 80,
+          "y": 540,
+          "w": 1120,
+          "h": 31,
+          "z": 3
+        },
+        "deck::text": {
+          "role": "body",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Total revenue: ",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                },
+                {
+                  "field": "field-1",
+                  "bold": true,
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                },
+                {
+                  "text": " across ",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                },
+                {
+                  "field": "field-2",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                },
+                {
+                  "text": " regions.",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 19.5
+                }
+              ],
+              "align": "left"
+            }
+          ]
+        },
+        "mleaf::loss": [
+          {
+            "code": "linked-field",
+            "severity": "info",
+            "message": "field \"field-1\" shows 3f1c2a90-0000-4c1e-9a00-000000000013; the HTML's \"$1,247,000\" was not imported"
+          },
+          {
+            "code": "linked-field",
+            "severity": "info",
+            "message": "field \"field-2\" shows 3f1c2a90-0000-4c1e-9a00-000000000031; the HTML's \"three\" was not imported"
+          }
+        ]
+      },
+      "children": {
+        "field-1": "f877c191-c3d2-567e-8a2f-fcf5b3966f5c",
+        "field-2": "a8d39b39-1ecf-529a-b4b8-6a03f04bf572"
+      }
+    },
+    {
+      "path": "aa108021-6b33-5ae3-a0db-12b17e9592c4",
+      "children": {
+        "text-1": "9b9cc37c-57d8-5294-896e-305ec1757883",
+        "revenue-table": "987b7602-b694-53d2-b390-57f9d8ca3870",
+        "bar-chart": "23ddaa1c-1c51-5324-8860-64ed833aa77f",
+        "text-2": "1f3d316c-9724-5069-b314-93f167a63dbb"
+      },
+      "order": [
+        "text-1",
+        "revenue-table",
+        "bar-chart",
+        "text-2"
+      ],
+      "attributes": {
+        "deck::slide": {
+          "name": "revenue",
+          "background": "#ffffff"
+        }
+      }
+    },
+    {
+      "path": "5b80e2c4-11e9-59eb-ba28-26372e59d240",
+      "attributes": {
+        "deck::frame": {
+          "x": 80,
+          "y": 56,
+          "w": 230.47,
+          "h": 54,
+          "z": 0
+        },
+        "deck::text": {
+          "role": "title",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Next steps",
+                  "bold": true,
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 33
+                }
+              ],
+              "align": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "fe7234e8-6154-5a93-9672-691664c55a4c",
+      "attributes": {
+        "deck::frame": {
+          "x": 80,
+          "y": 170,
+          "w": 673.59,
+          "h": 179.19,
+          "z": 1
+        },
+        "deck::text": {
+          "role": "body",
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Close Hong Kong FX restatement",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "numbered": false,
+              "level": 0
+            },
+            {
+              "runs": [
+                {
+                  "text": "Singapore pipeline review",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "numbered": false,
+              "level": 0
+            },
+            {
+              "runs": [
+                {
+                  "text": "Two enterprise renewals in November",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "numbered": false,
+              "level": 1
+            },
+            {
+              "runs": [
+                {
+                  "text": "Board decision:",
+                  "italic": true,
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21
+                },
+                {
+                  "text": " Adelaide expansion",
+                  "color": "#1d2433",
+                  "font": "Inter",
+                  "sizePt": 21
+                }
+              ],
+              "align": "left",
+              "bullet": true,
+              "numbered": false,
+              "level": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": "3dd13f43-6346-534e-a04d-fb73fa6e8967",
+      "attributes": {
+        "deck::frame": {
+          "x": 800,
+          "y": 190,
+          "w": 360,
+          "h": 160,
+          "z": 2
+        },
+        "deck::picture": {
+          "blob": "assets/842c3244c641a24d.png"
+        },
+        "mleaf::loss": [
+          {
+            "code": "canvas",
+            "severity": "info",
+            "message": "canvas has no structure; captured as a picture"
+          }
+        ]
+      }
+    },
+    {
+      "path": "ad37e397-d236-5002-af7e-3682fbb922af",
+      "children": {
+        "text-1": "5b80e2c4-11e9-59eb-ba28-26372e59d240",
+        "text-2": "fe7234e8-6154-5a93-9672-691664c55a4c",
+        "trend": "3dd13f43-6346-534e-a04d-fb73fa6e8967"
+      },
+      "order": [
+        "text-1",
+        "text-2",
+        "trend"
+      ],
+      "attributes": {
+        "deck::slide": {
+          "name": "next-steps",
+          "background": "#ffffff"
+        }
+      }
+    }
+  ]
+}

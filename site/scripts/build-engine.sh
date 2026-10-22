@@ -43,16 +43,16 @@ case "$build_target_dir" in
   *) build_target_dir="$PWD/$build_target_dir" ;;
 esac
 cd "$project_dir"
-cargo build --locked --release -p ox-web --target wasm32-unknown-unknown --target-dir "$build_target_dir"
-wasm-bindgen --target web --out-dir site/public/engine/pkg --out-name ox_web \
-  "$build_target_dir/wasm32-unknown-unknown/release/ox_web.wasm"
+cargo build --locked --release -p milleleaf-web --target wasm32-unknown-unknown --target-dir "$build_target_dir"
+wasm-bindgen --target web --out-dir site/public/engine/pkg --out-name milleleaf_web \
+  "$build_target_dir/wasm32-unknown-unknown/release/milleleaf_web.wasm"
 # Import engine bytes as a script resource, not fetch(), so connect-src can be none.
 # stdin + tr works with both BSD/macOS and GNU base64 (no platform-specific flags).
 {
   printf 'export default Uint8Array.from(atob("'
-  base64 < site/public/engine/pkg/ox_web_bg.wasm | tr -d '\r\n'
+  base64 < site/public/engine/pkg/milleleaf_web_bg.wasm | tr -d '\r\n'
   printf '"), c => c.charCodeAt(0));\n'
-} > site/public/engine/pkg/ox_web_bytes.js
+} > site/public/engine/pkg/milleleaf_web_bytes.js
 # The pages load only the bytes module; the .wasm file itself is not published.
-rm site/public/engine/pkg/ox_web_bg.wasm
+rm site/public/engine/pkg/milleleaf_web_bg.wasm
 echo 'Engine ready in site/public/engine/pkg/. Build the site next (site/README.md).'

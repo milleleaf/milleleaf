@@ -1720,6 +1720,194 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "milleleaf-cli"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "boring",
+ "milleleaf-core",
+ "milleleaf-deckcraft",
+ "milleleaf-formats",
+ "milleleaf-gridcraft",
+ "milleleaf-odf",
+ "milleleaf-pack",
+ "milleleaf-store",
+ "milleleaf-wordcraft",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "webpki-root-certs",
+ "zip",
+]
+
+[[package]]
+name = "milleleaf-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "milleleaf-deckcraft"
+version = "0.1.0"
+dependencies = [
+ "deckcraft-color",
+ "deckcraft-geom",
+ "deckcraft-model",
+ "deckcraft-pptx",
+ "milleleaf-core",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+]
+
+[[package]]
+name = "milleleaf-formats"
+version = "0.1.0"
+dependencies = [
+ "milleleaf-odf",
+ "milleleaf-wordcraft",
+ "quick-xml",
+ "serde",
+ "thiserror",
+ "wordcraft-doc",
+ "zip",
+]
+
+[[package]]
+name = "milleleaf-gridcraft"
+version = "0.1.0"
+dependencies = [
+ "gridcraft-calc",
+ "gridcraft-core",
+ "gridcraft-formula",
+ "gridcraft-model",
+ "gridcraft-xlsx",
+ "milleleaf-core",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "milleleaf-headers"
+version = "0.1.0"
+dependencies = [
+ "bip157",
+ "bitcoin",
+ "milleleaf-store",
+ "tokio",
+]
+
+[[package]]
+name = "milleleaf-odf"
+version = "0.1.0"
+dependencies = [
+ "milleleaf-core",
+ "milleleaf-deckcraft",
+ "milleleaf-gridcraft",
+ "milleleaf-wordcraft",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "milleleaf-pack"
+version = "0.1.0"
+dependencies = [
+ "deckcraft-pdf",
+ "gridcraft-engine",
+ "milleleaf-core",
+ "milleleaf-deckcraft",
+ "milleleaf-gridcraft",
+ "milleleaf-wordcraft",
+ "pdfcraft-cos",
+ "pdfcraft-edit",
+ "pdfcraft-organize",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "wordcraft-doc",
+ "wordcraft-pdf",
+]
+
+[[package]]
+name = "milleleaf-seal"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "boring",
+ "boring-sys",
+ "getrandom 0.4.3",
+ "hpke",
+ "serde_json",
+ "x-wing",
+]
+
+[[package]]
+name = "milleleaf-store"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "der 0.8.2",
+ "ed25519-dalek",
+ "fips205",
+ "getrandom 0.2.17",
+ "libc",
+ "milleleaf-core",
+ "milleleaf-seal",
+ "ml-dsa",
+ "rand_core 0.6.4",
+ "ripemd",
+ "serde",
+ "serde_json",
+ "serde_json_canonicalizer",
+ "sha2 0.10.9",
+ "slh-dsa",
+ "thiserror",
+]
+
+[[package]]
+name = "milleleaf-web"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "milleleaf-core",
+ "milleleaf-deckcraft",
+ "milleleaf-formats",
+ "milleleaf-gridcraft",
+ "milleleaf-store",
+ "milleleaf-wordcraft",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "zip",
+]
+
+[[package]]
+name = "milleleaf-wordcraft"
+version = "0.1.0"
+dependencies = [
+ "milleleaf-core",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "wordcraft-doc",
+ "wordcraft-docx",
+ "wordcraft-formats",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1856,193 +2044,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95be4d57809897b5a7539fc15a7dfe0e84141bc3dfaa2e9b1b27caa90acf61ab"
 dependencies = [
  "crossbeam-channel",
-]
-
-[[package]]
-name = "ox-cli"
-version = "0.1.0"
-dependencies = [
- "base64",
- "boring",
- "ox-core",
- "ox-deckcraft",
- "ox-formats",
- "ox-gridcraft",
- "ox-odf",
- "ox-pack",
- "ox-store",
- "ox-wordcraft",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "webpki-root-certs",
- "zip",
-]
-
-[[package]]
-name = "ox-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror",
-]
-
-[[package]]
-name = "ox-deckcraft"
-version = "0.1.0"
-dependencies = [
- "deckcraft-color",
- "deckcraft-geom",
- "deckcraft-model",
- "deckcraft-pptx",
- "ox-core",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror",
-]
-
-[[package]]
-name = "ox-formats"
-version = "0.1.0"
-dependencies = [
- "ox-odf",
- "ox-wordcraft",
- "quick-xml",
- "serde",
- "thiserror",
- "wordcraft-doc",
- "zip",
-]
-
-[[package]]
-name = "ox-gridcraft"
-version = "0.1.0"
-dependencies = [
- "gridcraft-calc",
- "gridcraft-core",
- "gridcraft-formula",
- "gridcraft-model",
- "gridcraft-xlsx",
- "ox-core",
- "quick-xml",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror",
- "zip",
-]
-
-[[package]]
-name = "ox-headers"
-version = "0.1.0"
-dependencies = [
- "bip157",
- "bitcoin",
- "ox-store",
- "tokio",
-]
-
-[[package]]
-name = "ox-odf"
-version = "0.1.0"
-dependencies = [
- "ox-core",
- "ox-deckcraft",
- "ox-gridcraft",
- "ox-wordcraft",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "ox-pack"
-version = "0.1.0"
-dependencies = [
- "deckcraft-pdf",
- "gridcraft-engine",
- "ox-core",
- "ox-deckcraft",
- "ox-gridcraft",
- "ox-wordcraft",
- "pdfcraft-cos",
- "pdfcraft-edit",
- "pdfcraft-organize",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror",
- "wordcraft-doc",
- "wordcraft-pdf",
-]
-
-[[package]]
-name = "ox-seal"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "boring",
- "boring-sys",
- "getrandom 0.4.3",
- "hpke",
- "serde_json",
- "x-wing",
-]
-
-[[package]]
-name = "ox-store"
-version = "0.1.0"
-dependencies = [
- "base64",
- "der 0.8.2",
- "ed25519-dalek",
- "fips205",
- "getrandom 0.2.17",
- "libc",
- "ml-dsa",
- "ox-core",
- "ox-seal",
- "rand_core 0.6.4",
- "ripemd",
- "serde",
- "serde_json",
- "serde_json_canonicalizer",
- "sha2 0.10.9",
- "slh-dsa",
- "thiserror",
-]
-
-[[package]]
-name = "ox-web"
-version = "0.1.0"
-dependencies = [
- "getrandom 0.2.17",
- "ox-core",
- "ox-deckcraft",
- "ox-formats",
- "ox-gridcraft",
- "ox-store",
- "ox-wordcraft",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "zip",
-]
-
-[[package]]
-name = "ox-wordcraft"
-version = "0.1.0"
-dependencies = [
- "ox-core",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror",
- "wordcraft-doc",
- "wordcraft-docx",
- "wordcraft-formats",
 ]
 
 [[package]]

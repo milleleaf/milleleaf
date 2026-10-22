@@ -1,0 +1,26 @@
+{
+  "header": {
+    "id": "milleleaf/examples/hello-table/project",
+    "mleafVersion": "mleaf_alpha",
+    "dataVersion": "1.0.0",
+    "author": "sam",
+    "timestamp": "2026-10-15",
+    "kind": "stack"
+  },
+  "imports": [
+    {
+      "uri": "base.mleaf.json"
+    },
+    {
+      "uri": "deck.proposal.mleaf.json"
+    },
+    {
+      "uri": "finance-review.mleaf.json"
+    },
+    {
+      "uri": "pack.mleaf.json"
+    }
+  ],
+  "schemas": {},
+  "data": []
+}

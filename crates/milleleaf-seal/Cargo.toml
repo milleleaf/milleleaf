@@ -1,0 +1,35 @@
+[package]
+name = "milleleaf-seal"
+description = "milleleaf sealed layers: HPKE (RFC 9180) with X-Wing, natively through BoringSSL and in pure Rust for wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["boring"]
+# Native side: BoringSSL's own HPKE X-Wing, reached through boring-sys FFI because
+# boring 5.3.0's safe `hpke` wrapper only exposes X25519. Builds BoringSSL from source (~1.5 min); not wasm.
+boring = ["dep:boring", "dep:boring-sys"]
+
+[dependencies]
+# Pure-Rust side (for wasm), RustCrypto. hpke 0.14.1 (2026-09-06) supports X-Wing through its `mlkem`
+# feature (code point 0x647a), so the RFC 9180 key schedule is the library's, not ours.
+hpke = { version = "=0.14.1", default-features = false, features = ["alloc", "getrandom", "mlkem", "hkdfsha2", "x25519", "aes", "chacha"] }
+# ChaCha20-Poly1305 only because the published X-Wing/HKDF-SHA256 test vector uses it (sealed layers use AES-256-GCM).
+# The version the PQ spike cross-checked against BoringSSL (2026-10-01; younger than two weeks, chosen by the spike).
+# Not called directly: pins hpke's `x-wing ^0.1` to this exact version.
+x-wing = { version = "=0.1.1" }
+# Content encryption (AES-256-GCM, one key per layer) on the pure-Rust side; the version hpke 0.14.1 uses (2026-08-21).
+aes-gcm = "=0.11.1"
+# The version hpke 0.14.1 uses (2026-06-17).
+getrandom = "=0.4.3"
+# boring 5.3.0 (2026-10-14) as the spike chose: the first release whose boring-sys binds EVP_hpke_xwing.
+boring = { version = "=5.3.0", features = ["mlkem"], optional = true }
+boring-sys = { version = "=5.3.0", optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+# In a browser, randomness comes from `crypto.getRandomValues`.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "=0.4.3", features = ["wasm_js"] }

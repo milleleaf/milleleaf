@@ -11,14 +11,14 @@ Licences were checked on 22 October 2026 against each source (its licence file a
 revision, the font's name table, or the record's licence field). "Unverified" says where that wasn't
 possible.
 
-## Built into the `ox` program
+## Built into the `mleaf` program
 
 | Path | What | Author | Source | Licence | Licence file |
 |---|---|---|---|---|---|
 | WordCraft `wordcraft-fonts` (git rev `eae2421`), compiled in | Inter, JetBrains Mono, Source Sans 3, Source Serif 4 (13 TTFs) | The Inter Project Authors; The JetBrains Mono Project Authors; Adobe | <https://github.com/storytold/wordcraft> (`assets/fonts`), from <https://github.com/rsms/inter>, <https://github.com/JetBrains/JetBrainsMono>, <https://github.com/adobe-fonts> | OFL-1.1 | [`licenses/OFL-Inter.txt`](licenses/OFL-Inter.txt), [`OFL-JetBrainsMono.txt`](licenses/OFL-JetBrainsMono.txt), [`OFL-SourceSans3.txt`](licenses/OFL-SourceSans3.txt), [`OFL-SourceSerif4.txt`](licenses/OFL-SourceSerif4.txt) (copied from WordCraft at that rev) |
 | WordCraft `wordcraft-proof`, compiled in | English hyphenation dictionary (`en-us.dic`, Moby Hyphenator II) | Grady Ward | <https://www.gutenberg.org/ebooks/3204> | Public domain | none needed |
-| PDFCraft `pdfcraft-fonts` (git rev `bc7a12b`) | Dancing Script (variable), Inter Regular | The Dancing Script Project Authors; The Inter Project Authors | <https://github.com/storytold/pdfcraft>, from <https://github.com/googlefonts/DancingScript> | OFL-1.1 | [`licenses/OFL-DancingScript.txt`](licenses/OFL-DancingScript.txt), [`licenses/OFL-Inter.txt`](licenses/OFL-Inter.txt). Unverified whether the linker keeps them in `ox` |
-| `webpki-root-certs` 1.0.9 (dependency of `ox-cli`) | Mozilla's root certificates (CCADB) | The rustls project, from Mozilla | <https://github.com/rustls/webpki-roots> | CDLA-Permissive-2.0 | [`licenses/CDLA-Permissive-2.0-webpki-root-certs.txt`](licenses/CDLA-Permissive-2.0-webpki-root-certs.txt) (the crate's own `LICENSE`) |
+| PDFCraft `pdfcraft-fonts` (git rev `bc7a12b`) | Dancing Script (variable), Inter Regular | The Dancing Script Project Authors; The Inter Project Authors | <https://github.com/storytold/pdfcraft>, from <https://github.com/googlefonts/DancingScript> | OFL-1.1 | [`licenses/OFL-DancingScript.txt`](licenses/OFL-DancingScript.txt), [`licenses/OFL-Inter.txt`](licenses/OFL-Inter.txt). Unverified whether the linker keeps them in `mleaf` |
+| `webpki-root-certs` 1.0.9 (dependency of `milleleaf-cli`) | Mozilla's root certificates (CCADB) | The rustls project, from Mozilla | <https://github.com/rustls/webpki-roots> | CDLA-Permissive-2.0 | [`licenses/CDLA-Permissive-2.0-webpki-root-certs.txt`](licenses/CDLA-Permissive-2.0-webpki-root-certs.txt) (the crate's own `LICENSE`) |
 | `krilla` (in craft-libs rev `82a24b0`), compiled in | Compact ICC profiles (sRGB, sGrey; v2 and v4) | Clinton Ingram | <https://github.com/saucecontrol/Compact-ICC-Profiles> | CC0-1.0 | none needed |
 
 Other Rust and JavaScript dependencies are MIT, Apache-2.0 or both, and carry their own licence files
@@ -49,11 +49,11 @@ craft-fonts set is used only when `CRAFT_FONTS_DIR` is set, which nothing here d
 
 | Path | What | Author | Source | Licence | Licence file |
 |---|---|---|---|---|---|
-| `crates/ox-store/testdata/pq-vectors.json` (ML-DSA, SLH-DSA part) | Subset of NIST ACVP-Server FIPS 204/205 vectors, picked by `pq-vectors-subset.py` | NIST | <https://github.com/usnistgov/ACVP-Server> at `975de31` | NIST software notice (public domain in the US; keep the notice, acknowledge NIST, mark changes) | [`crates/ox-store/testdata/NOTICE-NIST.txt`](crates/ox-store/testdata/NOTICE-NIST.txt) |
-| `crates/ox-store/testdata/pq-vectors.json` (Wycheproof part) | ML-DSA-65 verify and sign-seed vectors | Wycheproof authors (C2SP) | <https://github.com/C2SP/wycheproof> at `7a32593` | Apache-2.0 | [`LICENSE-APACHE`](LICENSE-APACHE) |
-| `crates/ox-seal/vectors/xwing-hkdfsha256-chacha.json` | X-Wing + HKDF-SHA256 + ChaCha20-Poly1305 HPKE test vector | IETF Trust and the draft-ietf-hpke-pq authors | <https://github.com/hpkewg/hpke-pq> at `6433c8f` (also shipped in the `hpke` 0.14.1 crate, MIT OR Apache-2.0) | **Unverified**: the repository points to the IETF Trust Legal Provisions, under which code components are BSD-3-Clause | none yet |
-| `crates/ox-store/testdata/ots/*`, `crates/ox-store/testdata/headers/*` | Our random bytes and their OpenTimestamps proof (calendars alice/bob.btc.calendar.opentimestamps.org, finney.calendar.eternitywall.com, btc.calendar.catallaxy.com); Bitcoin block headers and retarget table | Milleleaf contributors; calendar attestations and block headers are public chain data | Public calendars and the Bitcoin chain | Original work / factual data | none needed |
-| `crates/ox-store/testdata/tsa/*` | RFC 3161 response from our own local test TSA | Milleleaf contributors | Original work | MIT OR Apache-2.0 | root licences |
+| `crates/milleleaf-store/testdata/pq-vectors.json` (ML-DSA, SLH-DSA part) | Subset of NIST ACVP-Server FIPS 204/205 vectors, picked by `pq-vectors-subset.py` | NIST | <https://github.com/usnistgov/ACVP-Server> at `975de31` | NIST software notice (public domain in the US; keep the notice, acknowledge NIST, mark changes) | [`crates/milleleaf-store/testdata/NOTICE-NIST.txt`](crates/milleleaf-store/testdata/NOTICE-NIST.txt) |
+| `crates/milleleaf-store/testdata/pq-vectors.json` (Wycheproof part) | ML-DSA-65 verify and sign-seed vectors | Wycheproof authors (C2SP) | <https://github.com/C2SP/wycheproof> at `7a32593` | Apache-2.0 | [`LICENSE-APACHE`](LICENSE-APACHE) |
+| `crates/milleleaf-seal/vectors/xwing-hkdfsha256-chacha.json` | X-Wing + HKDF-SHA256 + ChaCha20-Poly1305 HPKE test vector | IETF Trust and the draft-ietf-hpke-pq authors | <https://github.com/hpkewg/hpke-pq> at `6433c8f` (also shipped in the `hpke` 0.14.1 crate, MIT OR Apache-2.0) | **Unverified**: the repository points to the IETF Trust Legal Provisions, under which code components are BSD-3-Clause | none yet |
+| `crates/milleleaf-store/testdata/ots/*`, `crates/milleleaf-store/testdata/headers/*` | Our random bytes and their OpenTimestamps proof (calendars alice/bob.btc.calendar.opentimestamps.org, finney.calendar.eternitywall.com, btc.calendar.catallaxy.com); Bitcoin block headers and retarget table | Milleleaf contributors; calendar attestations and block headers are public chain data | Public calendars and the Bitcoin chain | Original work / factual data | none needed |
+| `crates/milleleaf-store/testdata/tsa/*` | RFC 3161 response from our own local test TSA | Milleleaf contributors | Original work | MIT OR Apache-2.0 | root licences |
 
 ## Ideas followed (no material included)
 
@@ -66,7 +66,7 @@ code are written independently; no USD, IFC5 or DocLang code or schema text is i
 
 `tools/ci/doclang-requirements.txt` (the DocLang validator in CI) and
 `examples/real/authored/requirements.txt` (the authoring scripts) install Python packages; none of them
-ships in the repository or in `ox`. Their licences (PyPI metadata, 22 October 2026): doclang
+ships in the repository or in `mleaf`. Their licences (PyPI metadata, 22 October 2026): doclang
 Apache-2.0; lxml BSD-3-Clause; click BSD-3-Clause; rich MIT; Pygments BSD-2-Clause; markdown-it-py
 MIT; mdurl MIT; annotated-doc MIT; typer MIT; shellingham ISC; saxonche (no licence in its metadata;
 SaxonC-HE is published by Saxonica as MPL-2.0, unverified); python-pptx MIT; openpyxl MIT; et_xmlfile

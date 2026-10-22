@@ -1,4 +1,4 @@
-// Demo B on the site (/flow). Run on the box after cargo test -p ox-web flow --release and the site build.
+// Demo B on the site (/flow). Run on the box after cargo test -p milleleaf-web flow --release and the site build.
 import { chromium } from '@playwright/test';
 import { serve } from './serve.mjs';
 import { readFile, mkdir } from 'node:fs/promises';

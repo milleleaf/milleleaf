@@ -3,7 +3,7 @@
     python3 -I check_losses.py INVENTORY.json ADOPT-REPORT.json
 
 INVENTORY.json is ooxml_inventory.py's comparison of the original and the re-export. ADOPT-REPORT.json
-is `ox adopt --report`: its `inventory` (Milleleaf's own count of the original) and `losses`.
+is `mleaf adopt --report`: its `inventory` (Milleleaf's own count of the original) and `losses`.
 Two checks:
 1. Milleleaf counted the original the same way as this independent tool (else its loss list can't
    be trusted).
