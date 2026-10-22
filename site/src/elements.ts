@@ -21,29 +21,6 @@ export function registerElements() {
       })
     }
   }
-  class DemoFrame extends HTMLElement {
-    private config?: { src: string; title: string }
-    set options(value: { src: string; title: string }) { this.config = value; void this.load() }
-    connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }); void this.load() }
-    private async load() {
-      if (!this.isConnected || !this.config || this.shadowRoot?.childElementCount) return
-      const { src, title } = this.config
-      try {
-        const response = await fetch(src, { signal: AbortSignal.timeout(5000) })
-        if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) return
-        const html = await response.text()
-        // Static hosts can answer a missing path with the website's own HTML.
-        if (html.includes('name="milleleaf-site"') || !/<(?:html|body|script)[\s>]/i.test(html)) return
-        const root = this.shadowRoot!
-        root.innerHTML = `<style>:host{display:block}iframe{width:100%;height:640px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}</style>`
-        const frame = document.createElement('iframe')
-        frame.src = src
-        frame.title = title
-        root.append(frame)
-        this.dispatchEvent(new CustomEvent('demo-ready', { bubbles: true, composed: true }))
-      } catch { /* Keep the server-rendered availability message visible. */ }
-    }
-  }
   class RevisionSelector extends HTMLElement {
     private config = { labels: [] as string[], selected: 1 }
     set options(value: { labels: string[]; selected: number }) { this.config = value; this.render() }
@@ -101,7 +78,6 @@ export function registerElements() {
     }
   }
   customElements.define('ml-theme', ThemeSwitch)
-  customElements.define('ml-demo', DemoFrame)
   customElements.define('ml-revisions', RevisionSelector)
   customElements.define('ml-verify', VerifyLayer)
 }

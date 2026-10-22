@@ -3,8 +3,8 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
-const paths = ['/', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/standards']
-const headings = ['Make it once.Use it in every app.', 'Your file.Its next leaf.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'Standards, with the checks beside them.']
+const paths = ['/', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/standards']
+const headings = ['Make it once.Use it in every app.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -96,11 +96,10 @@ try {
     const page = await context.newPage()
     page.on('pageerror', error => failures.push(error.message))
     page.on('console', message => {
-      // The only expected missing resource is the separately built demo.
-      if (message.type() === 'error' && !['/demo/app/index.html', '/flow/app/index.html'].some(p => message.location().url.endsWith(p))) failures.push(message.text())
+      if (message.type() === 'error') failures.push(message.text())
     })
     page.on('response', response => {
-      if (response.status() >= 400 && !['/demo/app/index.html', '/flow/app/index.html'].some(p => response.url().endsWith(p))) failures.push(`${response.status()} ${response.url()}`)
+      if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`)
     })
     for (const path of paths) {
       assert.equal((await page.goto(origin + path)).status(), 200)
@@ -172,38 +171,45 @@ try {
   })
   await page.locator('ml-verify').getByRole('button').click()
   await page.locator('ml-verify').getByRole('status').filter({ hasText: 'Layer hash does not match' }).waitFor()
-  await page.goto(origin)
-  assert(await page.getByText('Browser flow in preparation', { exact: true }).isVisible())
-  await page.route('**/flow/app/index.html', route => route.fulfill({ contentType: 'text/html', body: '<html><body>Linked-content integration fixture</body></html>' }))
-  await page.reload()
-  await page.waitForSelector('ml-demo iframe')
-  assert(await page.frameLocator('ml-demo iframe').getByText('Linked-content integration fixture').isVisible())
-  assert.equal(await page.getByText('Browser flow in preparation', { exact: true }).isVisible(), false)
-  await page.unroute('**/flow/app/index.html')
-  await page.route('**/flow/app/index.html', route => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="milleleaf-site" content="website"></head><body>Fallback</body></html>' }))
-  await page.reload()
-  await page.waitForFunction(() => !!document.querySelector('ml-theme')?.shadowRoot)
-  assert(await page.getByText('Browser flow in preparation', { exact: true }).isVisible())
-  assert.equal(await page.locator('ml-demo iframe').count(), 0)
-  await page.goto(origin + '/demo')
-  assert(await page.getByText('Coming with the first release', { exact: true }).isVisible())
-  assert.equal(await page.locator('ml-demo iframe').count(), 0)
-  await page.route('**/demo/app/index.html', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><h1>Demo integration fixture</h1></body></html>' }))
-  await page.reload()
-  await page.waitForSelector('ml-demo iframe')
-  assert(await page.frameLocator('ml-demo iframe').getByText('Demo integration fixture').isVisible())
-  assert.equal(await page.locator('.demo-placeholder').isVisible(), false)
-  await page.unroute('**/demo/app/index.html')
-  await page.route('**/demo/app/index.html', route => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="milleleaf-site" content="website"></head><body>Fallback site</body></html>' }))
-  await page.reload()
-  await page.waitForFunction(() => !!document.querySelector('ml-theme')?.shadowRoot)
-  assert(await page.getByText('Coming with the first release', { exact: true }).isVisible())
-  assert.equal(await page.locator('ml-demo iframe').count(), 0, 'Never recursively embed host fallback')
+  // The browser demos are their own pages (web/demo, web/flow), published by add-demos.mjs. No iframe.
+  const bare = await page.request.get(origin + '/demo', { maxRedirects: 0 })
+  assert.equal(bare.status(), 301)
+  assert.equal(bare.headers().location, '/demo/')
+  const demoCsp = (await readFile('../web/demo/index.html', 'utf8')).match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1]
+  assert(demoCsp.includes("connect-src 'none'"))
+  assert.equal((await readFile('dist/client/_headers', 'utf8')).match(/^\s+Content-Security-Policy:\s*(.+)$/m)[1].startsWith(demoCsp), true, 'Host header carries the page policy')
+  for (const [path, heading] of [['/demo/', 'Follow the file.See what changed.'], ['/flow/', 'Make it once.Use it in every app.']]) {
+    await page.goto(origin + path)
+    await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
+    assert.equal(await page.locator('h1').textContent(), heading, path)
+    assert.equal(await page.locator('.site-header').count(), 1, `Site header on ${path}`)
+    assert.equal(await page.locator('.site-footer').count(), 1, `Site footer on ${path}`)
+    assert.equal(await page.locator('iframe:not([sandbox])').count(), 0, `No embedding frame on ${path}`)
+    if (path === '/demo/') assert.equal(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'), demoCsp)
+    console.log(`PASS demo page ${path}: engine ready, site header and footer`)
+  }
   await context.close()
+  for (const width of [1280, 400]) for (const theme of ['light', 'dark']) {
+    const c = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme, reducedMotion: 'reduce' })
+    const p = await c.newPage()
+    p.on('pageerror', error => failures.push(error.message))
+    p.on('console', message => { if (message.type() === 'error') failures.push(message.text()) })
+    p.on('response', response => { if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`) })
+    for (const path of ['/demo/', '/flow/']) {
+      await p.goto(origin + path)
+      await p.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
+      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow ${path} ${width} ${theme}`)
+      const name = `${path.slice(1, -1)}-${width}-${theme}.png`
+      await p.screenshot({ path: '_shots/' + name, fullPage: true, animations: 'disabled' })
+      captures.push({ path, width, theme, file: name })
+      console.log(`PASS capture ${name}`)
+    }
+    await c.close()
+  }
   assert.deepEqual(failures, [], 'Browser console, page and asset errors')
   const pkg = JSON.parse(await readFile('package.json', 'utf8'))
   for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) assert(/^\d+\.\d+\.\d+$/.test(version), `Unpinned ${name}`)
-  const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'dataset tables: 14 open, 2 other, seven fields each', 'dataset mobile cards and licence boundaries', 'UNESCO disclaimer and shared pipeline link', 'security contact and security.txt preserved', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'revision stepping with arrow keys', 'real browser signature verification and tamper rejection', 'demo absent/present/host-fallback states', 'reduced motion', 'exact package pins'], captures }
+  const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'dataset tables: 14 open, 2 other, seven fields each', 'dataset mobile cards and licence boundaries', 'UNESCO disclaimer and shared pipeline link', 'security contact and security.txt preserved', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'revision stepping with arrow keys', 'real browser signature verification and tamper rejection', 'demo pages: engine ready, site header and footer, demo CSP, folder redirect', 'reduced motion', 'exact package pins'], captures }
   await writeFile('_shots/results.json', JSON.stringify(result, null, 2) + '\n')
   await writeFile('_shots/gallery.html', `<!doctype html><html lang="en"><meta charset="utf-8"><title>Milleleaf release captures</title><style>body{font:16px sans-serif;background:#e6eded;padding:24px}main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}img{width:100%;height:480px;object-fit:contain;object-position:top;background:#fff}a{color:#174536}figure{margin:0}figcaption{padding:12px 0}@media(max-width:800px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style><h1>Milleleaf · final captures</h1><p>${paths.length} pages × 2 widths × 2 themes. Full-page images; open each for detail.</p><main>${captures.map(c => `<figure><a href="${c.file}"><img src="${c.file}" alt="${c.path}, ${c.width}px, ${c.theme}" loading="lazy"><figcaption>${c.path} · ${c.width}px · ${c.theme}</figcaption></a></figure>`).join('')}</main></html>`)
   console.log(`PASS: ${paths.length} static pages, ${captures.length} screenshots, interaction and integration checks; zero unexpected browser errors.`)

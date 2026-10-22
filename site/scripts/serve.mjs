@@ -12,7 +12,11 @@ export async function serve(directory = 'dist/client', port = 0) {
       const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname)
       let file = resolve(root, '.' + pathname)
       if (file !== root && !file.startsWith(root + sep)) throw new Error('Outside root')
-      if ((await stat(file)).isDirectory()) file = resolve(file, 'index.html')
+      if ((await stat(file)).isDirectory()) {
+        // The demo pages (add-demos.mjs) use relative paths, so they need the folder slash, as static hosts add it.
+        if (['/demo', '/flow'].includes(pathname)) { res.writeHead(301, { Location: pathname + '/' }); res.end(); return }
+        file = resolve(file, 'index.html')
+      }
       const data = await readFile(file)
       res.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream' })
       res.end(data)

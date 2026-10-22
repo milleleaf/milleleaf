@@ -4,7 +4,6 @@ declare module 'react' {
     interface IntrinsicElements {
       'ml-verify': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>
       'ml-theme': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>
-      'ml-demo': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>
       'ml-revisions': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>
     }
   }
