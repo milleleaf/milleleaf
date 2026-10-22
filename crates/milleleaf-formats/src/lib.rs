@@ -315,7 +315,7 @@ pub fn routes() -> Vec<Route> {
             "mleaf render",
             true,
             Nothing,
-            "data-ox-path on every element; decks in the deck/0 profile",
+            "data-mleaf-path on every element; decks in the deck/0 profile",
         ),
         route(
             "html2mleaf",

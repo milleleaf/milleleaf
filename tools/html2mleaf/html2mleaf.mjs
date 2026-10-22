@@ -65,6 +65,13 @@ async function main() {
   const context = await browser.newContext({ javaScriptEnabled: args.flags.has('allow-js'), viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
   const page = await context.newPage();
   await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
+  // HTML written before the rename to Milleleaf (23 Oct 2026) marks things with data-ox-*: read it as data-mleaf-*.
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) for (const a of [...el.attributes]) {
+      const name = a.name.startsWith('data-ox-') && 'data-mleaf-' + a.name.slice(8);
+      if (name && !el.hasAttribute(name)) el.setAttribute(name, a.value);
+    }
+  });
 
   const animations = args.flags.has('allow-js') ? await page.evaluate(() => document.getAnimations().length) : 0;
   const scripts = await page.evaluate(() => document.querySelectorAll('script').length);
@@ -72,7 +79,7 @@ async function main() {
   // (page.addStyleTag waits on a load event that never fires with JavaScript off.)
   await page.evaluate((css) => { const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); }, `
     *, *::before, *::after { animation: none !important; transition: none !important; }
-    [data-ox-slide] { display: block !important; visibility: visible !important; opacity: 1 !important;
+    [data-mleaf-slide] { display: block !important; visibility: visible !important; opacity: 1 !important;
       position: relative !important; left: auto !important; top: auto !important; transform: none !important; }`);
   await page.evaluate(() => document.fonts.ready);
   const deck = await page.evaluate(extractDeck);
@@ -90,7 +97,7 @@ async function main() {
   };
   const extOf = (mime, fallback) => ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' })[mime] || fallback;
   async function screenshot(tmp) {
-    return writeAsset(await page.locator(`[data-ox-tmp="${tmp}"]`).screenshot({ omitBackground: true }), 'png');
+    return writeAsset(await page.locator(`[data-mleaf-tmp="${tmp}"]`).screenshot({ omitBackground: true }), 'png');
   }
   async function resolveAsset(frame) {
     const a = frame.asset;

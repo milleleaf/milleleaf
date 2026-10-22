@@ -1,19 +1,19 @@
 <!doctype html>
 <!--
   An "agent-made" HTML deck written to the Milleleaf HTML deck profile.
-  The bar chart is linked to the same table (data-ox-chart), so the model redraws it from the
+  The bar chart is linked to the same table (data-mleaf-chart), so the model redraws it from the
   data; the region count is a derived value. It deliberately includes things the profile can't carry losslessly (a gradient, a canvas
   drawn by script, a box shadow) so the loss report has something to say.
-  The table and the total are linked to the workbook with data-ox-link; their numbers here are
+  The table and the total are linked to the workbook with data-mleaf-link; their numbers here are
   the agent's stale copy, and the composed model replaces them with the workbook's.
 -->
-<html lang="en" data-ox-profile="deck/0">
+<html lang="en" data-mleaf-profile="deck/0">
 <head>
 <meta charset="utf-8">
 <title>Q3 Board Pack</title>
 <style>
   body { margin: 0; background: #333; font-family: Inter, Arial, sans-serif; }
-  section[data-ox-slide] { position: relative; width: 1280px; height: 720px; overflow: hidden;
+  section[data-mleaf-slide] { position: relative; width: 1280px; height: 720px; overflow: hidden;
     background: #ffffff; margin: 0 auto 24px; color: #1d2433; }
   section.title-slide { background: linear-gradient(135deg, #0f3d5e, #1b6a8f); color: #fff; }
   .title-slide h1 { position: absolute; left: 96px; top: 250px; width: 1000px; margin: 0;
@@ -30,24 +30,24 @@
   .chart { position: absolute; left: 680px; top: 170px; width: 520px; height: 300px; }
   .summary { position: absolute; left: 80px; top: 540px; width: 1120px; margin: 0; font-size: 26px; }
   ul.points { position: absolute; left: 80px; top: 170px; width: 640px; margin: 0; padding-left: 1.2em; font-size: 28px; line-height: 1.6; }
-  aside[data-ox-notes] { display: none; }
+  aside[data-mleaf-notes] { display: none; }
   canvas { position: absolute; left: 800px; top: 190px; }
 </style>
 </head>
 <body>
-<main data-ox-deck data-ox-width="1280" data-ox-height="720">
+<main data-mleaf-deck data-mleaf-width="1280" data-mleaf-height="720">
 
-  <section data-ox-slide data-ox-name="title" class="title-slide">
+  <section data-mleaf-slide data-mleaf-name="title" class="title-slide">
     <div class="accent"></div>
     <h1>Q3 Board Pack</h1>
     <p>Finance &amp; operations · October 2026</p>
-    <aside data-ox-notes>Open with the headline: revenue up across all three regions.</aside>
+    <aside data-mleaf-notes>Open with the headline: revenue up across all three regions.</aside>
   </section>
 
-  <section data-ox-slide data-ox-name="revenue">
+  <section data-mleaf-slide data-mleaf-name="revenue">
     <h2>Revenue by region</h2>
-    <table class="data" data-ox-name="revenue-table"
-           data-ox-link="3f1c2a90-0000-4c1e-9a00-000000000012" data-ox-link-mode="live">
+    <table class="data" data-mleaf-name="revenue-table"
+           data-mleaf-link="3f1c2a90-0000-4c1e-9a00-000000000012" data-mleaf-link-mode="live">
       <thead><tr><th>Region</th><th>Revenue</th></tr></thead>
       <tbody>
         <tr><td>Adelaide</td><td>$412,000</td></tr>
@@ -55,9 +55,9 @@
         <tr><td>Singapore</td><td>$297,000</td></tr>
       </tbody>
     </table>
-    <svg class="chart" data-ox-name="bar-chart" viewBox="0 0 520 300" role="img" aria-label="Revenue by region"
-         data-ox-chart="column" data-ox-link="3f1c2a90-0000-4c1e-9a00-000000000012"
-         data-ox-category="Region" data-ox-values="Revenue">
+    <svg class="chart" data-mleaf-name="bar-chart" viewBox="0 0 520 300" role="img" aria-label="Revenue by region"
+         data-mleaf-chart="column" data-mleaf-link="3f1c2a90-0000-4c1e-9a00-000000000012"
+         data-mleaf-category="Region" data-mleaf-values="Revenue">
       <rect x="20"  y="70" width="120" height="206" fill="#1b6a8f"/>
       <rect x="200" y="7"  width="120" height="269" fill="#1b6a8f"/>
       <rect x="380" y="128" width="120" height="148" fill="#1b6a8f"/>
@@ -65,10 +65,10 @@
         <text x="80" y="296">Adelaide</text><text x="260" y="296">Hong Kong</text><text x="440" y="296">Singapore</text>
       </g>
     </svg>
-    <p class="summary">Total revenue: <b><span data-ox-link="3f1c2a90-0000-4c1e-9a00-000000000013">$1,247,000</span></b> across <span data-ox-link="3f1c2a90-0000-4c1e-9a00-000000000031">three</span> regions.</p>
+    <p class="summary">Total revenue: <b><span data-mleaf-link="3f1c2a90-0000-4c1e-9a00-000000000013">$1,247,000</span></b> across <span data-mleaf-link="3f1c2a90-0000-4c1e-9a00-000000000031">three</span> regions.</p>
   </section>
 
-  <section data-ox-slide data-ox-name="next-steps">
+  <section data-mleaf-slide data-mleaf-name="next-steps">
     <h2>Next steps</h2>
     <ul class="points">
       <li>Close Hong Kong FX restatement</li>
@@ -77,7 +77,7 @@
       </li>
       <li><i>Board decision:</i> Adelaide expansion</li>
     </ul>
-    <canvas id="spark" width="360" height="160" data-ox-name="trend"></canvas>
+    <canvas id="spark" width="360" height="160" data-mleaf-name="trend"></canvas>
     <script>
       const c = document.getElementById('spark').getContext('2d');
       c.strokeStyle = '#1b6a8f'; c.lineWidth = 4; c.beginPath();

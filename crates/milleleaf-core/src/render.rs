@@ -1,7 +1,7 @@
 //! Model → HTML views of a composed tree.
 //!
 //! Decks render to the Milleleaf HTML deck profile, so the output can be
-//! measured back into a layer; every element carries `data-ox-path`, so a re-import edits the
+//! measured back into a layer; every element carries `data-mleaf-path`, so a re-import edits the
 //! same nodes instead of creating new ones. Documents render to plain semantic HTML.
 
 use std::fmt::Write as _;
@@ -144,7 +144,7 @@ fn runs_html(owner: &Composed, runs: &[Value]) -> String {
                 .unwrap_or("");
             let _ = write!(
                 o,
-                "<span data-ox-field=\"{}\" data-ox-path=\"{}\" data-ox-link=\"{}\" style=\"{}\">{}</span>",
+                "<span data-mleaf-field=\"{}\" data-mleaf-path=\"{}\" data-mleaf-link=\"{}\" style=\"{}\">{}</span>",
                 esc(field),
                 esc(child_path),
                 esc(link),
@@ -180,7 +180,7 @@ fn table_html(n: &Composed, extra_attrs: &str, style: &str) -> String {
     }
     let _ = write!(
         o,
-        "<table data-ox-path=\"{}\"{extra_attrs} style=\"{style}\">",
+        "<table data-mleaf-path=\"{}\"{extra_attrs} style=\"{style}\">",
         esc(&n.path)
     );
     if let Some(t) = attr(n, "office::data::table") {
@@ -233,7 +233,7 @@ fn table_html(n: &Composed, extra_attrs: &str, style: &str) -> String {
 fn link_attr(n: &Composed) -> String {
     match attr(n, "mleaf::link") {
         Some(l) => format!(
-            " data-ox-link=\"{}\" data-ox-link-mode=\"{}\"",
+            " data-mleaf-link=\"{}\" data-mleaf-link-mode=\"{}\"",
             esc(s(l, "source").unwrap_or("")),
             esc(s(l, "mode").unwrap_or("live"))
         ),
@@ -249,7 +249,7 @@ pub fn deck_html(deck: &Composed) -> String {
     let mut o = String::new();
     let _ = write!(
         o,
-        "<!doctype html>\n<html data-ox-profile=\"deck/0\"><head><meta charset=\"utf-8\"><title>{}</title>\n<style>\nbody{{margin:0;background:#888}}\nsection[data-ox-slide]{{position:relative;overflow:hidden;width:{w}px;height:{h}px;margin:0 auto 24px;background:#fff;font-family:Inter,Arial,sans-serif}}\n[data-ox-frame]{{position:absolute;box-sizing:border-box;margin:0}}\n[data-ox-frame] p{{margin:0}}\n[data-ox-frame] p[data-ox-bullet]::before{{content:\"\\2022\\00a0\";margin-left:-1em;display:inline-block;width:1em}}\ntable[data-ox-frame]{{border-collapse:collapse}}\naside[data-ox-notes]{{display:none}}\ntable[data-ox-frame] td,table[data-ox-frame] th{{border:1px solid #ccc;padding:6px 10px}}\n</style></head>\n<body>\n<main data-ox-deck data-ox-path=\"{}\" data-ox-width=\"{w}\" data-ox-height=\"{h}\">\n",
+        "<!doctype html>\n<html data-mleaf-profile=\"deck/0\"><head><meta charset=\"utf-8\"><title>{}</title>\n<style>\nbody{{margin:0;background:#888}}\nsection[data-mleaf-slide]{{position:relative;overflow:hidden;width:{w}px;height:{h}px;margin:0 auto 24px;background:#fff;font-family:Inter,Arial,sans-serif}}\n[data-mleaf-frame]{{position:absolute;box-sizing:border-box;margin:0}}\n[data-mleaf-frame] p{{margin:0}}\n[data-mleaf-frame] p[data-mleaf-bullet]::before{{content:\"\\2022\\00a0\";margin-left:-1em;display:inline-block;width:1em}}\ntable[data-mleaf-frame]{{border-collapse:collapse}}\naside[data-mleaf-notes]{{display:none}}\ntable[data-mleaf-frame] td,table[data-mleaf-frame] th{{border:1px solid #ccc;padding:6px 10px}}\n</style></head>\n<body>\n<main data-mleaf-deck data-mleaf-path=\"{}\" data-mleaf-width=\"{w}\" data-mleaf-height=\"{h}\">\n",
         esc(title),
         esc(&deck.path)
     );
@@ -260,7 +260,7 @@ pub fn deck_html(deck: &Composed) -> String {
             .unwrap_or_default();
         let _ = writeln!(
             o,
-            "<section data-ox-slide data-ox-path=\"{}\" data-ox-name=\"{}\"{bg}>",
+            "<section data-mleaf-slide data-mleaf-path=\"{}\" data-mleaf-name=\"{}\"{bg}>",
             esc(&slide.path),
             esc(slide.name.as_deref().unwrap_or(""))
         );
@@ -269,7 +269,7 @@ pub fn deck_html(deck: &Composed) -> String {
             o.push('\n');
         }
         if let Some(notes) = s(&sa, "notes") {
-            let _ = writeln!(o, "<aside data-ox-notes>{}</aside>", esc(notes));
+            let _ = writeln!(o, "<aside data-mleaf-notes>{}</aside>", esc(notes));
         }
         o.push_str("</section>\n");
     }
@@ -295,7 +295,7 @@ fn frame_html(fr: &Composed) -> String {
     }
     let name = esc(fr.name.as_deref().unwrap_or(""));
     let common = format!(
-        " data-ox-path=\"{}\" data-ox-name=\"{name}\"",
+        " data-mleaf-path=\"{}\" data-mleaf-name=\"{name}\"",
         esc(&fr.path)
     );
     if let Some(t) = attr(fr, "deck::text") {
@@ -326,13 +326,13 @@ fn frame_html(fr: &Composed) -> String {
             // The bullet glyph comes from CSS (`::before`), so it never becomes part of the text.
             let _ = write!(
                 inner,
-                "<p data-ox-level=\"{level}\"{} style=\"{ps}\">{runs}</p>",
-                if bullet { " data-ox-bullet" } else { "" }
+                "<p data-mleaf-level=\"{level}\"{} style=\"{ps}\">{runs}</p>",
+                if bullet { " data-mleaf-bullet" } else { "" }
             );
         }
         let role = s(t, "role").unwrap_or("body");
         return format!(
-            "<div data-ox-frame=\"text\" data-ox-role=\"{}\"{common} style=\"{style}\">{inner}</div>",
+            "<div data-mleaf-frame=\"text\" data-mleaf-role=\"{}\"{common} style=\"{style}\">{inner}</div>",
             esc(role)
         );
     }
@@ -341,7 +341,7 @@ fn frame_html(fr: &Composed) -> String {
     }
     if attr(fr, "deck::table").is_some() || attr(fr, "office::data::table").is_some() {
         let extra = format!(
-            " data-ox-frame=\"table\" data-ox-name=\"{name}\"{}",
+            " data-mleaf-frame=\"table\" data-mleaf-name=\"{name}\"{}",
             link_attr(fr)
         );
         return table_html(fr, &extra, &style);
@@ -361,7 +361,7 @@ fn frame_html(fr: &Composed) -> String {
             };
             let alt = s(p, "alt").unwrap_or("");
             return format!(
-                "<img data-ox-frame=\"{kind}\"{common} src=\"{}\" alt=\"{}\" style=\"{style}\">",
+                "<img data-mleaf-frame=\"{kind}\"{common} src=\"{}\" alt=\"{}\" style=\"{style}\">",
                 esc(src),
                 esc(alt)
             );
@@ -386,16 +386,16 @@ fn frame_html(fr: &Composed) -> String {
             }
             _ => {}
         }
-        return format!("<div data-ox-frame=\"shape\"{common} style=\"{style}\"></div>");
+        return format!("<div data-mleaf-frame=\"shape\"{common} style=\"{style}\"></div>");
     }
-    format!("<div data-ox-frame=\"unknown\"{common} style=\"{style}\"></div>")
+    format!("<div data-mleaf-frame=\"unknown\"{common} style=\"{style}\"></div>")
 }
 
 /// Renders a composed `word::document` node as simple semantic HTML.
 pub fn document_html(doc: &Composed) -> String {
     let d = attr(doc, "word::document").cloned().unwrap_or_default();
     let mut o = format!(
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>{}</title>\n<style>body{{font-family:Georgia,serif;max-width:42em;margin:2em auto;line-height:1.5}}table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:4px 10px}}caption{{caption-side:bottom;font-size:.85em;color:#555}}</style></head>\n<body data-ox-path=\"{}\">\n",
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>{}</title>\n<style>body{{font-family:Georgia,serif;max-width:42em;margin:2em auto;line-height:1.5}}table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:4px 10px}}caption{{caption-side:bottom;font-size:.85em;color:#555}}</style></head>\n<body data-mleaf-path=\"{}\">\n",
         esc(s(&d, "title").unwrap_or("Document")),
         esc(&doc.path)
     );
@@ -416,7 +416,7 @@ pub fn document_html(doc: &Composed) -> String {
             );
             let _ = writeln!(
                 o,
-                "<{tag} data-ox-path=\"{}\">{runs}</{tag}>",
+                "<{tag} data-mleaf-path=\"{}\">{runs}</{tag}>",
                 esc(&block.path)
             );
         } else if attr(block, "office::data::table").is_some() {
@@ -496,7 +496,7 @@ pub fn chart_data(fr: &Composed, c: &Map<String, Value>) -> (Vec<String>, Vec<(S
     (cats, series)
 }
 
-/// A `deck::chart` frame as inline SVG drawn from its data; its `data-ox-*` attributes let
+/// A `deck::chart` frame as inline SVG drawn from its data; its `data-mleaf-*` attributes let
 /// `html2mleaf` read it back as the same chart node.
 fn chart_svg(
     fr: &Composed,
@@ -521,7 +521,7 @@ fn chart_svg(
         .unwrap_or_else(|| CHART_COLORS.iter().map(|s| s.to_string()).collect());
     let values: Vec<String> = series.iter().map(|(n, _)| n.clone()).collect();
     let mut o = format!(
-        "<svg data-ox-frame=\"chart\" data-ox-chart=\"{}\" data-ox-category=\"{}\" data-ox-values=\"{}\"{}{common} viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{}\" style=\"{style}\">",
+        "<svg data-mleaf-frame=\"chart\" data-mleaf-chart=\"{}\" data-mleaf-category=\"{}\" data-mleaf-values=\"{}\"{}{common} viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{}\" style=\"{style}\">",
         esc(kind),
         esc(s(c, "category").unwrap_or("")),
         esc(&values.join(",")),

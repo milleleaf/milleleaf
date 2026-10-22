@@ -1,22 +1,22 @@
 // Runs inside the page (Playwright `page.evaluate`). Walks an Milleleaf HTML deck and returns plain
 // data: slides, frames with measured geometry, text runs, tables, and every loss it notices.
 // Elements that need bytes from the Node side (images, SVG, canvas screenshots) are tagged with
-// `data-ox-tmp` and returned as `asset` requests.
+// `data-mleaf-tmp` and returned as `asset` requests.
 //
 // Must stay self-contained: Playwright serialises this function's source into the page.
 
 function extractDeck() {
   const issues = [];
-  const deckEl = document.querySelector('[data-ox-deck]');
-  const W = Number(deckEl?.dataset.oxWidth) || 1280;
-  const H = Number(deckEl?.dataset.oxHeight) || 720;
-  let slideEls = [...document.querySelectorAll('[data-ox-slide]')];
+  const deckEl = document.querySelector('[data-mleaf-deck]');
+  const W = Number(deckEl?.dataset.mleafWidth) || 1280;
+  const H = Number(deckEl?.dataset.mleafHeight) || 720;
+  let slideEls = [...document.querySelectorAll('[data-mleaf-slide]')];
   if (!slideEls.length) {
     slideEls = [...document.querySelectorAll('section')];
-    issues.push({ code: 'no-slide-markers', severity: 'warning', message: 'no [data-ox-slide] elements; treated every <section> as a slide' });
+    issues.push({ code: 'no-slide-markers', severity: 'warning', message: 'no [data-mleaf-slide] elements; treated every <section> as a slide' });
   }
   let tmp = 0;
-  const tmpId = (el) => (el.dataset.oxTmp ||= String(++tmp));
+  const tmpId = (el) => (el.dataset.mleafTmp ||= String(++tmp));
   const r2 = (n) => Math.round(n * 100) / 100;
 
   const TEXT_BLOCKS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'UL', 'OL', 'BLOCKQUOTE', 'PRE', 'FIGCAPTION', 'DL']);
@@ -113,8 +113,8 @@ function extractDeck() {
         if (ch.tagName === 'UL' || ch.tagName === 'OL' || SKIP.has(ch.tagName)) continue;
         if (ch.tagName === 'BR') { runs.push({ text: '\n', ...runStyle(ch.parentElement) }); continue; }
         if (getComputedStyle(ch).display === 'none') continue;
-        if (ch.dataset.oxLink) {
-          fields.push({ name: ch.dataset.oxField || null, path: ch.dataset.oxPath || null, link: ch.dataset.oxLink, mode: ch.dataset.oxLinkMode || 'live', text: ch.textContent.trim() });
+        if (ch.dataset.mleafLink) {
+          fields.push({ name: ch.dataset.mleafField || null, path: ch.dataset.mleafPath || null, link: ch.dataset.mleafLink, mode: ch.dataset.mleafLinkMode || 'live', text: ch.textContent.trim() });
           runs.push({ fieldIndex: fields.length - 1, style: runStyle(ch) });
           continue;
         }
@@ -136,9 +136,9 @@ function extractDeck() {
     collectRuns(el, runs, fields);
     const p = { runs: trimRuns(runs), align: align(getComputedStyle(el)), ...extra };
     // A rendered Milleleaf bullet paragraph starts with "• "; turn it back into a bullet.
-    if (el.hasAttribute('data-ox-bullet')) {
+    if (el.hasAttribute('data-mleaf-bullet')) {
       p.bullet = true;
-      p.level = Number(el.dataset.oxLevel) || 0;
+      p.level = Number(el.dataset.mleafLevel) || 0;
       if (p.runs[0]?.text?.startsWith('• ')) {
         p.runs[0].text = p.runs[0].text.slice(2);
         if (!p.runs[0].text) p.runs.shift();
@@ -166,7 +166,7 @@ function extractDeck() {
     return [paragraph(el, fields)];
   }
   function roleOf(el) {
-    if (el.dataset.oxRole) return el.dataset.oxRole;
+    if (el.dataset.mleafRole) return el.dataset.mleafRole;
     if (/^H[12]$/.test(el.tagName)) return 'title';
     if (/^H[3-6]$/.test(el.tagName)) return 'subtitle';
     if (el.tagName === 'FIGCAPTION') return 'caption';
@@ -240,29 +240,29 @@ function extractDeck() {
       background = firstStop(scs.backgroundImage) || background;
       sIssues.push({ code: 'gradient', severity: 'warning', message: 'slide background gradient/image not carried; used its first colour' });
     }
-    const notes = [...slide.querySelectorAll('[data-ox-notes]')].map((n) => n.textContent.trim()).join('\n') || null;
+    const notes = [...slide.querySelectorAll('[data-mleaf-notes]')].map((n) => n.textContent.trim()).join('\n') || null;
     const frames = [];
     const push = (el, kind, data, loss) => {
-      frames.push({ kind, name: el.dataset.oxName || el.id || null, path: el.dataset.oxPath || null,
-        link: el.dataset.oxLink || null, linkMode: el.dataset.oxLinkMode || 'live', ...data, loss });
+      frames.push({ kind, name: el.dataset.mleafName || el.id || null, path: el.dataset.mleafPath || null,
+        link: el.dataset.mleafLink || null, linkMode: el.dataset.mleafLinkMode || 'live', ...data, loss });
     };
 
     const walk = (parent) => {
       for (const el of parent.children) {
-        if (SKIP.has(el.tagName) || el.hasAttribute('data-ox-notes')) continue;
+        if (SKIP.has(el.tagName) || el.hasAttribute('data-mleaf-notes')) continue;
         const cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') continue;
         const loss = [];
         styleChecks(el, cs, loss);
-        const explicit = el.dataset.oxFrame;
+        const explicit = el.dataset.mleafFrame;
         const tag = el.tagName.toUpperCase();
         const g = () => geometry(el, sr, loss);
 
         // A chart drawn from project data: keep the link and the chart spec, not the picture.
-        if (el.dataset.oxChart && el.dataset.oxLink) {
-          const values = (el.dataset.oxValues || '').split(',').map((v) => v.trim()).filter(Boolean);
+        if (el.dataset.mleafChart && el.dataset.mleafLink) {
+          const values = (el.dataset.mleafValues || '').split(',').map((v) => v.trim()).filter(Boolean);
           const title = el.getAttribute('aria-label');
-          push(el, 'chart', { geom: g(), chart: { kind: el.dataset.oxChart, category: el.dataset.oxCategory || '', values, ...(title && title !== 'chart' ? { title } : {}) } }, loss);
+          push(el, 'chart', { geom: g(), chart: { kind: el.dataset.mleafChart, category: el.dataset.mleafCategory || '', values, ...(title && title !== 'chart' ? { title } : {}) } }, loss);
           continue;
         }
         if (explicit === 'text' || (!explicit && TEXT_BLOCKS.has(tag))) {
@@ -320,9 +320,9 @@ function extractDeck() {
       }
     };
     walk(slide);
-    slides.push({ index: si, name: slide.dataset.oxName || slide.id || null, path: slide.dataset.oxPath || null, background, notes, frames, loss: sIssues });
+    slides.push({ index: si, name: slide.dataset.mleafName || slide.id || null, path: slide.dataset.mleafPath || null, background, notes, frames, loss: sIssues });
   }
-  return { W, H, title: document.title || null, deckPath: deckEl?.dataset.oxPath || null, slides, issues, fonts: [...fonts] };
+  return { W, H, title: document.title || null, deckPath: deckEl?.dataset.mleafPath || null, slides, issues, fonts: [...fonts] };
 }
 
 module.exports = { extractDeck };
