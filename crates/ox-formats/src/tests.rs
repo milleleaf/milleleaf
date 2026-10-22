@@ -104,9 +104,11 @@ fn inventory_counts_real_files_and_lists_losses() {
     let (k, c) = inventory(&real("paper.docx")).unwrap();
     assert_eq!(k, "docx");
     assert_eq!((c["paragraphs (non-empty)"], c["list paragraphs (numPr)"], c["tables"], c["table cells"]), (180, 35, 6, 76));
-    assert_eq!((c["body text chars"], c["bold text chars"], c["hyperlinks"], c["footnote separator lines"]), (30045, 1073, 132, 1));
+    // 132 w:hyperlink elements, 110 links: Word stored some links in pieces, which count once.
+    assert_eq!((c["body text chars"], c["bold text chars"], c["hyperlinks"], c["footnote separator lines"]), (30045, 1073, 110, 1));
+    assert_eq!(c["hyperlinks in table cells"], 18);
     let l = lost(k, &c);
-    assert_eq!(l, ["character styles used", "hyperlinks", "hyperlinks in table cells", "images in body (drawings)", "media files"]);
+    assert_eq!(l, ["character styles used", "hyperlinks", "images in body (drawings)", "media files"]);
     assert_eq!((c["page width (value, twips)"], c["default style size (value, half-points)"], c["default style justified (value)"]), (12240, 22, 1), "Letter, 11 pt, justified");
     assert!(!l.contains(&"paragraphs (non-empty)") && !l.contains(&"list paragraphs (numPr)"), "{l:?}");
 

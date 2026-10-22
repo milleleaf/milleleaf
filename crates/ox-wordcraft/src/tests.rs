@@ -917,8 +917,8 @@ fn a_field_kept_as_a_range_stays_a_field() {
 fn a_link_starting_a_cell_isnt_spread_over_the_cell() {
     // The paper's version tables: a cell starting with a linked accession number ("P12345.1"),
     // then plain text. The cell's look took its first character's formatting, link included, so
-    // the export linked the whole cell. Links in cells aren't carried (a listed loss, "hyperlinks
-    // in table cells"); none is made up either.
+    // the export linked the whole cell. The link stays on its own text (see
+    // `links_in_table_cells_come_back_out`); none is made up either.
     use wordcraft_doc::{Cell, Table};
     let mut doc = Document::new();
     doc.body.clear();
@@ -933,6 +933,50 @@ fn a_link_starting_a_cell_isnt_spread_over_the_cell() {
     let p = cell.blocks.iter().find_map(|b| b.as_para()).unwrap();
     let at = p.text.find(" to").unwrap();
     assert!(p.props_of_char(at).link.is_none(), "{p:?}");
+    assert_eq!(p.props_of_char(0).link.as_deref(), Some("http://www.uniprot.org/uniprot/P12345.1"), "{p:?}");
+}
+
+#[test]
+fn links_in_table_cells_come_back_out() {
+    // The paper (examples/real/paper.docx): 22 links in its table cells (18 once a link Word
+    // stored in pieces counts once), all dropped by the export before 22 Oct 2026. Every one comes
+    // back out on its own text, and a re-export imports as no change.
+    let node = paper_node();
+    let original = from_docx(&std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/paper.docx")).unwrap()).unwrap();
+    let links = |d: &Document| -> Vec<(String, String)> {
+        d.body.iter().filter_map(|b| match &**b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .flat_map(|t| t.rows.iter().flat_map(|r| &r.cells))
+        .flat_map(|c| crate::import::cell_links(c))
+        .map(|l| (l["text"].as_str().unwrap().to_string(), l["link"].as_str().unwrap().to_string()))
+        .collect()
+    };
+    let want = links(&original);
+    assert_eq!(want.len(), 18, "{want:?}");
+    let out = paper_export(&node);
+    assert_eq!(links(&out), want);
+    let (layer, report) = import(&node, &out, header()).expect("imports");
+    assert!(report.is_empty() && layer.data.is_empty() && report.warnings.iter().all(|w| !w.contains("links in its cells")), "{report:?}");
+    // A link removed from a cell in an editor is said, not dropped silently.
+    let mut edited = out.clone();
+    for b in edited.body.iter_mut() {
+        if let Block::Table(t) = Arc::make_mut(b) {
+            for c in t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
+                for b in c.blocks.iter_mut() {
+                    if let Block::Para(p) = Arc::make_mut(b) {
+                        let text = p.plain_text();
+                        let mut q = Paragraph::with_text(&text, CharProps { link: None, ..p.props_of_char(0).clone() });
+                        q.props = p.props.clone();
+                        *p = q;
+                    }
+                }
+            }
+        }
+    }
+    let (_, report) = import(&node, &edited, header()).expect("imports");
+    assert!(report.warnings.iter().any(|w| w.contains("links in its cells")), "{report:?}");
 }
 
 

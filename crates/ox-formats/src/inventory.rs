@@ -72,7 +72,18 @@ pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
             Some(n) => Some(part(n)?),
             None => None,
         };
-        let mut c = docx(&body, &hf, &notes, &comments, &names);
+        // Relationship targets, by id: a hyperlink's address (see `docx`).
+        let mut targets = BTreeMap::new();
+        if has("word/_rels/document.xml.rels") {
+            walk(&part("word/_rels/document.xml.rels")?, |ev| {
+                if let Ev::Open(_, b"Relationship", e) = ev
+                    && let (Some(id), Some(t)) = (attr(e, b"Id"), attr(e, b"Target"))
+                {
+                    targets.insert(id, t);
+                }
+            });
+        }
+        let mut c = docx(&body, &hf, &notes, &comments, &names, &targets);
         if let Some(st) = styles {
             default_style(&st, theme.as_deref(), &mut c);
         }
@@ -315,12 +326,12 @@ fn default_style(st: &[u8], theme: Option<&[u8]>, c: &mut Counts) {
     c.insert("style definitions", styles);
 }
 
-fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], names: &[String]) -> Counts {
+fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], names: &[String], targets: &BTreeMap<String, String>) -> Counts {
     let mut c = Counts::new();
     // Body: one pass, tracking open paragraphs (non-empty if any w:t inside has text), the styles
     // used, and bold text (w:t inside a run whose w:rPr has w:b that isn't off).
     let count = [
-        "tbl", "tr", "tc", "gridSpan", "vMerge", "drawing", "pgSz", "pgMar", "numPr", "sectPr", "hyperlink",
+        "tbl", "tr", "tc", "gridSpan", "vMerge", "drawing", "pgSz", "pgMar", "numPr", "sectPr",
         "fldSimple", "txbxContent",
     ];
     let mut tags: BTreeMap<&'static str, u64> = BTreeMap::new();
@@ -341,6 +352,10 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     let (mut grids, mut grid_seen, mut shaded) = (String::new(), false, 0u64);
     let mut tc_at: Vec<usize> = Vec::new();
     let num = |e: &BytesStart, k: &[u8]| attr(e, k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) as u64;
+    // A link is counted once however many w:hyperlink pieces an editor stored it in: a piece with
+    // the address of the one before it in the paragraph, with no text between them, is the same
+    // link (the Python counter does the same).
+    let (mut last_link, mut in_link): (Option<String>, usize) = (None, 0);
     walk(body, |ev| match ev {
         Ev::Open(n, l, e) if n == W => {
             depth += 1;
@@ -376,8 +391,20 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             if l == b"tc" {
                 tc_at.push(depth);
             }
-            if l == b"hyperlink" && !tc_at.is_empty() {
-                *tags.entry("hyperlinks in table cells").or_default() += 1;
+            if l == b"hyperlink" {
+                in_link += 1;
+                let target = attr(e, b"id").and_then(|r| targets.get(&r).cloned()).unwrap_or_default();
+                let key = format!("{target}#{}", attr(e, b"anchor").unwrap_or_default());
+                if last_link.as_ref() != Some(&key) {
+                    *tags.entry("hyperlink").or_default() += 1;
+                    if !tc_at.is_empty() {
+                        *tags.entry("hyperlinks in table cells").or_default() += 1;
+                    }
+                }
+                last_link = Some(key);
+            }
+            if l == b"p" {
+                last_link = None;
             }
             if l == b"shd"
                 && tc_at.last().map(|d| d + 2) == Some(depth)
@@ -450,6 +477,7 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
                 return;
             }
             match l {
+            b"hyperlink" => in_link = in_link.saturating_sub(1),
             b"tbl" => tables -= 1,
             b"tc" => {
                 tc_at.pop();
@@ -472,6 +500,9 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             }
         }
         Ev::Text(t) if in_t > 0 => {
+            if in_link == 0 && !t.is_empty() {
+                last_link = None;
+            }
             text.push_str(t);
             if !t.trim().is_empty() {
                 paras.iter_mut().for_each(|p| *p = true);
@@ -1016,7 +1047,8 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("header/footer text chars", None),
             ("footnote separator lines", None),
             ("media files", Some("pictures in the text, headers and footers are kept; embedded objects and other media aren't")),
-            ("hyperlinks", Some("web and mail links on text are kept (not in table cells, counted on their own); a link to a bookmark keeps its target, but bookmarks aren't carried")),
+            ("hyperlinks", Some("web and mail links are kept, in table cells too; a link to a bookmark keeps its target, but bookmarks aren't carried")),
+            ("hyperlinks in table cells", None),
         ],
         "xlsx" => &[
             ("sheets", None),
