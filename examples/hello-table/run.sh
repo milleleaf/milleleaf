@@ -320,7 +320,7 @@ echo; echo "== 17. No silent loss (M2.5): adopt real files, export them again, a
 #    tools/inventory counts the original and the re-export from their XML, independently of Milleleaf
 TMP=$(mktemp -d)
 for f in ../real/*.docx ../real/*.xlsx ../real/*.pptx; do
-  MLEAF="${CARGO_TARGET_DIR:-$PWD/../../target}/debug/ox" ../../tools/inventory/roundtrip.sh "$f" "$TMP" > "$TMP/out.txt" 2>&1 || { cat "$TMP/out.txt"; echo "unlisted loss in $f"; exit 1; }
+  MLEAF="${CARGO_TARGET_DIR:-$PWD/../../target}/debug/mleaf" ../../tools/inventory/roundtrip.sh "$f" "$TMP" > "$TMP/out.txt" 2>&1 || { cat "$TMP/out.txt"; echo "unlisted loss in $f"; exit 1; }
   echo "$(basename "$f"): $(tail -1 "$TMP/out.txt")"
 done
 rm -rf "$TMP"

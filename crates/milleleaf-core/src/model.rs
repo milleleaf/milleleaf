@@ -2,7 +2,7 @@
 //!
 //! Four sections (`header`, `imports`, `schemas`, `data`); nodes carry an `order` (paragraphs,
 //! slides and sheets are ordered), and the `Any` data type covers values a schema can't constrain
-//! yet. `schema/ox.tsp` describes this format.
+//! yet. `schema/mleaf.tsp` describes this format.
 //!
 //! Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
 //! (OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8

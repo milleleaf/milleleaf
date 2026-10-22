@@ -11,7 +11,7 @@
 // The JSON member names are fixed: every stored layer is named by the SHA-256 of its canonical
 // (RFC 8785) bytes, so renaming a member would change every hash.
 //
-// Compile: tsp compile schema/ox.tsp --emit @typespec/json-schema
+// Compile: tsp compile schema/mleaf.tsp --emit @typespec/json-schema
 
 import "@typespec/json-schema";
 

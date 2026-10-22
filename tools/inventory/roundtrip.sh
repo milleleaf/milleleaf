@@ -4,7 +4,7 @@
 #   tools/inventory/roundtrip.sh FILE OUTDIR
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-MLEAF="${MLEAF:-$ROOT/target/debug/ox}"
+MLEAF="${MLEAF:-$ROOT/target/debug/mleaf}"
 f="$1"; out="$2"; mkdir -p "$out"
 name="$(basename "${f%.*}")"; ext="${f##*.}"
 "$MLEAF" adopt "$f" --out "$out/$name.adopt.mleaf.json" --report "$out/$name.adopt-report.json" 2> "$out/$name.not-carried.txt"

@@ -30,7 +30,7 @@ the same version.
 
 | Path | What |
 |---|---|
-| `schema/ox.tsp` | TypeSpec for the file format; compiles to JSON Schema with `@typespec/compiler` and `@typespec/json-schema` 1.17.0 |
+| `schema/mleaf.tsp` | TypeSpec for the file format; compiles to JSON Schema with `@typespec/compiler` and `@typespec/json-schema` 1.17.0 |
 | `schema/office.mleaf.json` | Attribute schemas: `office::`, `grid::`, `word::`, `deck::`, `mleaf::` |
 | `crates/milleleaf-core` | Rust: load stacks (imports, integrity), flatten, compose with provenance, validate, render HTML |
 | `crates/milleleaf-cli` | `mleaf layers / validate / compose / get / render / pack`, `docx-`, `xlsx-`, `pptx-` `export` / `import`, and the store: `init / commit / head / log / blame / checkpoint / verify / sign / key` |
