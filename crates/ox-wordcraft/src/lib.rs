@@ -14,8 +14,8 @@
 mod export;
 mod import;
 
-pub use export::{ExportReport, export, page_size};
-pub use import::{Conflict, ImportReport, adopt, exported_revision, import, import_in};
+pub use export::{ExportReport, export, export_with, page_size};
+pub use import::{Conflict, ImportReport, adopt, adopt_for_comparison, exported_path, exported_revision, import, import_for_comparison, import_in};
 
 use sha2::{Digest, Sha256};
 
@@ -71,7 +71,10 @@ pub fn from_docx(bytes: &[u8]) -> Result<wordcraft_doc::Document, WordError> {
 /// `txt`. These drop content controls, so an edited copy can't be brought back; Milleleaf uses
 /// them only as one-way exports (see `ox formats`).
 pub fn to_other(doc: &wordcraft_doc::Document, ext: &str) -> Option<Result<Vec<u8>, WordError>> {
-    wordcraft_formats::export(ext, doc).map(|r| r.map_err(WordError::Format))
+    #[cfg(feature = "other-formats")]
+    { wordcraft_formats::export(ext, doc).map(|r| r.map_err(WordError::Format)) }
+    #[cfg(not(feature = "other-formats"))]
+    { let _ = (doc, ext); None }
 }
 
 #[cfg(test)]

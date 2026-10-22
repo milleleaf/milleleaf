@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ox-core", "crates/ox-cli", "crates/ox-wordcraft", "crates/ox-gridcraft", "crates/ox-deckcraft", "crates/ox-pack", "crates/ox-odf", "crates/ox-store", "crates/ox-formats", "crates/ox-seal", "crates/ox-headers"]
+members = ["crates/ox-core", "crates/ox-cli", "crates/ox-wordcraft", "crates/ox-gridcraft", "crates/ox-deckcraft", "crates/ox-pack", "crates/ox-odf", "crates/ox-store", "crates/ox-formats", "crates/ox-seal", "crates/ox-headers", "crates/ox-web"]
 
 [workspace.package]
 version = "0.1.0"

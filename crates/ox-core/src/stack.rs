@@ -121,6 +121,8 @@ pub fn blob_of(bytes: &[u8]) -> String {
 pub enum PictureSource<'a> {
     /// The project (or stack) folder: bytes read with [`read_blob`].
     Read(&'a Path),
+    /// Bytes held in memory by blob value (a browser has no project folder).
+    Memory(&'a std::collections::BTreeMap<String, (String, Vec<u8>)>),
     /// An importer's comparison export: a [`STAND_IN`] carrying the picture's hash (a picture
     /// still named by a path is read from this folder and hashed, see [`resolve_blob`]).
     StandIn(Option<&'a Path>),
@@ -130,6 +132,17 @@ pub enum PictureSource<'a> {
 pub fn picture_bytes(src: PictureSource, blob: &str) -> std::io::Result<Vec<u8>> {
     match src {
         PictureSource::Read(root) => read_blob(root, blob),
+        PictureSource::Memory(pictures) => {
+            let (_, bytes) = pictures.get(blob).ok_or_else(|| std::io::Error::new(
+                std::io::ErrorKind::NotFound, format!("missing asset: {blob}"),
+            ))?;
+            if blob.starts_with("sha256-") && integrity_of(bytes) != blob {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData, format!("{blob} doesn't match its hash"),
+                ));
+            }
+            Ok(bytes.clone())
+        }
         PictureSource::StandIn(root) => {
             Ok([STAND_IN, resolve_blob(root, blob).as_deref().unwrap_or(blob).as_bytes()].concat())
         }

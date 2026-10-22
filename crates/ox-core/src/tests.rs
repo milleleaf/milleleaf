@@ -187,6 +187,20 @@ fn stable_id_matches_html2ox() {
 }
 
 #[test]
+fn memory_source_gives_the_bytes_and_checks_the_hash() {
+    let bytes = b"picture bytes".to_vec();
+    let blob = crate::integrity_of(&bytes);
+    let mut pictures = std::collections::BTreeMap::new();
+    pictures.insert(blob.clone(), ("image/png".into(), bytes.clone()));
+    assert_eq!(crate::picture_bytes(crate::PictureSource::Memory(&pictures), &blob).unwrap(), bytes);
+    let err = crate::picture_bytes(crate::PictureSource::Memory(&pictures), "missing").unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    pictures.get_mut(&blob).unwrap().1.push(0);
+    let err = crate::picture_bytes(crate::PictureSource::Memory(&pictures), &blob).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
 fn derived_values_follow_their_source() {
     let t = TempDir::new("derived");
     t.write("a.json", json!({"header": header("base"), "data": [

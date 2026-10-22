@@ -5,9 +5,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["native"]
+# LibreOffice and additional WordCraft writers need a native host.
+native = ["dep:ox-odf", "ox-wordcraft/other-formats"]
+
 [dependencies]
-ox-odf = { workspace = true }
-ox-wordcraft = { workspace = true }
+ox-odf = { workspace = true, optional = true }
+ox-wordcraft = { path = "../ox-wordcraft", default-features = false }
 serde = { workspace = true }
 thiserror = { workspace = true }
 # Already in the build through the office crates (same versions); used to count what a file holds.

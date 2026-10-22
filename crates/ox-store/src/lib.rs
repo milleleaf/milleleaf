@@ -38,7 +38,7 @@ pub mod headers;
 pub mod tsp;
 
 pub use history::{BlameEntry, Touch};
-pub use keys::{KeyPair, LayerStatus, SigInfo, Signature, ots_of, strength, tsr_of, tsr_paths};
+pub use keys::{check_signature, sign_hash, KeyPair, LayerStatus, SigInfo, Signature, ots_of, strength, tsr_of, tsr_paths};
 pub use policy::Policy;
 pub use time::{now_rfc3339, rfc3339};
 pub use seal::{Opened, SealInfo};

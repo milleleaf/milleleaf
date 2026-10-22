@@ -703,7 +703,7 @@ pub fn import_in(
             found,
         });
     }
-    import_into(deck, edited, header, false, assets)
+    import_into(deck, edited, header, false, assets, false)
 }
 
 /// Brings a presentation Milleleaf didn't make into a project: it is imported into an empty
@@ -714,6 +714,47 @@ pub fn adopt(
     path: &str,
     title: &str,
     header: Header,
+) -> Result<(Layer, ImportReport), DeckError> {
+    adopt_file(edited, path, title, header, false)
+}
+
+/// Adopts file values while retaining OX slide and frame names as identities. The file's
+/// displayed values are snapshots; tags do not imply links to another stack.
+pub fn adopt_for_comparison(
+    edited: &Presentation,
+    path: &str,
+    title: &str,
+    header: Header,
+) -> Result<(Layer, ImportReport), DeckError> {
+    adopt_file(edited, path, title, header, true)
+}
+
+/// The deck identity recorded by an OX export, when present.
+pub fn exported_path(edited: &Presentation) -> Option<String> {
+    keyword(edited, KEY_DECK)
+}
+
+/// Compares against an adopted file, accepting unmarked files with explicit best-guess
+/// slide and frame matches by place.
+pub fn import_for_comparison(
+    deck: &Composed,
+    edited: &Presentation,
+    header: Header,
+) -> Result<(Layer, ImportReport), DeckError> {
+    if let Some(found) = exported_path(edited) {
+        if found != deck.path {
+            return Err(DeckError::WrongDeck { expected: deck.path.clone(), found });
+        }
+    }
+    import_into(deck, edited, header, false, None, true)
+}
+
+fn adopt_file(
+    edited: &Presentation,
+    path: &str,
+    title: &str,
+    header: Header,
+    file_comparison: bool,
 ) -> Result<(Layer, ImportReport), DeckError> {
     // The slide size unrounded: px() rounds to 0.01 px, which moves a 1280 pt wide slide by
     // 32 EMU (16256000 → 16256032), a different slide size to every reader.
@@ -731,7 +772,7 @@ pub fn adopt(
         provenance: Default::default(),
         children: vec![],
     };
-    let (mut layer, report) = import_into(&empty, edited, header, true, None)?;
+    let (mut layer, report) = import_into(&empty, edited, header, true, None, file_comparison)?;
     match layer.data.iter_mut().find(|n| n.path == path) {
         Some(n) => {
             n.attributes.insert("deck::deck".into(), attr);
@@ -815,13 +856,14 @@ fn import_into(
     header: Header,
     adopting: bool,
     assets: Option<&std::path::Path>,
+    file_comparison: bool,
 ) -> Result<(Layer, ImportReport), DeckError> {
     let edited = &*ungrouped(edited);
     let mut report = ImportReport::default();
     for b in ox_core::unreadable_pictures(deck, assets) {
         report.warnings.push(format!("picture `{b}` can't be read, so it isn't compared: the stack's picture stays"));
     }
-    if !adopting && keyword(edited, KEY_REVISION).as_deref() != Some(revision_of(deck).as_str()) {
+    if !adopting && !file_comparison && keyword(edited, KEY_REVISION).as_deref() != Some(revision_of(deck).as_str()) {
         report.stale = true;
         report.warnings.push("the deck changed in the stack since this file was exported; review the edit layer before stacking it".into());
     }
@@ -932,14 +974,17 @@ fn import_into(
         };
         let dup_name = by_name.as_deref().and_then(|p| dup_slides.get(p)).copied();
         let certain = by_name.is_some() && dup_name.is_none();
+        let by_position = file_comparison && !adopting && by_name.is_none() && by_frames.is_none();
         let matched = by_name
             .or(by_frames)
+            .or_else(|| by_position.then(|| deck.children.get(si).map(|s| s.path.clone())).flatten())
             .filter(|p| !claimed_slides.contains(p));
         if let Some(p) = &matched {
             report.matches.push(if certain {
                 ox_core::Match::certain(p, "slide name")
             } else {
                 match dup_name {
+                    None if by_position => ox_core::Match::best_guess(p, "an unmarked slide in the same place"),
                     Some(n) => ox_core::Match::best_guess(
                         p,
                         format!("slide name appears {n} times; the first slide is taken as the original"),
@@ -962,7 +1007,8 @@ fn import_into(
                 (p.clone(), slide_by_path.get(p.as_str()).copied())
             }
             None => {
-                let p = stable_id(&format!("{}|pptx-slide|{si}", deck.path));
+                let p = slide.name.strip_prefix(NAME_PREFIX).filter(|_| adopting && file_comparison)
+                    .map(String::from).unwrap_or_else(|| stable_id(&format!("{}|pptx-slide|{si}", deck.path)));
                 (p, None)
             }
         };
@@ -990,14 +1036,18 @@ fn import_into(
             .unwrap_or_default();
 
         for (zi, sh) in slide.shapes.iter().enumerate() {
+            let by_position = file_comparison && !adopting && ox_name(sh).is_none();
             let existing = ox_name(sh)
                 .filter(|p| !claimed_frames.contains(*p))
                 .and_then(|p| frame_home.get(p))
-                .copied();
+                .copied()
+                .or_else(|| by_position.then(|| composed_slide.and_then(|s| s.children.get(zi)).and_then(|f| frame_home.get(f.path.as_str()).copied())).flatten())
+                .filter(|(_, f)| !claimed_frames.contains(&f.path));
             match existing {
                 Some((home, fr)) => {
                     claimed_frames.insert(fr.path.clone());
                     report.matches.push(match dup_shapes.get(fr.path.as_str()) {
+                        None if by_position => ox_core::Match::best_guess(&fr.path, "an unmarked frame in the same place"),
                         Some(n) => ox_core::Match::best_guess(
                             &fr.path,
                             format!("shape name appears {n} times; the first is taken as the original"),
@@ -1063,7 +1113,12 @@ fn import_into(
                     } else if let Some(dt) = obj(fr, "deck::table") {
                         if let Some(new) = slide_ctx.as_ref().and_then(|ctx| crate::table::table_of(ctx, sh, &mut report.warnings, si)) {
                             let was = ours_tables.get(&fr.path).cloned().unwrap_or_else(|| Value::Object(dt.clone()));
-                            if !crate::table::same_table(&new, &was) {
+                            let same = if file_comparison {
+                                crate::table::same_file_table(&new, &was)
+                            } else {
+                                crate::table::same_table(&new, &was)
+                            };
+                            if !same {
                                 // Keeps `style` (the HTML view's font).
                                 let mut t = dt.clone();
                                 t.extend(new.as_object().cloned().unwrap_or_default());
@@ -1251,7 +1306,7 @@ fn import_into(
                         && let Some(t) = crate::table::table_of(ctx, sh, &mut report.warnings, si)
                     {
                         g.insert("z".into(), json!(zi));
-                        let path = stable_id(&format!("{slide_path}|pptx-table|{zi}|{}", sh.name));
+                        let path = ox_name(sh).filter(|_| adopting && file_comparison).map(String::from).unwrap_or_else(|| stable_id(&format!("{slide_path}|pptx-table|{zi}|{}", sh.name)));
                         let mut n = format!("table-{}", &path[..8]);
                         let mut i = 2;
                         while used_frame_names.contains(&n) {
@@ -1269,7 +1324,7 @@ fn import_into(
                     }
                     if let (true, Some(ctx), Some(mut g)) = (is_line(sh), &slide_ctx, geometry(sh)) {
                         g.insert("z".into(), json!(zi));
-                        let path = stable_id(&format!("{slide_path}|pptx-line|{zi}|{}", sh.name));
+                        let path = ox_name(sh).filter(|_| adopting && file_comparison).map(String::from).unwrap_or_else(|| stable_id(&format!("{slide_path}|pptx-line|{zi}|{}", sh.name)));
                         let mut n = format!("line-{}", &path[..8]);
                         let mut i = 2;
                         while used_frame_names.contains(&n) {
@@ -1288,7 +1343,9 @@ fn import_into(
                         report.added.push(path);
                         continue;
                     }
+                    let empty_body = TextBody::default();
                     let Some(text) = sh.text.as_ref().filter(|t| !t.text().trim().is_empty())
+                        .or_else(|| (file_comparison && ox_name(sh).is_some() && matches!(sh.kind, ShapeKind::Shape)).then_some(&empty_body))
                     else {
                         if let Some(pic) = picture(edited, sh, si, &mut report) {
                             // A picture placeholder may take its position from the layout.
@@ -1299,7 +1356,7 @@ fn import_into(
                             if let Some(mut g) = geometry(&placed) {
                                 g.insert("z".into(), json!(zi));
                                 let blob = pic["blob"].as_str().unwrap_or_default();
-                                let path = stable_id(&format!("{slide_path}|pptx-picture|{zi}|{blob}"));
+                                let path = ox_name(sh).filter(|_| adopting && file_comparison).map(String::from).unwrap_or_else(|| stable_id(&format!("{slide_path}|pptx-picture|{zi}|{blob}")));
                                 let mut n = format!("picture-{}", &path[..8]);
                                 let mut i = 2;
                                 while used_frame_names.contains(&n) {
@@ -1329,7 +1386,7 @@ fn import_into(
                         ));
                         continue;
                     };
-                    let path = stable_id(&format!("{slide_path}|pptx-frame|{zi}|{}", text.text()));
+                    let path = ox_name(sh).filter(|_| adopting && file_comparison).map(String::from).unwrap_or_else(|| stable_id(&format!("{slide_path}|pptx-frame|{zi}|{}", text.text())));
                     // A placeholder with no position of its own (most titles) sits where its
                     // layout's (or master's) placeholder sits.
                     let placed;

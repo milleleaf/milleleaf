@@ -1,6 +1,8 @@
 # Build output
 target/
 node_modules/
+web/demo/pkg/
+web/demo/_shots/
 __pycache__/
 *.pyc
 .DS_Store

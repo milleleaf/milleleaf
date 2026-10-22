@@ -1091,7 +1091,7 @@ pub fn import_in(
             found: found.to_string(),
         });
     }
-    import_into(node, edited, header, false, assets)
+    import_into(node, edited, header, false, assets, false)
 }
 
 /// Brings a document Milleleaf didn't make into a project: it is imported into an empty
@@ -1103,6 +1103,49 @@ pub fn adopt(
     title: &str,
     header: Header,
 ) -> Result<(Layer, ImportReport), WordError> {
+    adopt_file(edited, path, title, header, false)
+}
+
+/// Adopts file values while retaining any OX content-control identities. Links to a stack are
+/// not inferred from tags: the adopted file remains a self-contained snapshot.
+pub fn adopt_for_comparison(
+    edited: &Document,
+    path: &str,
+    title: &str,
+    header: Header,
+) -> Result<(Layer, ImportReport), WordError> {
+    adopt_file(edited, path, title, header, true)
+}
+
+/// Compares a file with its adopted snapshot, including files without OX export stamps.
+/// Untagged blocks matched by place are explicitly reported as best guesses.
+pub fn import_for_comparison(
+    node: &Composed,
+    edited: &Document,
+    header: Header,
+) -> Result<(Layer, ImportReport), WordError> {
+    if let Some(found) = exported_path(edited) {
+        if found != node.path {
+            return Err(WordError::WrongDocument { expected: node.path.clone(), found });
+        }
+    }
+    let (mut layer, report) = import_into(node, edited, header, false, None, true)?;
+    ox_core::matching::flag_best_guesses(&mut layer, &report.matches);
+    Ok((layer, report))
+}
+
+/// The document identity recorded by an OX export, when present.
+pub fn exported_path(edited: &Document) -> Option<String> {
+    custom_prop(edited, PROP_DOCUMENT).map(String::from)
+}
+
+fn adopt_file(
+    edited: &Document,
+    path: &str,
+    title: &str,
+    header: Header,
+    file_comparison: bool,
+) -> Result<(Layer, ImportReport), WordError> {
     let empty = Composed {
         path: path.to_string(),
         name: None,
@@ -1110,7 +1153,7 @@ pub fn adopt(
         provenance: Default::default(),
         children: vec![],
     };
-    let (mut layer, report) = import_into(&empty, edited, header, true, None)?;
+    let (mut layer, report) = import_into(&empty, edited, header, true, None, file_comparison)?;
     match layer.data.iter_mut().find(|n| n.path == path) {
         Some(n) => {
             let wd = n.attributes.entry("word::document").or_insert_with(|| json!({}));
@@ -1175,13 +1218,14 @@ fn import_into(
     header: Header,
     adopting: bool,
     assets: Option<&std::path::Path>,
+    file_comparison: bool,
 ) -> Result<(Layer, ImportReport), WordError> {
     let edited = &*page_breaks_as_properties(edited);
     let mut report = ImportReport::default();
     for b in ox_core::unreadable_pictures(node, assets) {
         report.warnings.push(format!("picture `{b}` can't be read, so it's compared by its path and may come back as changed"));
     }
-    if !adopting && custom_prop(edited, PROP_REVISION) != Some(revision_of(node).as_str()) {
+    if !adopting && !file_comparison && custom_prop(edited, PROP_REVISION) != Some(revision_of(node).as_str()) {
         report.stale = true;
         report.warnings.push("the document changed in the stack since this file was exported; review the edit layer before stacking it".into());
     }
@@ -1288,6 +1332,18 @@ fn import_into(
                         ex.dropped_objects
                     ));
                 }
+                // Captions belong to their table node, including a tagged file adopted as a
+                // self-contained snapshot rather than reconstructed from its original stack.
+                if adopting && file_comparison {
+                    if let Some(table_path) = tag.as_deref().and_then(|t| t.strip_suffix(CAPTION_SUFFIX)) {
+                        if let Some(table) = nodes.iter_mut().find(|n| n.path == table_path && n.attributes.contains_key("word::table")) {
+                            if let Some(look) = table.attributes.get_mut("word::table") {
+                                look["caption"] = json!(ex.text.trim());
+                            }
+                            continue;
+                        }
+                    }
+                }
                 // Captions belong to their table node.
                 if let Some(table_path) =
                     tag.as_deref().and_then(|t| t.strip_suffix(CAPTION_SUFFIX))
@@ -1340,15 +1396,16 @@ fn import_into(
                 }
                 // Editors drop the tag from a paragraph without text (LibreOffice does, from an empty
                 // one or one holding only a picture): one where the original had such a paragraph,
-                // right after the last block matched, is that one.
-                let by_position = !adopting && blank;
+                // right after the last block matched, is that one. Comparing two files (the demo),
+                // an untagged paragraph is also matched by place.
+                let by_position = !adopting && (blank || (file_comparison && tag.is_none()));
                 let existing = if by_position {
                     node.children
                         .get(last_seen.map_or(0, |i| i + 1))
                         .filter(|c| !seen.contains(&c.path) && !tags_in_file.contains(c.path.as_str()))
                         .filter(|c| {
                             obj(c, "word::paragraph").is_some_and(|w| {
-                                w.get("runs").and_then(Value::as_array).is_none_or(|r| {
+                                !blank || w.get("runs").and_then(Value::as_array).is_none_or(|r| {
                                     r.iter().all(|r| r.get("picture").is_some() || r.get("text").and_then(Value::as_str).is_some_and(|t| t.trim().is_empty()))
                                 })
                             })
@@ -1358,7 +1415,8 @@ fn import_into(
                 };
                 let para_path = match existing {
                     Some(c) => c.path.clone(),
-                    None => stable_id(&format!("{}|word-edit|{}|{}", node.path, index, ex.text)),
+                    None => tag.clone().filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t))
+                        .unwrap_or_else(|| stable_id(&format!("{}|word-edit|{}|{}", node.path, index, ex.text))),
                 };
                 // Resolve field runs to child names, adding a child when a field was copied here.
                 let mut children: BTreeMap<String, Option<String>> = BTreeMap::new();
@@ -1428,7 +1486,7 @@ fn import_into(
                         seen.insert(c.path.clone());
                         last_seen = child_idx.get(c.path.as_str()).copied();
                         report.matches.push(if by_position {
-                            ox_core::Match::best_guess(&c.path, "an empty paragraph in the same place")
+                            ox_core::Match::best_guess(&c.path, if blank { "an empty paragraph in the same place" } else { "an untagged paragraph in the same place" })
                         } else {
                             ox_core::Match::certain(&c.path, "content control tag")
                         });
@@ -1510,9 +1568,13 @@ fn import_into(
             }
             Block::Table(t) => {
                 let grid = table_grid(t);
-                let existing = table_tag(t, &is_table)
+                let tag = table_tag(t, &|p| file_comparison || is_table(p));
+                let by_position = !adopting && file_comparison && tag.is_none();
+                let existing = tag.as_ref()
                     .and_then(|tag| by_path.get(tag.as_str()).copied())
-                    .filter(|c| c.attributes.contains_key("office::data::table"));
+                    .filter(|c| c.attributes.contains_key("office::data::table"))
+                    .or_else(|| by_position.then(|| node.children.get(index)).flatten()
+                        .filter(|c| c.attributes.contains_key("office::data::table")));
                 let existing = match existing {
                     Some(c) if seen.contains(&c.path) => {
                         duplicate(&mut report, &c.path, "table");
@@ -1534,7 +1596,11 @@ fn import_into(
                         } else {
                             "content control tag in its first cell"
                         };
-                        report.matches.push(ox_core::Match::certain(&c.path, by));
+                        report.matches.push(if by_position {
+                            ox_core::Match::best_guess(&c.path, "an untagged table in the same place")
+                        } else {
+                            ox_core::Match::certain(&c.path, by)
+                        });
                         new_order.push(c.name.clone().unwrap_or_default());
                         // Merges or the header row changed in Word.
                         let old = obj(c, "word::table").cloned().unwrap_or_default();
@@ -1610,12 +1676,12 @@ fn import_into(
                         }
                     }
                     None => {
-                        let path = stable_id(&format!(
+                        let path = tag.filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t)).unwrap_or_else(|| stable_id(&format!(
                             "{}|word-edit-table|{}|{:?}",
                             node.path,
                             index,
                             grid.first()
-                        ));
+                        )));
                         let header = grid.first().cloned().unwrap_or_default();
                         let mut wt = table_look(t);
                         let mut list_of = |num| {

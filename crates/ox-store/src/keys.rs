@@ -68,6 +68,14 @@ impl KeyPair {
         Ok(k)
     }
 
+    /// An in-memory demo signing key: Ed25519 and ML-DSA-65, without sealing or archive keys.
+    pub fn generate_demo(name: &str) -> Result<KeyPair> {
+        Ok(KeyPair {
+            name: name.into(), key: SigningKey::from_bytes(&random32()?),
+            xwing: None, mldsa: Some(random32()?), slh: None,
+        })
+    }
+
     /// Adds whatever this key lacks (X-Wing, ML-DSA, SLH-DSA); keeps what it has. Returns what it added.
     fn fill(&mut self) -> Result<Vec<&'static str>> {
         let mut added = Vec::new();
@@ -371,6 +379,47 @@ pub enum LayerStatus {
     Unsigned,
 }
 
+/// Detached signatures over a layer hash, without a store. `at` is the claimed signing time.
+/// Ed25519 and ML-DSA-65 are always used when present; `slh` also uses the archive key.
+pub fn sign_hash(layer_hash: &str, key: &KeyPair, slh: bool, at: &str) -> Result<Vec<Signature>> {
+    let msg = message(layer_hash);
+    let mut sigs = vec![(None, key.public(), key.key.sign(&msg).to_bytes().to_vec())];
+    if let (Some(seed), Some(public)) = (&key.mldsa, key.mldsa_public()) {
+        // Hedged signing (FIPS 204 recommends it): fresh randomness per signature.
+        let sig = pq::mldsa_sign(pq::mldsa_key(seed).expanded_key(), &[], &msg, &random32()?).expect("empty context");
+        sigs.push((Some(MLDSA65), public, sig));
+    }
+    if let (true, Some(sk), Some(public)) = (slh, &key.slh, key.slh_public()) {
+        let mut rand = vec![0u8; pq::slh_n()];
+        getrandom::getrandom(&mut rand).map_err(|e| StoreError::Key(e.to_string()))?;
+        let sig = pq::slh_sign(sk, &[], &msg, Some(&rand)).ok_or_else(|| StoreError::Key("SLH-DSA signing failed".into()))?;
+        sigs.push((Some(SLH), public, sig));
+    }
+    Ok(sigs.into_iter().map(|(alg, public, sig)| Signature {
+        alg: alg.map(String::from), layer: format!("sha256-{layer_hash}"), key: public,
+        signer: key.name.clone(), signature: B64.encode(sig), at: at.into(),
+    }).collect())
+}
+
+/// Checks one detached signature, without time-stamp files or a store. `known` lists trusted
+/// (name, public key) pairs; a valid signature from an unlisted key remains untrusted.
+pub fn check_signature(s: &Signature, layer_hash: &str, known: &[(String, String)]) -> SigInfo {
+    let alg = s.alg.clone().unwrap_or_else(|| ED25519.into());
+    let mut info = SigInfo {
+        known_as: None, claimed: s.signer.clone(), key_id: String::new(), alg: alg.clone(),
+        valid: false, timestamp: None, ots: None, problem: None,
+    };
+    match check(&alg, &s.key, &s.signature, &message(layer_hash)) {
+        None => info.problem = Some(format!("unknown algorithm `{alg}`; not accepted")),
+        Some((ok, id)) => {
+            info.valid = ok && s.layer == format!("sha256-{layer_hash}");
+            info.key_id = id;
+            info.known_as = known.iter().find(|(_, k)| *k == s.key.trim()).map(|(n, _)| n.clone());
+        }
+    }
+    info
+}
+
 impl Store {
     /// Adds a public key to the project (`.ox/keys/<name>.pub`).
     pub fn add_key(&self, name: &str, public: &str) -> Result<PathBuf> {
@@ -489,35 +538,14 @@ impl Store {
                 actual,
             });
         }
-        let msg = message(layer_hash);
         let role = self.known_keys().into_iter().find(|(_, k)| *k == key.public()).map(|(n, _)| self.role(&n));
         let slh = archive || role.is_some_and(|r| ARCHIVE_ROLES.contains(&r.as_str()));
-        let mut sigs = vec![(None, key.public(), key.key.sign(&msg).to_bytes().to_vec())];
-        if let (Some(seed), Some(public)) = (&key.mldsa, key.mldsa_public()) {
-            // Hedged signing (FIPS 204 recommends it): fresh randomness per signature.
-            let sig = pq::mldsa_sign(pq::mldsa_key(seed).expanded_key(), &[], &msg, &random32()?).expect("empty context");
-            sigs.push((Some(MLDSA65), public, sig));
-        }
-        if let (true, Some(sk), Some(public)) = (slh, &key.slh, key.slh_public()) {
-            let mut rand = vec![0u8; pq::slh_n()];
-            getrandom::getrandom(&mut rand).map_err(|e| StoreError::Key(e.to_string()))?;
-            let sig = pq::slh_sign(sk, &[], &msg, Some(&rand)).ok_or_else(|| StoreError::Key("SLH-DSA signing failed".into()))?;
-            sigs.push((Some(SLH), public, sig));
-        }
+        let sigs = sign_hash(layer_hash, key, slh, &time::now_rfc3339())?;
         let d = self.dir.join("sigs").join(layer_hash);
         io(&d, fs::create_dir_all(&d))?;
-        let at = time::now_rfc3339();
         let mut out = Vec::new();
-        for (alg, public, sig) in sigs {
-            let s = Signature {
-                alg: alg.map(String::from),
-                layer: format!("sha256-{layer_hash}"),
-                key: public,
-                signer: key.name.clone(),
-                signature: B64.encode(sig),
-                at: at.clone(),
-            };
-            let p = d.join(match alg {
+        for s in sigs {
+            let p = d.join(match s.alg.as_deref() {
                 None => format!("{}.json", key.id()),
                 Some(SLH) => format!("{}.slhdsa.json", key.id()),
                 Some(a) => format!("{}.{a}.json", key.id()),
@@ -546,9 +574,9 @@ impl Store {
         if actual != layer_hash {
             return Ok(LayerStatus::Tampered { actual });
         }
-        let known: Vec<(&str, Vec<(String, String)>)> =
-            [(ED25519, "pub"), (MLDSA65, "mldsa65"), (SLH, "slhdsa")].into_iter().map(|(a, ext)| (a, self.known(ext))).collect();
-        let msg = message(layer_hash);
+        let known: Vec<(String, String)> = [(ED25519, "pub"), (MLDSA65, "mldsa65"), (SLH, "slhdsa")]
+            .into_iter().flat_map(|(alg, ext)| self.known(ext).into_iter()
+                .filter(move |(_, key)| key.starts_with(&format!("{alg}:")))).collect();
         let mut sigs = Vec::new();
         for f in self.signature_files(layer_hash) {
             let raw = fs::read(&f).unwrap_or_default();
@@ -565,29 +593,7 @@ impl Store {
                 });
                 continue;
             };
-            let alg = s.alg.clone().unwrap_or_else(|| ED25519.into());
-            let mut info = SigInfo {
-                known_as: None,
-                claimed: s.signer.clone(),
-                key_id: String::new(),
-                alg: alg.clone(),
-                valid: false,
-                timestamp: None,
-                ots: None,
-                problem: None,
-            };
-            match check(&alg, &s.key, &s.signature, &msg) {
-                None => info.problem = Some(format!("unknown algorithm `{alg}`; not accepted")),
-                Some((ok, id)) => {
-                    info.valid = ok && s.layer == format!("sha256-{layer_hash}");
-                    info.key_id = id;
-                    info.known_as = known
-                        .iter()
-                        .find(|(a, _)| *a == alg)
-                        .and_then(|(_, ks)| ks.iter().find(|(_, k)| *k == s.key.trim()))
-                        .map(|(n, _)| n.clone());
-                }
-            }
+            let mut info = check_signature(&s, layer_hash, &known);
             for t in tsr_paths(&f) {
                 match fs::read(&t).map_err(|e| e.to_string()).and_then(|token| tsp::check(&token, &raw)) {
                     Ok(stamp) => info.timestamp = info.timestamp.take().into_iter().chain([stamp.at]).min(),

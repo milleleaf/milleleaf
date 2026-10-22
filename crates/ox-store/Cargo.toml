@@ -5,9 +5,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["boring"]
+# Native sealed layers use BoringSSL; browsers use ox-seal's pure-Rust implementation.
+boring = ["ox-seal/boring"]
+
 [dependencies]
 ox-core = { workspace = true }
-ox-seal = { workspace = true }
+ox-seal = { path = "../ox-seal", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -31,6 +36,10 @@ ripemd = { version = "=0.2.0", default-features = false }
 [dev-dependencies]
 # RustCrypto SLH-DSA, a release candidate: only to cross-check fips205 in the tests.
 slh-dsa = "=0.2.0-rc.5"
+
+# Browser randomness is supplied by crypto.getRandomValues.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "=0.2.17", features = ["js"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

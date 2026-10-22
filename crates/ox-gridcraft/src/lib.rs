@@ -14,14 +14,16 @@
 //! the editor didn't save cached values.
 
 mod adopt;
+mod compare;
 mod export;
 mod import;
 mod kept;
 mod look;
 
 pub use adopt::{AdoptReport, adopt, adopt_xlsx};
+pub use compare::{adopt_for_comparison, charts_equivalent, exported_path, import_for_comparison};
 pub use kept::{keep_charts, with_kept_charts};
-pub use export::{ExportReport, export};
+pub use export::{ExportReport, export, export_with};
 pub use look::Pictures;
 pub use import::{ImportReport, exported_revision, import, import_saved_by};
 
