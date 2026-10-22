@@ -128,7 +128,11 @@ try {
   await download('#download-report', '.docx'); await download('#download-deck', '.pptx');
   await page.screenshot({ path: `${root}/flow-cross-sheet.png`, fullPage: true });
   // A real workbook with hundreds of error cells (/flow broke on lca-model.xlsx).
-  await page.locator('#workbook-file').setInputFiles('../examples/real/lca-model.xlsx'); await settled();
+  await page.locator('#workbook-file').setInputFiles('../examples/real/lca-model.xlsx');
+  await page.locator('#status[aria-busy="true"] .working-bar').waitFor({ timeout: 5000 });
+  await settled();
+  assert.match(await page.locator('#workbook-name').textContent(), /^lca-model\.xlsx · \d+(\.\d)? (KB|MB)$/, 'The chosen file shows its size');
+  assert.equal(await page.locator('#status').getAttribute('aria-busy'), 'false', 'The busy cue ends when processing ends');
   assert.notEqual(await page.locator('#sheet option:checked').textContent(), 'Cover', 'Start on a sheet with numbers');
   assert((await page.locator('#source-warnings summary').textContent()).startsWith('Workbook notes ('), 'Notes are summarised');
   assert.equal(await page.locator('#source-warnings details').getAttribute('open'), null, 'Notes start folded');

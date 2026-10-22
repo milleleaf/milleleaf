@@ -339,3 +339,12 @@ ml-revisions{display:block;min-height:55px}
 @media(max-width:900px){.demo-flow .workbench{grid-template-columns:1fr}.demo-flow .connector{padding:12px;transform:rotate(90deg)}.demo-flow .connector span{display:none}.demo-flow .preview-heading{display:block}.demo-flow .preview-heading .button{margin-bottom:12px}}
 @media(max-width:700px){.demo-compare .workflow,.demo-compare .context-sides,.demo-flow .review-layout,.demo-flow .evidence-grid,.demo-flow .fields{grid-template-columns:1fr}.demo-flow .panel{padding:20px}}
 .demo-flow .notes{margin:10px 0}.demo-flow .notes summary{font-size:14px;color:var(--muted)}.demo-flow .notes p{margin:4px 0}
+/* Processing cue: a moving bar on the status line while the engine loads or works on a file. */
+.page-demo .demo-status{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:15px;color:var(--muted);margin:14px 0 16px;min-height:24px}
+.page-demo .demo-status.working{color:var(--ink);font-weight:600}
+.page-demo .working-bar{flex:none;width:96px;height:6px;background:var(--back-paper);position:relative;overflow:hidden}
+.page-demo .working-bar::after{content:'';position:absolute;inset:0 auto 0 0;width:40%;background:var(--green);animation:demo-working 1.1s ease-in-out infinite}
+@keyframes demo-working{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
+@media(prefers-reduced-motion:reduce){.page-demo .working-bar::after{animation:none;width:100%;opacity:.6}}
+.page-demo [aria-busy=true]~*{cursor:progress}
+.page-demo .file-size{color:var(--muted)}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { json, useEngine } from './engine'
+import { fileSize, Status } from './status'
 
 // Demo A: compare two versions of a file, in the browser. Element ids are what web checks select by.
 type Dated = { file: File; time: number; source: string }
@@ -144,7 +145,7 @@ export function CompareDemo() {
   function loadFiles(list: FileList | null) {
     const files = [...(list || [])]
     if (!files.length) return
-    operation('Reading file times and comparing locally…', async () => {
+    operation(`Reading and comparing ${files.map(f => `${f.name} (${fileSize(f.size)})`).join(' and ')} in this browser…`, async () => {
       if (files.length > 2) throw new Error('Choose two versions of the same document.')
       if (files.some(f => !/\.(docx|xlsx|pptx)$/i.test(f.name))) throw new Error('Choose DOCX, XLSX or PPTX files.')
       const chosen = files.length === 2 ? files : pair.original ? [pair.original, files[0]] : files
@@ -206,19 +207,19 @@ export function CompareDemo() {
     <section className="workflow" aria-label="Compare two versions">
       <div className="drop-area">
         <label className={`drop${dragging ? ' dragging' : ''}`} id="files-drop" htmlFor="files" onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={drop}>
-          <strong>Drop both versions here</strong><span className="drop-note">Or choose two DOCX, XLSX or PPTX files. Earlier modified time goes first.</span>
+          <strong>Drop both versions here</strong><span className="drop-note">Or choose two DOCX, XLSX or PPTX files. Earlier modified time goes first. Large files (tens of MB) take longer and need more browser memory.</span>
           <input id="files" type="file" multiple accept=".docx,.xlsx,.pptx" disabled={!ready || busy} onChange={e => loadFiles(e.target.files)} />
         </label>
         <p className="privacy">Your files stay on this device. Nothing is uploaded: the comparison runs in your browser. <a href="#privacy-check" onClick={() => { if (privacy.current) privacy.current.open = true }}>How to check</a></p>
       </div>
       <div className="file-order">
-        <p>Original: <span id="original-name">{pair.original?.name || 'Choose a file'}</span></p>
-        <p>Edited: <span id="edited-name">{pair.edited?.name || (pair.original ? 'Choose the other version' : 'Choose a file')}</span></p>
+        <p>Original: <span id="original-name">{pair.original?.name || 'Choose a file'}</span>{pair.original && <span className="file-size">{` · ${fileSize(pair.original.size)}`}</span>}</p>
+        <p>Edited: <span id="edited-name">{pair.edited?.name || (pair.original ? 'Choose the other version' : 'Choose a file')}</span>{pair.edited && <span className="file-size">{` · ${fileSize(pair.edited.size)}`}</span>}</p>
         <button id="swap" className="button secondary" onClick={swap} disabled={!ready || busy || !pair.original || !pair.edited}>Swap</button>
         <p id="order-note">{orderNote}</p>
       </div>
     </section>
-    <p className="status" id="status" role="status" aria-live="polite">{status}</p>
+    <Status busy={busy || engine.status === 'loading'}>{status}</Status>
     <p className="error" id="error" role="alert" hidden={!error}>{error}</p>
     {report && adoption ? <Results key={run} report={report} adoption={adoption} signed={signed} signing={signing} /> : <section id="results" hidden />}
     <details className="verify-file report"><summary>Verify a saved signature</summary>

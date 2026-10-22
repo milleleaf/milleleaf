@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { json, saveFile, useEngine } from './engine'
+import { fileSize, Status } from './status'
 
 // Demo B: one workbook source feeds a report and a deck; edits come back as layers.
 // Element ids are what web checks select by.
@@ -164,12 +165,12 @@ export function FlowDemo() {
   const picked = (event: ChangeEvent<HTMLInputElement>, task: (file: File) => Promise<void>, message: string) => {
     const input = event.target, file = input.files?.[0]
     if (!file) return
-    operation(message, async () => { try { await task(file) } finally { input.value = '' } })
+    operation(`${message} ${file.name} (${fileSize(file.size)})…`, async () => { try { await task(file) } finally { input.value = '' } })
   }
   async function openWorkbook(file: File) {
     if (!/\.(xlsx|ods)$/i.test(file.name)) throw new Error('Choose an XLSX or ODS workbook.')
     tooBig(file)
-    opened(await call('open', [await file.arrayBuffer(), who(), now()]), file.name)
+    opened(await call('open', [await file.arrayBuffer(), who(), now()]), `${file.name} · ${fileSize(file.size)}`)
   }
   async function importRevised(file?: File) {
     if (!file) return
@@ -197,7 +198,7 @@ export function FlowDemo() {
     saveFile(json(await call('project')), 'milleleaf-project.json', 'application/json')
     setStatus('Ready. Project layers prepared locally.')
   })
-  const drop = (event: DragEvent) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; operation('Reading the dropped file locally…', () => importRevised(file)) }
+  const drop = (event: DragEvent) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; operation(file ? `Reading the dropped file locally: ${file.name} (${fileSize(file.size)})…` : 'Reading the dropped file locally…', () => importRevised(file)) }
 
   const noWorkbook = busy || !sheets.length, noProject = busy || !snapshot
   const changes: any[] = snapshot?.changes || [], conflicts: any[] = snapshot?.conflicts || []
@@ -208,16 +209,16 @@ export function FlowDemo() {
 
   return <div className="demo-flow">
     <p className="privacy">Files stay in this browser. No upload. No account.</p>
-    <div id="status" role="status" aria-live="polite">{status}</div><p id="error" role="alert" hidden={!error}>{error}</p>
+    <Status busy={busy || engine.status === 'loading'}>{status}</Status><p id="error" role="alert" hidden={!error}>{error}</p>
     <section className="workbench" aria-label="Content flow">
       <article className="source panel">
         <div className="section-label"><span>1. The source</span><span className="file-tag">.xlsx</span></div>
         <h2>Start with a workbook</h2><p>Made in Excel, Calc or GridCraft. Every app is a place to work.</p>
         <div className="actions">
           <button id="sample" className="button" disabled={!ready || busy} onClick={() => operation('Opening the bundled workbook…', async () => opened(await call('sample', [who(), now()]), 'Hello Table · finance.xlsx'))}>Try the finance workbook</button>
-          <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => picked(e, openWorkbook, 'Reading your workbook locally…')} /></label>
+          <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => picked(e, openWorkbook, 'Reading your workbook locally:')} /></label>
         </div>
-        <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model.</p>
+        <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model. Up to 64 MiB per file.</p>
         <p id="workbook-name" className="caption">{name}</p>
         <div id="source-warnings" aria-live="polite"><Notes warnings={info?.warnings || []} /></div>
         <div id="selection" hidden={!info}>
@@ -253,8 +254,8 @@ export function FlowDemo() {
         <article className="panel bring-back">
           <div className="fields"><label>Claimed name<input id="author" value={author} maxLength={120} onChange={e => setAuthor(e.target.value)} /></label><label>App used<input id="app" placeholder="e.g. Calc, Word, DeckCraft" maxLength={120} value={app} onChange={e => setApp(e.target.value)} /></label></div>
           <label id="drop-zone" className={`drop-zone${dragging ? ' dragging' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={drop}>
-            <strong>Drop a changed workbook,<br />report or deck here</strong><span>or choose a .xlsx, .ods, .docx or .pptx file</span>
-            <input id="edited-file" type="file" accept=".xlsx,.ods,.docx,.pptx" disabled={noProject} onChange={e => picked(e, importRevised, 'Reading the saved file and recording its layer…')} />
+            <strong>Drop a changed workbook,<br />report or deck here</strong><span>or choose a .xlsx, .ods, .docx or .pptx file, up to 64 MiB</span>
+            <input id="edited-file" type="file" accept=".xlsx,.ods,.docx,.pptx" disabled={noProject} onChange={e => picked(e, importRevised, 'Reading the saved file and recording its layer:')} />
           </label>
           <p className="caption">A workbook edit updates linked places in both files. A report or deck edit becomes a reviewable layer. Typing over a linked number raises a conflict.</p>
         </article>
