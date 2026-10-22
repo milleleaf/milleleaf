@@ -291,6 +291,11 @@ pub fn import_saved_by(
                 for i in 0..n.len() {
                     if crate::look::same_charts(&json!([n[i]]), &json!([w[i]]), &wb.theme, libreoffice) {
                         n[i] = old[i].clone();
+                    } else if libreoffice && n[i]["series"].as_array().is_some_and(|ss| ss.iter().any(|s| s["values"] == json!(""))) {
+                        // LibreOffice lost the chart's data (a series with no values): its loss,
+                        // not an edit; the chart stays as the model has it.
+                        report.warnings.push(format!("{old_sheet}: LibreOffice saved chart {} without its data; the chart is kept as it was", i + 1));
+                        n[i] = old[i].clone();
                     }
                 }
             }
@@ -320,7 +325,8 @@ pub fn import_saved_by(
                     };
                 }
             }
-            if looked {
+            // (A look the editor only rewrote, kept as the model has it, isn't a change.)
+            if looked && gs != old_gs {
                 report.changed.push(sheet_node.path.clone());
             }
         }
@@ -472,8 +478,37 @@ pub fn import_saved_by(
     if let Some(exp) = &expected {
         let changed = node.children.iter().any(|sn| {
             let Some((si, sheet, _)) = locate(wb, &sn.path) else { return false };
-            let now = crate::look::cell_looks(wb, si);
-            let was = exp.sheets.iter().position(|s| s.name == sheet).map(|i| crate::look::cell_looks(exp, i)).unwrap_or_default();
+            // LibreOffice (24.2) writes rotated text's General alignment as Left: the same to a reader.
+            let lo_rotated = |mut m: std::collections::BTreeMap<String, Value>| {
+                if libreoffice {
+                    for v in m.values_mut() {
+                        if let Some(a) = v.get_mut("align").and_then(Value::as_object_mut)
+                            && a.get("rotation").and_then(Value::as_i64).is_some_and(|r| r != 0)
+                            && a.get("h").and_then(Value::as_str) == Some("Left")
+                        {
+                            a.insert("h".into(), json!("General"));
+                        }
+                    }
+                }
+                m
+            };
+            let mut now = lo_rotated(crate::look::cell_looks(wb, si));
+            let was = lo_rotated(exp.sheets.iter().position(|s| s.name == sheet).map(|i| crate::look::cell_looks(exp, i)).unwrap_or_default());
+            // LibreOffice gives a formula cell in General format the number format of the cells
+            // it reads (its automatic format for formula results) when it loads the file, and
+            // saves that: not the user's.
+            if libreoffice {
+                let unstyled = crate::look::unstyled_look(exp);
+                let general = unstyled["num_fmt"].clone();
+                now.retain(|k, v| {
+                    let formula = CellRef::parse(k).and_then(|at| wb.sheets[si].cell(at)).is_some_and(|c| c.formula.is_some());
+                    let was_general = was.get(k).is_none_or(|w| w["num_fmt"] == general);
+                    if formula && was_general {
+                        v["num_fmt"] = general.clone();
+                    }
+                    was.contains_key(k) || *v != unstyled
+                });
+            }
             now != was
         });
         if changed {

@@ -443,10 +443,14 @@ pub(crate) fn cell_looks(wb: &Workbook, si: usize) -> std::collections::BTreeMap
     let normal = wb.styles.get(StyleId::DEFAULT);
     // Cells a merge covers aren't seen (LibreOffice gives them the first cell's style).
     let covered = |at: CellRef| sh.merges.iter().any(|m| m.contains(at) && m.start != at);
+    // What a cell with no style of its own looks like, the same way: a cell whose style differs
+    // from the normal one only in what nobody sees (LibreOffice writes such cells, with a style of
+    // its own, over a whole column) looks unstyled.
+    let unstyled = unstyled_look(wb);
     sh.cells
         .iter()
         .filter(|(at, c)| wb.styles.get(c.style) != normal && !covered(*at))
-        .map(|(at, c)| {
+        .filter_map(|(at, c)| {
             let mut st = wb.styles.get(c.style).clone();
             // Colours as seen (a theme colour and its RGB are the same colour).
             let seen = |c: &mut Color| {
@@ -513,20 +517,40 @@ pub(crate) fn cell_looks(wb: &Workbook, si: usize) -> std::collections::BTreeMap
             for l in [&mut b.top, &mut b.bottom, &mut b.left, &mut b.right, &mut b.diag_down, &mut b.diag_up] {
                 seen(&mut l.color);
             }
-            let mut v = serde_json::to_value(&st).unwrap_or_default();
-            // A solid fill shows only its foreground colour.
-            if let Some(f) = v.get_mut("fill").and_then(Value::as_object_mut)
-                && f.get("pattern").and_then(Value::as_str) == Some("Solid")
-            {
-                f.remove("bg");
+            let mut v = finish_look(serde_json::to_value(&st).unwrap_or_default());
+            // An empty cell shows no number, so its number format isn't seen.
+            if c.value.is_empty() && c.formula.is_none() {
+                v["num_fmt"] = unstyled["num_fmt"].clone();
             }
-            // `"$"#,##0` and `\$#,##0` are the same format: editors pick either spelling.
-            if let Some(Value::String(f)) = v.get_mut("num_fmt") {
-                f.retain(|ch| ch != '"' && ch != '\\');
-            }
-            (at.a1(), v)
+            (v != unstyled).then(|| (at.a1(), v))
         })
         .collect()
+}
+
+/// What a cell with no style of its own looks like, as [`cell_looks`] writes looks.
+pub(crate) fn unstyled_look(wb: &Workbook) -> Value {
+    let mut st = wb.styles.get(StyleId::DEFAULT).clone();
+    for c in [&mut st.font.color, &mut st.fill.fg, &mut st.fill.bg] {
+        if let Some([r, g, b]) = c.resolve(&wb.theme) {
+            *c = Color::rgb(r, g, b);
+        }
+    }
+    finish_look(serde_json::to_value(&st).unwrap_or_default())
+}
+
+/// The last of [`cell_looks`]'s normalising: what two spellings of one look share.
+fn finish_look(mut v: Value) -> Value {
+    // A solid fill shows only its foreground colour.
+    if let Some(f) = v.get_mut("fill").and_then(Value::as_object_mut)
+        && f.get("pattern").and_then(Value::as_str) == Some("Solid")
+    {
+        f.remove("bg");
+    }
+    // `"$"#,##0` and `\$#,##0` are the same format: editors pick either spelling.
+    if let Some(Value::String(f)) = v.get_mut("num_fmt") {
+        f.retain(|ch| ch != '"' && ch != '\\');
+    }
+    v
 }
 
 /// The workbook's structure lock (sheets can't be added, moved or unhidden) and which sheet is
@@ -798,18 +822,25 @@ pub(crate) fn same_charts(now: &Value, was: &Value, theme: &gridcraft_model::The
                 && close(na.width, wa.width)
                 && close(na.height, wa.height);
             let (ns, ws) = (series(n), series(w));
+            // LibreOffice (24.2) gives a series without categories the chart's (another series'),
+            // and writes theme colours as RGB with their shade applied, which GridCraft reads
+            // without: series colours aren't compared in its files.
+            let shared_cats = |c: &Option<String>| libreoffice && ws.iter().any(|s| s.categories.as_deref().map(refs) == c.as_deref().map(refs));
             let same_series = ns.len() == ws.len()
                 && ns.iter().zip(&ws).all(|(a, b)| {
                     let name = |s: &gridcraft_model::Series| s.name.as_deref().map(|n| refs(n.trim_matches('"')));
                     name(a) == name(b)
-                        && a.categories.as_deref().map(refs) == b.categories.as_deref().map(refs)
+                        && (a.categories.as_deref().map(refs) == b.categories.as_deref().map(refs) || b.categories.is_none() && shared_cats(&a.categories))
                         && refs(&a.values) == refs(&b.values)
-                        && (b.color.is_none() || rgb(&a.color) == rgb(&b.color))
+                        && (b.color.is_none() || libreoffice || rgb(&a.color) == rgb(&b.color))
                         && (a.secondary, a.kind, a.smooth, &a.trendlines, &a.bubble_sizes) == (b.secondary, b.kind, b.smooth, &b.trendlines, &b.bubble_sizes)
                 });
             fn rest(c: &Chart) -> impl PartialEq + '_ {
-                (c.kind, &c.title, c.legend, c.data_labels, c.gridlines, &c.x_title, &c.y_title, c.by_rows, &c.pivot)
+                (c.kind, c.legend, c.data_labels, c.gridlines, &c.x_title, &c.y_title, c.by_rows, &c.pivot)
             }
-            placed && same_series && rest(n) == rest(w)
+            // A chart without a title shows an automatic one (with one series, its name);
+            // LibreOffice writes it out.
+            let titled = n.title == w.title || libreoffice && w.title.is_none() && (n.title.as_deref() == Some("Chart Title") || ns.len() == 1);
+            placed && same_series && titled && rest(n) == rest(w)
         })
 }
