@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { StandardsTable } from './standards'
 import { pages } from './content'
 import { DatasetTables } from './dataset-tables'
-import { Comparison } from './hero'
+import { Comparison, ContentFlow } from './hero'
 
 const nav = [['Demo', '/demo'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['GitHub', 'https://github.com/milleleaf']]
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -16,10 +17,10 @@ function Header({ path }: { path: string }) {
 }
 
 function Footer() {
-  return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><span>hello@milleleaf.com</span><span>security@milleleaf.com</span></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. Public release in preparation.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
+  return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/standards">Standards</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><span>hello@milleleaf.com</span><span>security@milleleaf.com</span></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. Public release in preparation.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
 }
 
-function DemoHost() {
+function DemoHost({ flow = false }: { flow?: boolean }) {
   const ref = useRef<HTMLElement>(null)
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -28,20 +29,33 @@ function DemoHost() {
     const onReady = () => setReady(true)
     element.addEventListener('demo-ready', onReady)
     void customElements.whenDefined('ml-demo').then(() => {
-      if (active) (element as HTMLElement & { options: unknown }).options = { src: '/demo/app/index.html', title: 'Milleleaf in-browser demo' }
+      if (active) (element as HTMLElement & { options: unknown }).options = { src: flow ? '/flow/app/index.html' : '/demo/app/index.html', title: flow ? 'Milleleaf linked-content flow' : 'Milleleaf in-browser demo' }
     })
     return () => { active = false; element.removeEventListener('demo-ready', onReady) }
-  }, [])
-  return <><div className="demo-placeholder" hidden={ready}><span className="availability">Coming with the first release</span><p>Live file upload is being prepared. For now, inspect this real fixture result.</p><Comparison /></div><ml-demo ref={ref} /></>
+  }, [flow])
+  return <><div className="demo-placeholder" hidden={ready}><span className="availability">{flow ? 'Browser flow in preparation' : 'Coming with the first release'}</span><p>{flow ? 'The interactive version is being built in web/flow on demo-flow. The CLI evidence above is available now.' : 'Live file upload is being prepared. For now, inspect this real fixture result.'}</p>{!flow && <Comparison />}</div><ml-demo ref={ref} /></>
 }
 
 function Home() {
   return <main id="main">
-    <section className="product-hero wrap"><div className="hero-heading"><h1>See the save.<br />Keep the source.</h1><div><p>A real report, edited in LibreOffice.<br />Text changes, a cell conflict, and a signed layer.</p><a href="/demo" className="button">Try the demo <span aria-hidden="true">↗</span></a></div></div><Comparison /></section>
-    <section className="story-band"><div className="wrap story-layout"><h2>The edit is a leaf.<br />The source stays yours.</h2><div><p>The summary changed. A linked number was overwritten in the file. Milleleaf imports the text as a layer and flags the number as a conflict.</p><p>This is evidence for this fixture, not every file. Microsoft Office, LibreOffice, the Craft apps and your software all have a place here.</p><a href="/how-it-works">Follow the file through Milleleaf →</a></div></div></section>
+    <section className="product-hero wrap"><div className="hero-heading"><h1>Make it once.<br />Use it in every app.</h1><div><p>One table or chart, in the workbook, report, deck and PDF. Each keeps its own style. When the numbers change, every use follows. Edits come back for review.</p><a href="/demo" className="button">Try the demo <span aria-hidden="true">↗</span></a></div></div><ContentFlow /><DemoHost flow /></section>
+    <section className="story-band"><div className="wrap story-layout"><h2>Why not just open it in another app?</h2><div><p>You can. But opening and saving can rewrite layout or drop content: the real-file checks found remeasured Word tables, resized Excel charts and three LibreOffice charts saved without data.</p><p>Pasted copies also drift. Paste Link is reported to break when files move and does not bring edits back. Milleleaf keeps the source, carries edits both ways and lists what an app dropped. Signed layers record changes against a signing key.</p><a href="/how-it-works#why-not-just-open-it-in-another-app">Read the files and findings →</a></div></div></section>
+    <AppFamilies />
     <section className="wrap open-work"><h2>Open the work.</h2><div className="open-tool"><span>The office tool</span><h3>Built to be inspected.</h3><p>The CLI and libraries work locally. The public repository and browser demo are in preparation.</p><a href="https://github.com/milleleaf">Public GitHub organisation ↗</a></div><div className="open-data sheet-surface"><span>The data</span><h3>Real places.<br />Individual terms.</h3><a href="https://worldviews-libre.pages.dev">WorldViews Libre ↗</a><a href="https://worldviews.pages.dev">WorldViews ↗</a><a href="/data/datasets">Dataset register →</a></div><div className="open-method"><span>The method</span><p>One standard for human and AI work. Make the claim the evidence supports.</p><a href="/method">AI Output to Value →</a></div></section>
     <section className="wrap release-note"><h2>Working fixtures.<br />Still in development.</h2><div><p>Layers, signed history and selected round trips are built. Review approvals, shared stores and the browser workspace are planned.</p><a className="button secondary" href="/status">Read the status →</a></div></section>
   </main>
+}
+
+function AppChecks() {
+  return <ul className="app-checks"><li>Microsoft Office: checked with real Word/Excel/PowerPoint 16 files</li><li>LibreOffice: checked with LibreOffice re-saves and edits</li><li>ArtCraft apps: files written through WordCraft, GridCraft and DeckCraft</li></ul>
+}
+
+function AppFamilies() {
+  return <section className="wrap app-families" aria-label="Any app in, any app out"><h2>Any app in. Any app out.</h2><p>One project mixes apps from Microsoft Office, LibreOffice and the ArtCraft apps at the same time. Every app is a place where the content is made or shown.</p><div>{[
+    ['A Calc workbook', 'feeds a Word report and a DeckCraft deck', 'Checked: the example above, with the real CLI'],
+    ['An Excel workbook', 'feeds a LibreOffice Writer report and a PowerPoint deck', 'Being checked in the browser flow'],
+    ['An edit made in WordCraft', 'comes back while the deck was last saved by Impress', 'Being checked in the browser flow'],
+  ].map(([from, to, status]) => <article key={from}><h3>{from}</h3><p>{to}</p><p className="dataset-note">{status}</p></article>)}</div><AppChecks /><a href="/standards">Formats, standards and checked limits →</a></section>
 }
 
 function DataSheets() {
@@ -63,7 +77,9 @@ function Content({ path }: { path: string }) {
     {path === '/data/datasets' ? <DatasetTables /> : <>
       {(path === '/data' || path === '/data/worldviews') && <DataSheets />}
       {path === '/method' && <MethodLadder />}
-      {(path === '/how-it-works' || path === '/data/round-trip') && <Comparison />}
+      {path === '/standards' && <StandardsTable />}
+      {path === '/how-it-works' && <><ContentFlow /><AppChecks /></>}
+      {(path === '/data/round-trip') && <Comparison />}
       {(path === '/docs' || path === '/docs/getting-started') && <div className="command-sheet"><span>Inspect the available routes</span><code>ox formats</code><p>CLI command. Public installation instructions are coming with the release.</p></div>}
       <div className="page-leaves">{page.sections.map(section => <section id={slug(section.title)} key={section.title} className="page-leaf"><h2>{section.title}</h2><div>{section.body.map(p => <p key={p}>{p}</p>)}{section.links && <div className="article-links">{section.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</div></section>)}</div>
     </>}

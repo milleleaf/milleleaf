@@ -3,8 +3,8 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
-const paths = ['/', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about']
-const headings = ['See the save.Keep the source.', 'Your file.Its next leaf.', 'A file leaves. Its changes come back.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.']
+const paths = ['/', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/standards']
+const headings = ['Make it once.Use it in every app.', 'Your file.Its next leaf.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -45,11 +45,33 @@ try {
   assert((await security.text()).includes('Contact: mailto:security@milleleaf.com'))
   await staticPage.goto(origin + '/about')
   assert((await staticPage.locator('main').innerText()).includes('security@milleleaf.com'))
+  await staticPage.goto(origin + '/standards')
+  assert.equal(await staticPage.locator('.standards-table tbody tr').count(), 13)
+  assert(!(await staticPage.locator('main').innerText()).includes('—'))
   const evidence = JSON.parse(await readFile('src/data/hero.json', 'utf8'))
   assert.equal(evidence.signed.exitCode, 0)
   assert(evidence.signed.verification.includes('signed by fixture-reviewer'))
   assert(evidence.frames[1].report.changed.length > 0 && evidence.frames[1].report.conflicts.length > 0)
   assert.equal(evidence.layerBytes.includes('site/hero/resaved'), true)
+  await staticPage.goto(origin + '/standards')
+  assert.equal(await staticPage.locator('.standards-table tbody tr').count(), 13)
+  for (const standard of ['RFC 8785', 'RFC 8032', 'FIPS 204', 'FIPS 205', 'RFC 9180', 'RFC 3161', 'OpenTimestamps', 'DocLang 0.8', 'WCAG 2.2 AA', 'ISO 19650']) assert((await staticPage.locator('main').innerText()).includes(standard))
+  for (const path of ['/', '/how-it-works']) {
+    await staticPage.goto(origin + path)
+    const copy = await staticPage.locator('main').innerText()
+    assert(copy.includes('Why not just open it in another app?'))
+    assert(copy.includes('Microsoft Office: checked with real Word/Excel/PowerPoint 16 files'))
+    assert(copy.includes('LibreOffice: checked with LibreOffice re-saves and edits'))
+    assert(copy.includes('ArtCraft apps: files written through WordCraft, GridCraft and DeckCraft'))
+    assert(!copy.includes('—'), 'No em dashes')
+  }
+  assert(evidence.flow, 'Real mixed-app flow generated')
+  for (const snapshot of [evidence.flow.before, evidence.flow.after]) {
+    assert.equal(snapshot.checks.length, 3)
+    assert.deepEqual(snapshot.deck.chart.categories, snapshot.source.rows.map(r => r[0]))
+    assert.deepEqual(snapshot.deck.chart.values, snapshot.source.rows.map(r => r[1]))
+  }
+  assert.notDeepEqual(evidence.flow.before.source.rows, evidence.flow.after.source.rows)
   await nojs.close()
 
   for (const href of internal) {
@@ -68,10 +90,10 @@ try {
     page.on('pageerror', error => failures.push(error.message))
     page.on('console', message => {
       // The only expected missing resource is the separately built demo.
-      if (message.type() === 'error' && !message.location().url.endsWith('/demo/app/index.html')) failures.push(message.text())
+      if (message.type() === 'error' && !['/demo/app/index.html', '/flow/app/index.html'].some(p => message.location().url.endsWith(p))) failures.push(message.text())
     })
     page.on('response', response => {
-      if (response.status() >= 400 && !response.url().endsWith('/demo/app/index.html')) failures.push(`${response.status()} ${response.url()}`)
+      if (response.status() >= 400 && !['/demo/app/index.html', '/flow/app/index.html'].some(p => response.url().endsWith(p))) failures.push(`${response.status()} ${response.url()}`)
     })
     for (const path of paths) {
       assert.equal((await page.goto(origin + path)).status(), 200)
@@ -118,6 +140,12 @@ try {
   await page.getByRole('navigation', { name: 'Mobile navigation', exact: true }).getByRole('link', { name: 'Data', exact: true }).click()
   assert.equal(new URL(page.url()).pathname, '/data')
   await page.goto(origin)
+  const apply = page.getByRole('button', { name: '3. Apply the real Calc edit', exact: true })
+  assert.equal(await page.getByRole('table', { name: 'Workbook source revenue', exact: true }).getByText('Perth').count(), 0)
+  await apply.click()
+  for (const name of ['Workbook source revenue', 'Report linked revenue table', 'Deck linked revenue table']) assert(await page.getByRole('table', { name, exact: true }).getByText('Perth').isVisible())
+  assert(await page.getByRole('status').filter({ hasText: 'Both exports follow' }).isVisible())
+  await page.getByRole('button', { name: 'Show the original numbers', exact: true }).click()
   assert(await page.locator('.document-sheet ins').count() > 0, 'Real text edits are visible')
   assert(await page.locator('.conflict-cell').count() > 0, 'Real cell conflict is visible')
   await page.locator('ml-revisions').getByRole('button', { name: '3. Re-saved in LibreOffice', exact: true }).click()
@@ -132,6 +160,19 @@ try {
   })
   await page.locator('ml-verify').getByRole('button').click()
   await page.locator('ml-verify').getByRole('status').filter({ hasText: 'Layer hash does not match' }).waitFor()
+  await page.goto(origin)
+  assert(await page.getByText('Browser flow in preparation', { exact: true }).isVisible())
+  await page.route('**/flow/app/index.html', route => route.fulfill({ contentType: 'text/html', body: '<html><body>Linked-content integration fixture</body></html>' }))
+  await page.reload()
+  await page.waitForSelector('ml-demo iframe')
+  assert(await page.frameLocator('ml-demo iframe').getByText('Linked-content integration fixture').isVisible())
+  assert.equal(await page.getByText('Browser flow in preparation', { exact: true }).isVisible(), false)
+  await page.unroute('**/flow/app/index.html')
+  await page.route('**/flow/app/index.html', route => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="milleleaf-site" content="website"></head><body>Fallback</body></html>' }))
+  await page.reload()
+  await page.waitForFunction(() => !!document.querySelector('ml-theme')?.shadowRoot)
+  assert(await page.getByText('Browser flow in preparation', { exact: true }).isVisible())
+  assert.equal(await page.locator('ml-demo iframe').count(), 0)
   await page.goto(origin + '/demo')
   assert(await page.getByText('Coming with the first release', { exact: true }).isVisible())
   assert.equal(await page.locator('ml-demo iframe').count(), 0)
@@ -152,6 +193,6 @@ try {
   for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) assert(/^\d+\.\d+\.\d+$/.test(version), `Unpinned ${name}`)
   const result = { routes: paths.length, screenshots: captures.length, failures, checks: ['static HTML without JS', 'internal paths and fragments', 'dataset tables: 14 open, 2 other, seven fields each', 'dataset mobile cards and licence boundaries', 'UNESCO disclaimer and shared pipeline link', 'security contact and security.txt preserved', 'no sideways scroll', 'no browser errors', 'theme persistence', 'keyboard skip link and focus', 'mobile menu navigation', 'revision stepping with arrow keys', 'real browser signature verification and tamper rejection', 'demo absent/present/host-fallback states', 'reduced motion', 'exact package pins'], captures }
   await writeFile('_shots/results.json', JSON.stringify(result, null, 2) + '\n')
-  await writeFile('_shots/gallery.html', `<!doctype html><html lang="en"><meta charset="utf-8"><title>Milleleaf release captures</title><style>body{font:16px sans-serif;background:#e6eded;padding:24px}main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}img{width:100%;height:480px;object-fit:contain;object-position:top;background:#fff}a{color:#174536}figure{margin:0}figcaption{padding:12px 0}@media(max-width:800px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style><h1>Milleleaf · final captures</h1><p>12 pages × 2 widths × 2 themes. Full-page images; open each for detail.</p><main>${captures.map(c => `<figure><a href="${c.file}"><img src="${c.file}" alt="${c.path}, ${c.width}px, ${c.theme}" loading="lazy"><figcaption>${c.path} · ${c.width}px · ${c.theme}</figcaption></a></figure>`).join('')}</main></html>`)
-  console.log('PASS: 12 static pages, 48 screenshots, interaction and integration checks; zero unexpected browser errors.')
+  await writeFile('_shots/gallery.html', `<!doctype html><html lang="en"><meta charset="utf-8"><title>Milleleaf release captures</title><style>body{font:16px sans-serif;background:#e6eded;padding:24px}main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}img{width:100%;height:480px;object-fit:contain;object-position:top;background:#fff}a{color:#174536}figure{margin:0}figcaption{padding:12px 0}@media(max-width:800px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style><h1>Milleleaf · final captures</h1><p>${paths.length} pages × 2 widths × 2 themes. Full-page images; open each for detail.</p><main>${captures.map(c => `<figure><a href="${c.file}"><img src="${c.file}" alt="${c.path}, ${c.width}px, ${c.theme}" loading="lazy"><figcaption>${c.path} · ${c.width}px · ${c.theme}</figcaption></a></figure>`).join('')}</main></html>`)
+  console.log(`PASS: ${paths.length} static pages, ${captures.length} screenshots, interaction and integration checks; zero unexpected browser errors.`)
 } finally { await browser.close(); await new Promise(done => server.close(done)) }

@@ -16,6 +16,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORT = '3f1c2a90-0000-4c1e-9a00-000000000020'
+WORKBOOK = '3f1c2a90-0000-4c1e-9a00-000000000010'
+TABLE = '3f1c2a90-0000-4c1e-9a00-000000000012'
+DECK = '2af44a75-c514-5c87-b208-689fa8b15950'
 EXAMPLE = ROOT / 'examples/hello-table'
 PROJECT = EXAMPLE / 'project.ox.json'
 FIXTURE = EXAMPLE / 'fixtures/report.libreoffice-edited.docx'
@@ -79,6 +82,48 @@ def segments(before, after):
     return out
 
 
+def flow_snapshot(project, work, label):
+    """Check the actual exported tables and chart against the composed source."""
+    source = json.loads(ox('get', project, TABLE))['attributes']['office::data::table']
+    rows = [[str(row[0]), float(row[1])] for row in source['rows']]
+    report = work / (label + '.docx')
+    deck = work / (label + '.pptx')
+    ox('docx-export', project, REPORT, '--out', report)
+    ox('pptx-export', project, DECK, '--out', deck)
+    report_blocks = document(report)
+    report_rows = next(b['rows'] for b in report_blocks if b['kind'] == 'table')
+    ns = {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+          'c': 'http://schemas.openxmlformats.org/drawingml/2006/chart'}
+    with zipfile.ZipFile(deck) as z:
+        deck_tables = []
+        for part in sorted(z.namelist()):
+            if part.startswith('ppt/slides/slide') and part.endswith('.xml'):
+                root = ET.fromstring(z.read(part))
+                for table in root.findall('.//a:tbl', ns):
+                    deck_tables.append([[''.join(n.text or '' for n in cell.findall('.//a:t', ns))
+                                         for cell in row.findall('a:tc', ns)]
+                                        for row in table.findall('a:tr', ns)])
+        chart_part = next(p for p in z.namelist() if p.startswith('ppt/charts/chart') and p.endswith('.xml'))
+        chart = ET.fromstring(z.read(chart_part))
+        categories = [v.text for v in chart.findall('.//c:cat//c:pt/c:v', ns)]
+        values = [float(v.text) for v in chart.findall('.//c:val//c:pt/c:v', ns)]
+    def numeric(value):
+        return float(value.replace('$', '').replace(',', '').replace('AUD', '').strip())
+    def matches(table):
+        return len(table) == len(rows) + 1 and all(
+            actual[0] == expected[0] and numeric(actual[1]) == expected[1]
+            for actual, expected in zip(table[1:], rows))
+    assert matches(report_rows), 'Word export must contain the source table'
+    deck_rows = next(table for table in deck_tables if matches(table))
+    assert categories == [r[0] for r in rows], 'Deck chart categories must follow the workbook'
+    assert values == [r[1] for r in rows], 'Deck chart values must follow the workbook'
+    return {'source': source, 'report': {'blocks': report_blocks, 'sha256': digest(report.read_bytes())},
+            'deck': {'rows': deck_rows, 'chart': {'categories': categories, 'values': values},
+                     'sha256': digest(deck.read_bytes())},
+            'checks': ['Word table matches workbook', 'Deck table matches workbook',
+                       'Deck chart categories and values match workbook']}
+
+
 with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
     work = Path(folder)
     os.environ['OX_KEYS'] = str(work / 'keys')
@@ -117,7 +162,26 @@ with tempfile.TemporaryDirectory(prefix='milleleaf-site-hero-') as folder:
         return {'label': label, 'app': app, 'sha256': digest(path.read_bytes()), 'blocks': blocks,
                 'paragraphDiffs': [segments(old_p[i] if i < len(old_p) else '', text) for i, text in enumerate(new_p)],
                 'rewrites': rewrites(original, path), 'report': report}
+    # A real Calc edit feeds two other app writers in the same project.
+    flow_store = work / 'flow-project'
+    ox('init', flow_store, '--from', PROJECT)
+    flow_before = flow_snapshot(flow_store, work, 'flow-before')
+    workbook_layer = work / 'workbook-edit.json'
+    workbook_report = work / 'workbook-report.json'
+    ox('xlsx-import', PROJECT, WORKBOOK, EXAMPLE / 'fixtures/finance.libreoffice-edited.xlsx',
+       '--out', workbook_layer, '--report', workbook_report,
+       '--author', 'libreoffice', '--id', 'site/hero/workbook')
+    ox('commit', flow_store, workbook_layer)
+    flow_after = flow_snapshot(flow_store, work, 'flow-after')
+    assert flow_before['source']['rows'] != flow_after['source']['rows'], 'Workbook must really change'
+    flow = {'fixture': 'examples/hello-table/fixtures/finance.libreoffice-edited.xlsx',
+            'route': 'Calc workbook edit → WordCraft report file + DeckCraft deck',
+            'before': flow_before, 'after': flow_after,
+            'importReport': json.loads(workbook_report.read_text()),
+            'scope': 'Content previews extracted from real exports, not app screenshots. '
+                     'The report has a linked table; the deck has the linked table and chart.'}
     result = {
+        'flow': flow,
         'generatedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'fixture': 'examples/hello-table/fixtures/report.libreoffice-edited.docx',
         'baseline': 'examples/hello-table/project.ox.json',

@@ -1,22 +1,307 @@
 {
-  "generatedAt": "2026-10-22T02:00:12.022737+00:00",
+  "flow": {
+    "fixture": "examples/hello-table/fixtures/finance.libreoffice-edited.xlsx",
+    "route": "Calc workbook edit → WordCraft report file + DeckCraft deck",
+    "before": {
+      "source": {
+        "columns": [
+          {
+            "name": "Region",
+            "type": "text"
+          },
+          {
+            "name": "Revenue",
+            "type": "currency"
+          }
+        ],
+        "rows": [
+          [
+            "Adelaide",
+            412000
+          ],
+          [
+            "Hong Kong",
+            541500
+          ],
+          [
+            "Singapore",
+            297000
+          ]
+        ]
+      },
+      "report": {
+        "blocks": [
+          {
+            "kind": "paragraph",
+            "text": "Q3 results"
+          },
+          {
+            "kind": "paragraph",
+            "text": "Total revenue for the quarter was $1,250,500 across 3 regions."
+          },
+          {
+            "kind": "table",
+            "rows": [
+              [
+                "Region",
+                "Revenue"
+              ],
+              [
+                "Adelaide",
+                "$412,000"
+              ],
+              [
+                "Hong Kong",
+                "$541,500"
+              ],
+              [
+                "Singapore",
+                "$297,000"
+              ]
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "text": "Revenue by region (AUD)"
+          }
+        ],
+        "sha256": "3056c939601aa4abf0239bf5050e1d5df8ceff43f3215e839a00abcf47fef48a"
+      },
+      "deck": {
+        "rows": [
+          [
+            "Region",
+            "Revenue"
+          ],
+          [
+            "Adelaide",
+            "$412,000"
+          ],
+          [
+            "Hong Kong",
+            "$541,500"
+          ],
+          [
+            "Singapore",
+            "$297,000"
+          ]
+        ],
+        "chart": {
+          "categories": [
+            "Adelaide",
+            "Hong Kong",
+            "Singapore"
+          ],
+          "values": [
+            412000.0,
+            541500.0,
+            297000.0
+          ]
+        },
+        "sha256": "308e7d6298d11dce91caada6c8ae353dd12c6a6c93a00959bd0cc2191a2cebc4"
+      },
+      "checks": [
+        "Word table matches workbook",
+        "Deck table matches workbook",
+        "Deck chart categories and values match workbook"
+      ]
+    },
+    "after": {
+      "source": {
+        "columns": [
+          {
+            "name": "Region",
+            "type": "text"
+          },
+          {
+            "name": "Revenue",
+            "type": "currency"
+          }
+        ],
+        "rows": [
+          [
+            "Adelaide",
+            412000
+          ],
+          [
+            "Hong Kong",
+            541500
+          ],
+          [
+            "Perth",
+            120000
+          ],
+          [
+            "Singapore",
+            305250
+          ]
+        ]
+      },
+      "report": {
+        "blocks": [
+          {
+            "kind": "paragraph",
+            "text": "Q3 results"
+          },
+          {
+            "kind": "paragraph",
+            "text": "Total revenue for the quarter was $1,378,750 across 4 regions."
+          },
+          {
+            "kind": "table",
+            "rows": [
+              [
+                "Region",
+                "Revenue"
+              ],
+              [
+                "Adelaide",
+                "$412,000"
+              ],
+              [
+                "Hong Kong",
+                "$541,500"
+              ],
+              [
+                "Perth",
+                "$120,000"
+              ],
+              [
+                "Singapore",
+                "$305,250"
+              ]
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "text": "Revenue by region (AUD)"
+          }
+        ],
+        "sha256": "38d4bd7a83f832024ac506219b6dd8d75ba3e08211498075ac49978f3571b040"
+      },
+      "deck": {
+        "rows": [
+          [
+            "Region",
+            "Revenue"
+          ],
+          [
+            "Adelaide",
+            "$412,000"
+          ],
+          [
+            "Hong Kong",
+            "$541,500"
+          ],
+          [
+            "Perth",
+            "$120,000"
+          ],
+          [
+            "Singapore",
+            "$305,250"
+          ]
+        ],
+        "chart": {
+          "categories": [
+            "Adelaide",
+            "Hong Kong",
+            "Perth",
+            "Singapore"
+          ],
+          "values": [
+            412000.0,
+            541500.0,
+            120000.0,
+            305250.0
+          ]
+        },
+        "sha256": "0903e939f98cef6f81d37b4afe032f56d8afabc9cdf04720f75ff84c7f70dd41"
+      },
+      "checks": [
+        "Word table matches workbook",
+        "Deck table matches workbook",
+        "Deck chart categories and values match workbook"
+      ]
+    },
+    "importReport": {
+      "changed": [
+        "3f1c2a90-0000-4c1e-9a00-000000000012",
+        "3f1c2a90-0000-4c1e-9a00-000000000013"
+      ],
+      "moved": [
+        "3f1c2a90-0000-4c1e-9a00-000000000012",
+        "3f1c2a90-0000-4c1e-9a00-000000000013"
+      ],
+      "renamed": [
+        "Q3 → Q3 2026"
+      ],
+      "missing": [],
+      "recomputed": [],
+      "conflicts": [],
+      "warnings": [],
+      "stale": false,
+      "matches": [
+        {
+          "path": "3f1c2a90-0000-4c1e-9a00-000000000011",
+          "confidence": "certain",
+          "by": "defined name ox_3f1c2a90_0000_4c1e_9a00_000000000011"
+        },
+        {
+          "path": "3f1c2a90-0000-4c1e-9a00-000000000012",
+          "confidence": "certain",
+          "by": "defined name ox_3f1c2a90_0000_4c1e_9a00_000000000012"
+        },
+        {
+          "path": "3f1c2a90-0000-4c1e-9a00-000000000013",
+          "confidence": "certain",
+          "by": "defined name ox_3f1c2a90_0000_4c1e_9a00_000000000013"
+        }
+      ],
+      "losses": [
+        {
+          "feature": "custom number formats",
+          "count": 1,
+          "carried": "partly carried",
+          "note": "the formats cells use are kept; unused ones are dropped"
+        },
+        {
+          "feature": "fonts",
+          "count": 3,
+          "carried": "partly carried",
+          "note": "the fonts cells use are kept; unused ones are dropped"
+        }
+      ]
+    },
+    "scope": "Content previews extracted from real exports, not app screenshots. The report has a linked table; the deck has the linked table and chart."
+  },
+  "generatedAt": "2026-10-22T08:46:46.692527+00:00",
   "fixture": "examples/hello-table/fixtures/report.libreoffice-edited.docx",
   "baseline": "examples/hello-table/project.ox.json",
   "commands": [
-    "cargo run -q -p ox-cli -- docx-export examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 --out /tmp/milleleaf-site-hero-omj9obql/original.docx",
-    "cargo run -q -p ox-cli -- docx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 examples/hello-table/fixtures/report.libreoffice-edited.docx --out /tmp/milleleaf-site-hero-omj9obql/edited.json --report /tmp/milleleaf-site-hero-omj9obql/edited-report.json --author libreoffice --id site/hero/edited",
-    "soffice -env:UserInstallation=file:///tmp/milleleaf-site-hero-omj9obql/lo-profile --headless --convert-to docx --outdir /tmp/milleleaf-site-hero-omj9obql/saved examples/hello-table/fixtures/report.libreoffice-edited.docx",
-    "cargo run -q -p ox-cli -- docx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 /tmp/milleleaf-site-hero-omj9obql/saved/report.libreoffice-edited.docx --out /tmp/milleleaf-site-hero-omj9obql/resaved.json --report /tmp/milleleaf-site-hero-omj9obql/resaved-report.json --author libreoffice --id site/hero/resaved",
-    "cargo run -q -p ox-cli -- init /tmp/milleleaf-site-hero-omj9obql/project --from examples/hello-table/project.ox.json",
-    "cargo run -q -p ox-cli -- key new fixture-reviewer /tmp/milleleaf-site-hero-omj9obql/project",
-    "cargo run -q -p ox-cli -- commit /tmp/milleleaf-site-hero-omj9obql/project /tmp/milleleaf-site-hero-omj9obql/resaved.json --sign --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 9f058b186f5b504bbbff81c305b32a4cb758bed30018f0c36a50586b86c68882 --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 62729fef2ee88d6665abb8611bd539ac466f63393f0c23d6dd47fb429ae3e43e --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project ef9a7f5628a28b6dc51515830a4846248b2fd97efe2cad4e4e9a39d3740fedce --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5 --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project 3b9760cebb7dd628ae6fc7a9b40dcec80f4d4561db1d27bb515bca2efee1b8b3 --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-omj9obql/project f7d603230fb1d8441749a44ac078fa3b8195bf6031beb395b62154e85eed4293 --key fixture-reviewer",
-    "cargo run -q -p ox-cli -- verify /tmp/milleleaf-site-hero-omj9obql/project --require"
+    "cargo run -q -p ox-cli -- docx-export examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 --out /tmp/milleleaf-site-hero-9ov120o4/original.docx",
+    "cargo run -q -p ox-cli -- docx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 examples/hello-table/fixtures/report.libreoffice-edited.docx --out /tmp/milleleaf-site-hero-9ov120o4/edited.json --report /tmp/milleleaf-site-hero-9ov120o4/edited-report.json --author libreoffice --id site/hero/edited",
+    "soffice -env:UserInstallation=file:///tmp/milleleaf-site-hero-9ov120o4/lo-profile --headless --convert-to docx --outdir /tmp/milleleaf-site-hero-9ov120o4/saved examples/hello-table/fixtures/report.libreoffice-edited.docx",
+    "cargo run -q -p ox-cli -- docx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000020 /tmp/milleleaf-site-hero-9ov120o4/saved/report.libreoffice-edited.docx --out /tmp/milleleaf-site-hero-9ov120o4/resaved.json --report /tmp/milleleaf-site-hero-9ov120o4/resaved-report.json --author libreoffice --id site/hero/resaved",
+    "cargo run -q -p ox-cli -- init /tmp/milleleaf-site-hero-9ov120o4/project --from examples/hello-table/project.ox.json",
+    "cargo run -q -p ox-cli -- key new fixture-reviewer /tmp/milleleaf-site-hero-9ov120o4/project",
+    "cargo run -q -p ox-cli -- commit /tmp/milleleaf-site-hero-9ov120o4/project /tmp/milleleaf-site-hero-9ov120o4/resaved.json --sign --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-9ov120o4/project 9f058b186f5b504bbbff81c305b32a4cb758bed30018f0c36a50586b86c68882 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-9ov120o4/project ef9a7f5628a28b6dc51515830a4846248b2fd97efe2cad4e4e9a39d3740fedce --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-9ov120o4/project 86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-9ov120o4/project 3b9760cebb7dd628ae6fc7a9b40dcec80f4d4561db1d27bb515bca2efee1b8b3 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-9ov120o4/project 2821a0e590c4ec8b7ed127892d4a1aeb98bd833ba7d2fe901e1ff03f99186317 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- sign /tmp/milleleaf-site-hero-9ov120o4/project f7d603230fb1d8441749a44ac078fa3b8195bf6031beb395b62154e85eed4293 --key fixture-reviewer",
+    "cargo run -q -p ox-cli -- verify /tmp/milleleaf-site-hero-9ov120o4/project --require",
+    "cargo run -q -p ox-cli -- init /tmp/milleleaf-site-hero-9ov120o4/flow-project --from examples/hello-table/project.ox.json",
+    "cargo run -q -p ox-cli -- get /tmp/milleleaf-site-hero-9ov120o4/flow-project 3f1c2a90-0000-4c1e-9a00-000000000012",
+    "cargo run -q -p ox-cli -- docx-export /tmp/milleleaf-site-hero-9ov120o4/flow-project 3f1c2a90-0000-4c1e-9a00-000000000020 --out /tmp/milleleaf-site-hero-9ov120o4/flow-before.docx",
+    "cargo run -q -p ox-cli -- pptx-export /tmp/milleleaf-site-hero-9ov120o4/flow-project 2af44a75-c514-5c87-b208-689fa8b15950 --out /tmp/milleleaf-site-hero-9ov120o4/flow-before.pptx",
+    "cargo run -q -p ox-cli -- xlsx-import examples/hello-table/project.ox.json 3f1c2a90-0000-4c1e-9a00-000000000010 examples/hello-table/fixtures/finance.libreoffice-edited.xlsx --out /tmp/milleleaf-site-hero-9ov120o4/workbook-edit.json --report /tmp/milleleaf-site-hero-9ov120o4/workbook-report.json --author libreoffice --id site/hero/workbook",
+    "cargo run -q -p ox-cli -- commit /tmp/milleleaf-site-hero-9ov120o4/flow-project /tmp/milleleaf-site-hero-9ov120o4/workbook-edit.json",
+    "cargo run -q -p ox-cli -- get /tmp/milleleaf-site-hero-9ov120o4/flow-project 3f1c2a90-0000-4c1e-9a00-000000000012",
+    "cargo run -q -p ox-cli -- docx-export /tmp/milleleaf-site-hero-9ov120o4/flow-project 3f1c2a90-0000-4c1e-9a00-000000000020 --out /tmp/milleleaf-site-hero-9ov120o4/flow-after.docx",
+    "cargo run -q -p ox-cli -- pptx-export /tmp/milleleaf-site-hero-9ov120o4/flow-project 2af44a75-c514-5c87-b208-689fa8b15950 --out /tmp/milleleaf-site-hero-9ov120o4/flow-after.pptx"
   ],
   "frames": [
     {
@@ -213,7 +498,7 @@
     {
       "label": "Re-saved",
       "app": "LibreOffice on the box",
-      "sha256": "0f79acf4ee74855420fb5b87ea18e97db12a4d2a52320fe0995f7a390c5452b7",
+      "sha256": "7009f646542ed36324d5c9ebb9383505e7bf7d8319f17f34b3af1e7a8103c1eb",
       "blocks": [
         {
           "kind": "paragraph",
@@ -342,16 +627,16 @@
   ],
   "signed": {
     "signer": "fixture-reviewer",
-    "at": "2026-10-22T02:00:11Z",
+    "at": "2026-10-22T08:46:43Z",
     "layer": "sha256-86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5",
     "signature": {
       "layer": "sha256-86c8a0bc2d94c27748e0e002cfd93601d2c1ff9655735140cb7d54b2984dbce5",
-      "key": "ed25519:phkwAQaE6fgOx+wND8DU2kgcrnckZ9fV1q3A4fK2dxI=",
+      "key": "ed25519:FmVPzYODyYgfCTW99NGfx7NptdEY+geS1mIpX2b8Qzg=",
       "signer": "fixture-reviewer",
-      "signature": "lNX5dFBxQI+UClVYfZcLlrTWOddpwKYJ3TrK5pXtdAdvDYw/4/p38oa/6+7eOgyWlAj/UAU+1SaFOZfdr3LiAQ==",
-      "at": "2026-10-22T02:00:11Z"
+      "signature": "n1dNb03HV23Zz7HNN0buDugo/rkj1uvgIYPMXFXdykcobT+tis6BVe8DbxjS3KIHrktS5Q+FgpY8qDY6zpYoCw==",
+      "at": "2026-10-22T08:46:43Z"
     },
-    "verification": "62729fef2ee8  milleleaf/schema/office                     signed by fixture-reviewer (hybrid)\nf7d603230fb1  milleleaf/examples/hello-table/base         signed by fixture-reviewer (hybrid)\nef9a7f5628a2  proposal/deck                                signed by fixture-reviewer (hybrid)\n3b9760cebb7d  milleleaf/examples/hello-table/finance-review signed by fixture-reviewer (hybrid)\n9f058b186f5b  milleleaf/examples/hello-table/pack         signed by fixture-reviewer (hybrid)\n86c8a0bc2d94  site/hero/resaved                            signed by fixture-reviewer (hybrid)\n",
+    "verification": "2821a0e590c4  milleleaf/schema/office                     signed by fixture-reviewer (hybrid)\nf7d603230fb1  milleleaf/examples/hello-table/base         signed by fixture-reviewer (hybrid)\nef9a7f5628a2  proposal/deck                                signed by fixture-reviewer (hybrid)\n3b9760cebb7d  milleleaf/examples/hello-table/finance-review signed by fixture-reviewer (hybrid)\n9f058b186f5b  milleleaf/examples/hello-table/pack         signed by fixture-reviewer (hybrid)\n86c8a0bc2d94  site/hero/resaved                            signed by fixture-reviewer (hybrid)\n",
     "exitCode": 0,
     "scope": "Fresh fixture test key. Build-time verification, not a trusted time-stamp or approval."
   },
