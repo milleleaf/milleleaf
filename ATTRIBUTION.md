@@ -54,7 +54,13 @@ craft-fonts set is used only when `CRAFT_FONTS_DIR` is set, which nothing here d
 | `crates/ox-seal/vectors/xwing-hkdfsha256-chacha.json` | X-Wing + HKDF-SHA256 + ChaCha20-Poly1305 HPKE test vector | IETF Trust and the draft-ietf-hpke-pq authors | <https://github.com/hpkewg/hpke-pq> at `6433c8f` (also shipped in the `hpke` 0.14.1 crate, MIT OR Apache-2.0) | **Unverified**: the repository points to the IETF Trust Legal Provisions, under which code components are BSD-3-Clause | none yet |
 | `crates/ox-store/testdata/ots/*`, `crates/ox-store/testdata/headers/*` | Our random bytes and their OpenTimestamps proof (calendars alice/bob.btc.calendar.opentimestamps.org, finney.calendar.eternitywall.com, btc.calendar.catallaxy.com); Bitcoin block headers and retarget table | Milleleaf contributors; calendar attestations and block headers are public chain data | Public calendars and the Bitcoin chain | Original work / factual data | none needed |
 | `crates/ox-store/testdata/tsa/*` | RFC 3161 response from our own local test TSA | Milleleaf contributors | Original work | MIT OR Apache-2.0 | root licences |
-| `schema/ox.tsp` | OX layer schema, derived from IFC5's `ifcx.tsp` | buildingSMART International (the original); Milleleaf contributors (changes) | <https://github.com/buildingSMART/IFC5-development> (`schema/ifcx.tsp`) | **Unknown**: the upstream repository gives no licence for the schema | none |
+
+## Ideas followed (no material included)
+
+Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
+(OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
+specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and
+code are written independently; no USD, IFC5 or DocLang code or schema text is included.
 
 ## Tools installed for checks (not bundled)
 

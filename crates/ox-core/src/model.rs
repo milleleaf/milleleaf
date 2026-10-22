@@ -1,8 +1,13 @@
 //! The OX layer file: what is stored on disk.
 //!
-//! Modelled on IFC5's IFCX (`header`, `imports`, `schemas`, `data`), with two additions for
-//! office documents: `order` on a node (paragraphs, slides and sheets are ordered; IFCX
-//! `children` are not) and the `Any` data type for values a schema can't constrain yet.
+//! Four sections (`header`, `imports`, `schemas`, `data`); nodes carry an `order` (paragraphs,
+//! slides and sheets are ordered), and the `Any` data type covers values a schema can't constrain
+//! yet. `schema/ox.tsp` describes this format.
+//!
+//! Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
+//! (OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
+//! specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and
+//! code are written independently; no USD, IFC5 or DocLang code or schema text is included.
 
 use std::collections::BTreeMap;
 
@@ -114,7 +119,7 @@ pub enum DataType {
     Object,
     Reference,
     Blob,
-    /// OX extension: any JSON value, not checked.
+    /// Any JSON value, not checked.
     Any,
 }
 

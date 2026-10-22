@@ -12,10 +12,14 @@ the same version.
 
 ## Ideas
 
-- **Data-model separation, single source of truth, single-model continuity**, borrowed from
-  IFC5 ([buildingSMART/IFC5-development](https://github.com/buildingSMART/IFC5-development)):
-  a project is a stack of JSON layers composed into one truth; each app reads and writes its
-  own namespace on shared nodes; every value knows which layer set it.
+- **Data-model separation, single source of truth, single-model continuity**: a project is a
+  stack of JSON layers composed into one truth; each app reads and writes its own namespace on
+  shared nodes; every value knows which layer set it.
+
+  Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
+  (OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
+  specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema
+  and code are written independently; no USD, IFC5 or DocLang code or schema text is included.
 - **HTML in and out.** Agents and HTML-deck skills write HTML well. A restricted profile lets
   their decks come in as reviewable *proposal layers*, and lets the model render back out to
   HTML that re-imports onto the same nodes.
@@ -26,7 +30,7 @@ the same version.
 
 | Path | What |
 |---|---|
-| `schema/ox.tsp` | TypeSpec for the file format (compiles with `@typespec/compiler` 1.5) |
+| `schema/ox.tsp` | TypeSpec for the file format; compiles to JSON Schema with `@typespec/compiler` and `@typespec/json-schema` 1.17.0 |
 | `schema/office.ox.json` | Attribute schemas: `office::`, `grid::`, `word::`, `deck::`, `ox::` |
 | `crates/ox-core` | Rust: load stacks (imports, integrity), flatten, compose with provenance, validate, render HTML |
 | `crates/ox-cli` | `ox layers / validate / compose / get / render / pack`, `docx-`, `xlsx-`, `pptx-` `export` / `import`, and the store: `init / commit / head / log / blame / checkpoint / verify / sign / key` |
