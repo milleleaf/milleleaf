@@ -65,6 +65,13 @@ try {
     assert(copy.includes('ArtCraft apps: files written through WordCraft, GridCraft and DeckCraft'))
     assert(!copy.includes('—'), 'No em dashes')
   }
+  await staticPage.goto(origin)
+  assert.equal(await staticPage.locator('.alternatives-table tbody tr').count(), 5)
+  assert.deepEqual(await staticPage.locator('.alternatives-table tbody th').allTextContents(), ['Copy/paste', 'Paste Link', 'Import/export', 'Plugins', 'Milleleaf'])
+  assert.equal(await staticPage.locator('.alternatives-table tbody td small').count(), 20)
+  assert((await staticPage.locator('.app-families').innerText()).includes('Being checked in the browser flow'))
+  await staticPage.goto(origin + '/how-it-works')
+  for (const text of ['Why not copy and paste?', 'Why not Paste Link or linked objects?', 'Why not import and export?', 'Why not a plugin or add-in?', 'What Milleleaf adds', '400 cells', 'not documented', 'signing is optional today']) assert((await staticPage.locator('main').innerText()).includes(text))
   assert(evidence.flow, 'Real mixed-app flow generated')
   for (const snapshot of [evidence.flow.before, evidence.flow.after]) {
     assert.equal(snapshot.checks.length, 3)
@@ -104,6 +111,11 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow ${path} ${width} ${theme}`)
       assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior), 'auto')
       assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), theme)
+      if (path === '/') {
+        if (width === 400) assert((await page.locator('.alternatives-table caption').boundingBox()).width >= width * .75, 'Mobile caption uses the table width')
+        if (width === 1280) assert.equal(await page.locator('.alternatives-table thead th').first().evaluate(el => getComputedStyle(el).color), await page.locator('.alternatives-band h2').evaluate(el => getComputedStyle(el).color), 'Table header uses dark ink on mint')
+        for (const cell of await page.locator('.alternatives-table td').all()) assert(await cell.locator('small').isVisible(), 'Every comparison cell has visible evidence')
+      }
       if (path === '/data/datasets') {
         assert.equal(await page.locator('.dataset-table tbody tr').count(), 16)
         for (const row of await page.locator('.dataset-table tbody tr').all()) {
