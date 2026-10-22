@@ -9,6 +9,43 @@ const show = (value: any) => typeof value === 'number' && Number.isFinite(value)
 const now = () => new Date().toISOString()
 const tooBig = (file: File) => { if (file.size > 64 * 1024 * 1024) throw new Error('This demo accepts files up to 64 MiB.') }
 
+// A workbook can raise hundreds of cell notes (for example #DIV/0! results); group repeats by message.
+function Notes({ warnings, className }: { warnings: any[]; className?: string }) {
+  if (!warnings.length) return null
+  const groups = new Map<string, string[]>()
+  const single: string[] = []
+  for (const w of warnings) {
+    const message = String(w?.message ?? w)
+    const cell = message.match(/^(.+?![A-Z]+[0-9]+): (.+)$/)
+    if (cell) groups.set(cell[2], [...(groups.get(cell[2]) || []), cell[1]])
+    else single.push(message)
+  }
+  const lines = [...single, ...[...groups].map(([message, cells]) => cells.length === 1 ? `${cells[0]}: ${message}` : `${cells.length} cells: ${message}, for example ${cells.slice(0, 3).join(', ')}.`)]
+  return <details className={`notes ${className || ''}`}><summary>{`Workbook notes (${warnings.length})`}</summary>{lines.map((line, i) => <p key={i} className="caption">{line}</p>)}</details>
+}
+// Suggest a table to start from: the longest run of label cells with numbers beside them (plus a header
+// row, at most 30 rows), since a chart needs labels and values and a whole sheet is usually too big.
+const letters = (n: number) => { let s = ''; for (n++; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s }
+const isLabel = (x: any) => typeof x === 'string' && x.trim() !== ''
+function best(rows: any[][] = []): { range: string; length: number } | undefined {
+  let found: { range: string; length: number } | undefined
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c + 1 < rows[r].length; c++) {
+    if (!isLabel(rows[r][c]) || typeof rows[r][c + 1] !== 'number') continue
+    if (r > 0 && isLabel(rows[r - 1][c]) && typeof rows[r - 1][c + 1] === 'number') continue // inside a run already counted
+    let end = r
+    while (end + 1 < rows.length && end - r < 29 && isLabel(rows[end + 1][c]) && typeof rows[end + 1][c + 1] === 'number') end++
+    const length = end - r + 1
+    if (length < 2 || (found && found.length >= length)) continue
+    // A header row names the values; its label-column cell is often blank.
+    const start = r > 0 && isLabel(rows[r - 1][c + 1]) && (isLabel(rows[r - 1][c]) || rows[r - 1][c] == null || rows[r - 1][c] === '') ? r - 1 : r
+    found = { range: `${letters(c)}${start + 1}:${letters(c + 1)}${end + 1}`, length }
+  }
+  return found
+}
+const suggest = (rows?: any[][]) => best(rows)?.range
+// A table the workbook defines (its range differs from the whole sheet) wins over the suggestion.
+const startRange = (sheet: any) => sheet && (sheet.range !== sheet.full_range ? sheet.range : suggest(sheet.rows) || sheet.range)
+
 function Table({ value }: { value: any }) {
   const rows: any[] = value?.rows || value || []
   return <table>
@@ -109,12 +146,15 @@ export function FlowDemo() {
   }
   function chooseSheet(path: string, from = info) {
     setSheetPath(path)
-    setRange(from?.sheets?.find((s: any) => s.path === path)?.range || 'A1:B5')
+    setRange(startRange(from?.sheets?.find((s: any) => s.path === path)) || 'A1:B5')
   }
   function opened(next: any, label: string) {
     setSnapshot(undefined); setImported(false); setSignature('')
     setInfo(next); setName(label); setChart('-1')
-    chooseSheet(next.sheets?.[0]?.path || '', next)
+    // A workbook-defined table first; otherwise the sheet with the longest label-and-number run.
+    const sheets: any[] = next.sheets || []
+    const pick = sheets.find(s => s.range !== s.full_range) || sheets.reduce((top, s) => (best(s.rows)?.length || 0) > (best(top?.rows)?.length || 0) ? s : top, sheets[0])
+    chooseSheet(pick?.path || '', next)
     setStatus('Workbook ready. Choose your sheet, range and chart.')
   }
   function received(next: any, wasImported: boolean) {
@@ -179,7 +219,7 @@ export function FlowDemo() {
         </div>
         <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model.</p>
         <p id="workbook-name" className="caption">{name}</p>
-        <div id="source-warnings" aria-live="polite">{(info?.warnings || []).map((w: any, i: number) => <p key={i} className="caption">{w.message || w}</p>)}</div>
+        <div id="source-warnings" aria-live="polite"><Notes warnings={info?.warnings || []} /></div>
         <div id="selection" hidden={!info}>
           <div className="fields">
             <label>Sheet<select id="sheet" value={sheetPath} disabled={noWorkbook} onChange={e => chooseSheet(e.target.value)}>{sheets.map(s => <option key={s.path} value={s.path} data-chart-count={(s.charts || []).length}>{s.name}</option>)}</select></label>
@@ -223,7 +263,7 @@ export function FlowDemo() {
           <div id="changes">{changes.map((c, i) => <ChangeCard key={i} change={c} />)}
             {!changes.length && <p className="muted">{conflicts.length ? 'No independent changes applied. Review the conflict below.' : imported ? 'No content changes in this saved file.' : 'The report and deck use the same workbook cells.'}</p>}</div>
           <div id="conflicts">{conflicts.map((c, i) => <ChangeCard key={i} change={c} conflict />)}</div>
-          <div id="warnings">{warnings.map((w, i) => <p key={i}>{w.message || w}</p>)}</div>
+          <div id="warnings"><Notes warnings={warnings} /></div>
           <button id="sign" className="button secondary" disabled={noProject} onClick={sign}>Sign this layer with a demo key</button>
           <p id="signature" className="caption">{signature}</p>
         </article>

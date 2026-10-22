@@ -338,3 +338,4 @@ ml-revisions{display:block;min-height:55px}
 .demo-flow .evidence-grid p,.demo-flow .checked details p{font-size:15px;color:var(--muted)}
 @media(max-width:900px){.demo-flow .workbench{grid-template-columns:1fr}.demo-flow .connector{padding:12px;transform:rotate(90deg)}.demo-flow .connector span{display:none}.demo-flow .preview-heading{display:block}.demo-flow .preview-heading .button{margin-bottom:12px}}
 @media(max-width:700px){.demo-compare .workflow,.demo-compare .context-sides,.demo-flow .review-layout,.demo-flow .evidence-grid,.demo-flow .fields{grid-template-columns:1fr}.demo-flow .panel{padding:20px}}
+.demo-flow .notes{margin:10px 0}.demo-flow .notes summary{font-size:14px;color:var(--muted)}.demo-flow .notes p{margin:4px 0}

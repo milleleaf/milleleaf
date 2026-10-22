@@ -127,6 +127,18 @@ try {
   assert.deepEqual(state.deck.chart.series[0].values, [40, 35, 25]);
   await download('#download-report', '.docx'); await download('#download-deck', '.pptx');
   await page.screenshot({ path: `${root}/flow-cross-sheet.png`, fullPage: true });
+  // A real workbook with hundreds of error cells (/flow broke on lca-model.xlsx).
+  await page.locator('#workbook-file').setInputFiles('../examples/real/lca-model.xlsx'); await settled();
+  assert.notEqual(await page.locator('#sheet option:checked').textContent(), 'Cover', 'Start on a sheet with numbers');
+  assert((await page.locator('#source-warnings summary').textContent()).startsWith('Workbook notes ('), 'Notes are summarised');
+  assert.equal(await page.locator('#source-warnings details').getAttribute('open'), null, 'Notes start folded');
+  assert(await page.locator('#source-warnings p').count() < 50, 'Repeated cell notes are grouped');
+  const suggested = await page.locator('#range').inputValue();
+  assert.equal(suggested, 'B24:C40', 'The impact table with its header row (NaNMC), not a single row');
+  await page.locator('#create').click(); state = await snapshot();
+  assert.equal(await page.locator('.live-preview').count(), 2, `The suggested range ${suggested} makes a report and a deck`);
+  await page.screenshot({ path: `${root}/flow-lca.png`, fullPage: true });
+  console.log(`PASS lca-model.xlsx: starts on ${await page.locator('#sheet option:checked').textContent()} ${suggested}; notes grouped; report and deck made`);
   assert.equal(requests.length, loaded, 'File operations must not make network requests');
   assert(requests.every((request) => request.method === 'GET' && request.url.startsWith(site)));
   assert.deepEqual(errors, []);
