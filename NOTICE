@@ -35,3 +35,10 @@ Wycheproof test vectors (crates/ox-store/testdata/pq-vectors.json) — Apache Li
   LICENSE-APACHE.
 X-Wing HPKE test vector (crates/ox-seal/vectors/) — from the IETF draft-ietf-hpke-pq repository;
   see ATTRIBUTION.md.
+
+Design credits
+
+Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
+(OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
+specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and
+code are written independently; no USD, IFC5 or DocLang code or schema text is included.

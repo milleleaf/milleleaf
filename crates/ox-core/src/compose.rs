@@ -1,4 +1,4 @@
-//! Composition, in IFC5's three phases:
+//! Composition, in three phases (the layered model's credits are in `model.rs`):
 //!
 //! 1. **Federate**: take every layer's nodes in stack order (bottom first).
 //! 2. **Flatten**: one [`FlatNode`] per path; later statements win, `null` deletes.
