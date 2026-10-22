@@ -885,6 +885,26 @@ fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> S
     m
 }
 
+/// The column widths a table asks for, points. A fixed-layout table's are its grid. An autofit
+/// table's grid (`w:tblGrid`) is only the editor's last layout: Word 16 lays the table out again
+/// when it opens it and saves the result, while the widths asked for, the cells' preferred widths
+/// (`w:tcW`), stay as they were. Seen in paper.docx's tables 2 and 6 (`w:tblW w:type="auto"`, no
+/// `w:tblLayout`): Word's re-save of Milleleaf's export wrote `w:gridCol` 9923 → 9872 and
+/// 6567/3356 → 6510/3423 twips, every `w:tcW` unchanged (9923; 6567/3356), and nobody touched
+/// them. Dragging a column border in Word changes the cells' `w:tcW` too, so that still shows.
+/// So an autofit table's widths are its first row's preferred widths when each of that row's
+/// cells has one and spans one column; else its grid.
+fn column_widths(t: &Table) -> Vec<f32> {
+    if !t.props.fixed
+        && let Some(r) = t.rows.first()
+        && r.cells.len() == t.grid.len()
+        && let Some(w) = r.cells.iter().map(|c| c.props.width.filter(|_| c.props.span <= 1)).collect::<Option<Vec<f32>>>()
+    {
+        return w;
+    }
+    t.grid.clone()
+}
+
 /// What a reader sees of a table: column widths (to the half point), its alignment and indent,
 /// and per cell the effective shading, emphasis, colour, size and alignment (its table style's
 /// parts, then the cell's own formatting). Editors move table-style formatting into the cells on
@@ -933,7 +953,7 @@ fn table_seen(doc: &Document, t: &Table) -> Value {
         rows.push(Value::Array(cells));
     }
     json!({
-        "grid": t.grid.iter().map(|w| half(*w)).collect::<Vec<_>>(),
+        "grid": column_widths(t).iter().map(|w| half(*w)).collect::<Vec<_>>(),
         "align": serde_json::to_value(t.props.align.filter(|a| *a != wordcraft_doc::Align::Left)).ok(),
         "indent": t.props.indent.map(half).filter(|i| *i != 0),
         "rows": rows,

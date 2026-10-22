@@ -587,6 +587,39 @@ fn a_blank_line_typed_in_word_comes_back_and_resaves_stay_clean() {
     }
 }
 
+/// Milleleaf's export of the paper, read back: what Word opens.
+fn paper_export(node: &Composed) -> Document {
+    let (doc, _) = crate::export::export_with(node, &[], ox_core::PictureSource::StandIn(None)).expect("exports");
+    from_docx(&to_docx(&doc).unwrap()).unwrap()
+}
+
+#[test]
+fn word_laying_out_an_autofit_table_again_is_no_change_and_a_dragged_column_is() {
+    let node = paper_node();
+    fn table(d: &mut Document, n: usize) -> &mut wordcraft_doc::Table {
+        d.body.iter_mut().filter_map(|b| match Arc::make_mut(b) {
+            Block::Table(t) => Some(t),
+            _ => None,
+        }).nth(n).expect("table")
+    }
+    // Table 6 (autofit: `w:tblW` auto, no `w:tblLayout`). Word's re-save of the export wrote its
+    // `w:gridCol` 6567/3356 → 6510/3423 twips and left every cell's `w:tcW` as it was.
+    let mut doc = paper_export(&node);
+    let t = table(&mut doc, 5);
+    assert!(!t.props.fixed);
+    t.grid = vec![6510.0 / 20.0, 3423.0 / 20.0];
+    let (layer, report) = import(&node, &doc, header()).expect("imports");
+    assert!(report.changed.is_empty() && layer.data.is_empty(), "{report:?}");
+    // Dragging the border between its columns changes the cells' preferred widths too: a change.
+    let t = table(&mut doc, 5);
+    for r in &mut t.rows {
+        r.cells[0].props.width = Some(6510.0 / 20.0);
+        r.cells[1].props.width = Some(3423.0 / 20.0);
+    }
+    let (_, report) = import(&node, &doc, header()).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{report:?}");
+}
+
 #[test]
 fn the_papers_figure_comes_in_and_a_swapped_one_is_a_change() {
     let node = paper_node();
@@ -867,3 +900,4 @@ fn a_link_starting_a_cell_isnt_spread_over_the_cell() {
     let at = p.text.find(" to").unwrap();
     assert!(p.props_of_char(at).link.is_none(), "{p:?}");
 }
+
