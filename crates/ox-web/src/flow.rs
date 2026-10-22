@@ -2741,6 +2741,77 @@ mod tests {
             "need resaves and edits for workbook, report and deck"
         );
     }
+    /// the maintainer's Microsoft Office 16 (Mac) saves of the Demo B exports, returned in
+    /// OFFICE-STEPS.md order: re-saves, the workbook edit, the heading edits, then the linked edit.
+    #[test]
+    fn microsoft_office_saves_in_office_steps_order() {
+        macro_rules! office {
+            ($name:literal) => {
+                (
+                    $name,
+                    include_bytes!(concat!("../../../examples/hello-table/fixtures/", $name))
+                        .as_slice(),
+                )
+            };
+        }
+        let mut s = ready();
+        for kind in ["xlsx", "docx", "pptx"] {
+            s.export_native(kind).unwrap();
+        }
+        let mut back =
+            |(name, bytes): (&str, &[u8])| s.import_native(bytes, name, "Office", AT).unwrap();
+        for f in [
+            office!("finance.msoffice-flow-resaved.xlsx"),
+            office!("report.msoffice-flow-resaved.docx"),
+            office!("deck.msoffice-flow-resaved.pptx"),
+        ] {
+            let r = back(f);
+            assert_eq!(r["changes"], json!([]), "{}: {r}", f.0);
+            assert_eq!(r["conflicts"], json!([]), "{}: {r}", f.0);
+        }
+        let r = back(office!("finance.msoffice-flow-edited.xlsx"));
+        assert_eq!(r["report"]["table"]["rows"][1][1], 550000, "{r}");
+        assert_eq!(r["report"]["table"], r["deck"]["table"]);
+        for (f, heading) in [
+            (
+                office!("report.msoffice-flow-edited.docx"),
+                "Workbook report reviewed",
+            ),
+            (
+                office!("deck.msoffice-flow-edited.pptx"),
+                "Workbook figures reviewed",
+            ),
+        ] {
+            let r = back(f);
+            assert!(r["changes"].to_string().contains(heading), "{r}");
+            assert_eq!(r["conflicts"], json!([]), "{r}");
+            assert_eq!(r["report"]["table"]["rows"][1][1], 550000, "{r}");
+        }
+        let r = back(office!("report.msoffice-flow-linked-edited.docx"));
+        let cell = &r["conflicts"][0]["cell_changes"][0];
+        assert_eq!(
+            (&cell["before"], &cell["proposed"], &cell["source_current"]),
+            (&json!(541500), &json!(999), &json!(550000)),
+            "{r}"
+        );
+        assert_eq!(
+            r["report"]["table"]["rows"][1][1], 550000,
+            "source must not be overwritten"
+        );
+        let report = s.export_native("docx").unwrap();
+        let text = xml_part(&report, "word/document.xml");
+        assert!(
+            text.contains("Workbook report reviewed"),
+            "heading edit lost on export"
+        );
+        assert!(
+            text.contains("550,000") || text.contains("550000"),
+            "updated value missing from report"
+        );
+        assert!(
+            xml_part(&s.export_native("pptx").unwrap(), "ppt/charts/chart1.xml").contains("550000")
+        );
+    }
 }
 
 #[wasm_bindgen]
