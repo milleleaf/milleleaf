@@ -37,3 +37,8 @@ examples/hello-table/finance-edited.ods
 examples/hello-table/deck.pptx
 examples/hello-table/deck-edited.pptx
 examples/hello-table/deck-edited.odp
+
+# Private agent rules: kept on this Mac, never committed.
+/AGENTS.md
+/CLAUDE.md
+/.claude/

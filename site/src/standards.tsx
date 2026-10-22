@@ -100,7 +100,7 @@ export function StandardsTable() {
       <h2 id="identity-markers">Identity in the places the format allows.</h2>
       <div><p>Milleleaf uses content-control tags in Word, defined names in workbooks, shape names in decks and custom file properties. ECMA-376 defines these places. The files open normally in the checked apps.</p>
         <p>The standard allows these markers. It does not promise an app will keep them, or that copying a table or slide will give it a new identity. Milleleaf checks survival per app, reports duplicate IDs and treats a content lock as a hint. A typed-over link is checked again on import.</p>
-        <p>Source: the repository’s the project notes, “What this means for Milleleaf”, and the project notes Tests are named above so each claim has a boundary.</p>
+        <p>Tests are named above so each claim has a boundary.</p>
       </div>
     </section>
   </>
