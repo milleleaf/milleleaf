@@ -127,16 +127,46 @@ against the adopted file: a re-save must be no change, an edit exactly that edit
 |---|---|---|
 | `paper.libreoffice-resaved.docx` | LibreOffice 24.2.7.2 (Linux, the CI image on the box, `--network none`) | `soffice --headless --convert-to docx:"MS Word 2007 XML"` of `paper.reexport.docx` |
 | `lca-model.libreoffice-resaved.xlsx` | LibreOffice 24.2.7.2, the same way | `soffice --headless --convert-to xlsx:"Calc MS Excel 2007 XML"` of `lca-model.reexport.xlsx` |
-| `paper.msoffice-resaved.docx` | Word 16 (Mac), by hand | open `paper.reexport.docx`, save as .docx. **Pending** |
-| `paper.msoffice-blank-line.docx` | Word 16 (Mac), by hand | open `paper.reexport.docx`, press Enter at the end of paragraph 3, save. **Pending** |
-| `lca-model.msoffice-resaved.xlsx` | Excel 16 (Mac), by hand | open `lca-model.reexport.xlsx`, save as .xlsx. **Pending** |
-| `lca-model.msoffice-margins.xlsx` | Excel 16 (Mac), by hand | open `lca-model.reexport.xlsx`, on sheet Graphs set the left margin to 1 in and the Standard Width to 12, save. **Pending** |
+| `paper.msoffice-resaved.docx` | Word 16 (Mac), by hand | open `paper.reexport.docx`, save as .docx |
+| `paper.msoffice-blank-line.docx` | Word 16 (Mac), by hand | open `paper.reexport.docx`, press Enter at the end of paragraph 3 ("Throughout this document…", the third after the heading), save |
+| `lca-model.msoffice-resaved.xlsx` | Excel 16 (Mac), by hand | open `lca-model.reexport.xlsx`, save as .xlsx |
+| `lca-model.msoffice-margins.xlsx` | Excel 16 (Mac), by hand | open `lca-model.reexport.xlsx`, on sheet Graphs set the left margin to 1 in and the Standard Width to 12, save |
 | `milleleaf-deck.libreoffice-resaved.pptx` | LibreOffice 24.2.7.2, the same way | `soffice --headless --convert-to pptx:"Impress MS PowerPoint 2007 XML"` of `milleleaf-deck.impress.reexport.pptx` (Milleleaf's export of `milleleaf-deck.impress.pptx`) |
-| `milleleaf-deck.msoffice-resaved.pptx` | PowerPoint 16 (Mac), by hand | open `milleleaf-deck.reexport.pptx`, save as .pptx. **Pending** |
-| `milleleaf-deck.msoffice-edited.pptx` | PowerPoint 16 (Mac), by hand | open `milleleaf-deck.reexport.pptx`, add " (revised)" at the end of slide 1's subtitle, save. **Pending** |
+| `milleleaf-deck.msoffice-resaved.pptx` | PowerPoint 16 (Mac), by hand | open `milleleaf-deck.reexport.pptx`, save as .pptx |
+| `milleleaf-deck.msoffice-edited.pptx` | PowerPoint 16 (Mac), by hand | open `milleleaf-deck.reexport.pptx`, add " (revised)" at the end of slide 1's subtitle, save |
 
-Until a pending file is there, its part of the test prints `PENDING` and is skipped (run.sh step 18
-shows those lines).
+If a Microsoft Office file is missing, its part of the test prints `PENDING` and is skipped (run.sh
+step 18 shows those lines). All six are there since 22 Oct.
+
+**The Microsoft Office files (22 Oct 2026):** the maintainer made them on the Mac from the packet the box
+prepared (`<box-data>/real-swap/packet/README.txt` has the steps and the inputs' SHA-256:
+`paper.reexport.docx` `45a4eddf…bbb34`, `lca-model.reexport.xlsx` `ecbde260…5ff0a`,
+`milleleaf-deck.reexport.pptx` `8d21922e…53843`, the last being `milleleaf-deck.deckcraft.pptx`),
+changing nothing but what each step says. Application and version are from each file's
+`docProps/app.xml`.
+
+| File | SHA-256 | Size | Application |
+|---|---|---|---|
+| `paper.msoffice-resaved.docx` | `31ce2705fe0de74251ae57e26197abd7e8cb033cdbeb6478b5cfd2c6d42499f4` | 117,314 | Microsoft Office Word 16.0000 |
+| `paper.msoffice-blank-line.docx` | `117094c70705cb37f9088d68e2dcbf168dd883d55109edf89fb0a368c59cf962` | 117,305 | Microsoft Office Word 16.0000 |
+| `lca-model.msoffice-resaved.xlsx` | `456f3d91ca4d678421a855ce6db27440787438674b13a6e1b753d74142ace18e` | 2,119,245 | Microsoft Macintosh Excel 16.0300 |
+| `lca-model.msoffice-margins.xlsx` | `2dc75873223da29323b7582ca4a642830448136c1428b95f660f819e4bfc5791` | 2,119,303 | Microsoft Macintosh Excel 16.0300 |
+| `milleleaf-deck.msoffice-resaved.pptx` | `401c196831deac9dfb2734ca733dff393dc4443f02bae941c29c882076bcb1bf` | 99,132 | Microsoft Macintosh PowerPoint 16.0000 |
+| `milleleaf-deck.msoffice-edited.pptx` | `3900ff15de7bf48001dcec7b06f089a7539910073d61618c518d96fcec8abc6b` | 99,218 | Microsoft Macintosh PowerPoint 16.0000 |
+
+**Licence:** each is a modified copy of its original and keeps the original's terms: the paper's and
+the model's under CC BY 4.0 with the attributions above (modified: exported by Milleleaf, then
+re-saved or edited in Word or Excel as the table says); the deck's under the repository's licence,
+the Milleleaf mark excepted (see the authored deck below).
+
+**Personal data:** each file's `docProps/core.xml` names the maintainer (her full name) as the last to modify
+it, as Office writes it; no email address but the deck's own `hello@milleleaf.com`.
+
+**What they show** (the tests, run.sh step 18 and the demo): the three re-saves are no change, once
+three Word and Excel rewrites are settled (an autofit table's grid, a run colour its style already
+gives, the heights Excel works out for rows under a chart); the three edits come back exactly. The
+margins edit also widens sheet Graphs' five charts and its legend picture, which sit between cells
+over default-width columns: that is reported too, as the file shows it.
 
 ---
 
@@ -164,7 +194,10 @@ it is used as supplied, rendered from `brand/milleleaf-mark.svg` without croppin
    `authored/run_macro.sh`): titles, a two-level list, filled boxes joined by connectors, a table with
    merged cells, web and mail links, notes. Impress saved it as `milleleaf-impress-native.odp` and
    `.pptx`.
-5. PowerPoint 16 saves: pending (the Office packet; fixtures table above).
+5. **PowerPoint 16 (Mac)**, by hand (22 Oct): opened `milleleaf-deck.content.pptx`
+   (the same bytes as `authored/milleleaf-deck.python-pptx.pptx`, `3806339a…1a2a`) and saved it as
+   `milleleaf-deck.powerpoint.pptx`. The re-save and the edit of DeckCraft's export are in the
+   fixtures table above.
 
 | File | SHA-256 | Size | Application (app.xml / meta.xml) |
 |---|---|---|---|
@@ -173,6 +206,7 @@ it is used as supplied, rendered from `brand/milleleaf-mark.svg` without croppin
 | `milleleaf-deck.deckcraft.pptx` | `8d21922e09a6f9a5f06f6eeed1686bad2c98c70c62fd6cbe6be3788636953843` | 98,298 | DeckCraft |
 | `milleleaf-impress-native.pptx` | `d64cafb7635ad86c2437e54c9fa725e361f52a94458125adfd0f350bc557c489` | 23,166 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-impress-native.odp` | `168100519d222f52bb430b0264f4c7593efcebbdd446359998825a1745f133c6` | 16,808 | LibreOffice/24.2.7.2 Linux |
+| `milleleaf-deck.powerpoint.pptx` | `c55c7f266f3154e3d4fb885920944908a53de29888550397a21cdfc92700762f` | 134,112 | Microsoft Macintosh PowerPoint 16.0000 |
 | `authored/milleleaf-deck.python-pptx.pptx` | `3806339a3b7e71c96a346d2cae7b9d9800022de7454494d1f1023ba9dacb1a2a` | 120,826 | python-pptx 1.0.2 (see above) |
 
 **Inventory (`milleleaf-deck.impress.pptx`):** 9 slides, each with speaker notes; 1 master and 11
@@ -204,13 +238,16 @@ number formats, formulas and a drop-down. Ours, under the repository's licence (
    pins, 8ffff19), in a confinement of its own: `--network none --cap-drop ALL --security-opt
    no-new-privileges --read-only`, the input mounted read-only (`authored/make_apps.sh`):
    `milleleaf-charts.gridcraft.xlsx`.
-4. Excel 16's save: pending (the Office packet, optional).
+4. **Excel 16 (Mac)**, by hand (22 Oct): opened `milleleaf-charts.content.xlsx` (the
+   same bytes as `authored/milleleaf-charts.openpyxl.xlsx`, `88783115…f22c2`) and saved it as
+   `milleleaf-charts.excel.xlsx`.
 
 | File | SHA-256 | Size | Application |
 |---|---|---|---|
 | `milleleaf-charts.calc.xlsx` | `7962b99efdbd474c5c9575b9be8a106f504677c4d9829133b7f2b398c86e37c0` | 16,157 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-charts.calc.ods` | `410339ad99fc20034ef56432cbf79f3ba539164bf75825c6bc81fef73de91364` | 38,483 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-charts.gridcraft.xlsx` | `ebcb2cc69a116658eb14fdda9f6725e3daaaf07613caac4908c392f95f225c68` | 11,750 | GridCraft |
+| `milleleaf-charts.excel.xlsx` | `687f16a5df093d51010b47ca87274d9a3d088f47ca17254c13231fedf740ace0` | 15,486 | Microsoft Macintosh Excel 16.0300 |
 | `authored/milleleaf-charts.openpyxl.xlsx` | `88783115b1baf295842edd70bbb9982abf143f5a9e920741d5420ae0130f22c2` | 10,491 | openpyxl 3.1.5 |
 
 Every authored file round-trips with every loss listed (`0 problem(s)`; inventories in
