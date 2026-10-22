@@ -90,6 +90,13 @@ pub fn from_xlsx(bytes: &[u8]) -> Result<gridcraft_model::Workbook, GridError> {
         .map_err(|e| GridError::Xlsx(e.to_string()))
 }
 
+/// Direct, data-only ODS reading. Formulas are cached values and unsupported features are warned.
+pub fn from_ods(bytes: &[u8]) -> Result<(gridcraft_model::Workbook, Vec<String>), GridError> {
+    gridcraft_xlsx::read_ods(bytes)
+        .map(|(wb, report)| (wb, report.warnings))
+        .map_err(|e| GridError::Xlsx(e.to_string()))
+}
+
 /// Recalculates every formula with GridCraft's calc engine.
 pub fn recalc(wb: &mut gridcraft_model::Workbook) {
     gridcraft_calc::Calc::new().recalc_all(wb);
