@@ -371,6 +371,86 @@ pub(crate) fn same_table(a: &Value, b: &Value) -> bool {
         })
 }
 
+/// File comparisons also allow the one-channel rounding that occurs when an editor turns
+/// a theme tint into RGB, and explicit black where a run used the default text colour.
+/// All table content and the existing layout/line comparisons still apply.
+pub(crate) fn same_file_table(a: &Value, b: &Value) -> bool {
+    fn settle_rgb(a: &mut Value, b: &Value) {
+        match (a, b) {
+            (Value::Object(a), Value::Object(b)) => {
+                for (key, value) in a {
+                    let Some(other) = b.get(key) else { continue };
+                    if key == "rgb" && ["r", "g", "b", "a"].iter().all(|c| {
+                        match (value.get(*c).and_then(Value::as_i64), other.get(*c).and_then(Value::as_i64)) {
+                            (Some(x), Some(y)) => (x - y).abs() <= 1,
+                            (None, None) => true,
+                            _ => false,
+                        }
+                    }) {
+                        *value = other.clone();
+                    } else {
+                        settle_rgb(value, other);
+                    }
+                }
+            }
+            (Value::Array(a), Value::Array(b)) => {
+                for (value, other) in a.iter_mut().zip(b) {
+                    settle_rgb(value, other);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn default_text(v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                if m.get("color").and_then(Value::as_str).is_some_and(|c| c.eq_ignore_ascii_case("#000000")) {
+                    m.remove("color");
+                }
+                m.values_mut().for_each(default_text);
+            }
+            Value::Array(a) => a.iter_mut().for_each(default_text),
+            _ => {}
+        }
+    }
+    let (mut a, mut b) = (a.clone(), b.clone());
+    default_text(&mut a);
+    default_text(&mut b);
+    settle_rgb(&mut a, &b);
+    same_table(&a, &b)
+}
+
+/// Whether two file table snapshots have the same formatting and layout, independent of
+/// cell text. Uses the same defaults and rounding rules as the file importer.
+pub fn same_table_formatting(a: &Value, b: &Value) -> bool {
+    fn without_text(table: &Value) -> Value {
+        let mut table = table.clone();
+        if let Some(rows) = table.get_mut("snapshot").and_then(Value::as_array_mut) {
+            for cell in rows.iter_mut().filter_map(Value::as_array_mut).flatten() {
+                let Some(paragraphs) = cell.get_mut("paragraphs").and_then(Value::as_array_mut) else { continue };
+                for paragraph in paragraphs {
+                    let Some(runs) = paragraph.get_mut("runs").and_then(Value::as_array_mut) else { continue };
+                    let mut formats = Vec::new();
+                    for run in runs.iter().filter_map(Value::as_object) {
+                        let mut format = run.clone();
+                        format.remove("text");
+                        format.remove("field");
+                        if formats.last() != Some(&format) {
+                            formats.push(format);
+                        }
+                    }
+                    *runs = formats.into_iter().map(|mut format| {
+                        format.insert("text".into(), json!("x"));
+                        Value::Object(format)
+                    }).collect();
+                }
+            }
+        }
+        table
+    }
+    same_file_table(&without_text(a), &without_text(b))
+}
+
 /// A `deck::table` with cells (not a linked table) as a native table: cell looks as they are,
 /// no style. `text` builds a cell's text from its paragraphs (or its plain text).
 pub(crate) fn table_shape(t: &Map<String, Value>, w: f64, h: f64, text: &mut dyn FnMut(&Map<String, Value>) -> TextBody) -> ShapeKind {
@@ -414,4 +494,38 @@ pub(crate) fn table_shape(t: &Map<String, Value>, w: f64, h: f64, text: &mut dyn
         })
         .collect();
     ShapeKind::Table(table)
+}
+
+#[cfg(test)]
+mod comparison_tests {
+    use super::*;
+
+    fn cell_table(text: &str, green: u8, text_color: Option<&str>) -> Value {
+        let mut look = Cell::new("");
+        look.fill = Some(Fill::solid(ColorRef::rgb(Rgba { r: 205, g: green, b: 240, a: 255 })));
+        let mut run = json!({ "text": text, "font": "Inter", "sizePt": 16.5 });
+        if let Some(color) = text_color {
+            run["color"] = json!(color);
+        }
+        json!({
+            "cols": [260.0], "rows": [51.0],
+            "snapshot": [[{ "look": look, "paragraphs": [{ "runs": [run], "align": "left" }] }]]
+        })
+    }
+
+    #[test]
+    fn file_table_resave_defaults_settle_but_content_and_colours_remain_changes() {
+        let original = cell_table("Singapore", 213, None);
+        let resaved = cell_table("Singapore", 212, Some("#000000"));
+        assert!(!same_table(&original, &resaved), "the native comparison remains unchanged");
+        assert!(same_file_table(&original, &resaved), "RGB rounding and explicit default black are a rewrite");
+        assert!(!same_file_table(&original, &cell_table("Perth", 212, Some("#000000"))), "text edits still count");
+        assert!(!same_file_table(&original, &cell_table("Singapore", 180, None)), "a different fill still counts");
+        assert!(!same_file_table(&original, &cell_table("Singapore", 213, Some("#ff0000"))), "a different text colour still counts");
+        assert!(same_table_formatting(&original, &cell_table("Perth", 212, Some("#000000"))), "a text edit does not add a formatting edit");
+        assert!(!same_table_formatting(&original, &cell_table("Singapore", 180, None)), "changed fill remains a formatting edit");
+        let mut changed_font = original.clone();
+        changed_font["snapshot"][0][0]["paragraphs"][0]["runs"][0]["font"] = json!("Arial");
+        assert!(!same_table_formatting(&original, &changed_font), "changed font remains a formatting edit");
+    }
 }

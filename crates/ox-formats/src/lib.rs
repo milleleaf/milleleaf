@@ -360,10 +360,13 @@ impl Status {
 
 /// LibreOffice: where it is and its version, or why it can't be used.
 pub fn libreoffice() -> Result<String, String> {
-    ox_odf::soffice_status().map(|p| match ox_odf::version(&p) {
+    #[cfg(feature = "native")]
+    { ox_odf::soffice_status().map(|p| match ox_odf::version(&p) {
         Some(v) => format!("{v} ({})", p.display()),
         None => p.display().to_string(),
-    })
+    }) }
+    #[cfg(not(feature = "native"))]
+    { Err("LibreOffice is not included in this browser build".into()) }
 }
 
 fn which(name: &str) -> Option<PathBuf> {
@@ -413,11 +416,20 @@ pub fn html2ox() -> Result<String, String> {
 }
 
 pub fn status(r: &Route) -> Status {
+    #[cfg(not(feature = "native"))]
+    if r.id.starts_with("wordcraft-") && r.ext != "docx" {
+        return Status::Unavailable { why: "additional WordCraft writers are not included in this browser build".into() };
+    }
     let res = match r.needs {
         Nothing => Ok("built in".to_string()),
-        LibreOffice => ox_odf::soffice_status()
-            .map(|p| format!("LibreOffice at {}", p.display()))
-            .map_err(|why| format!("LibreOffice {why}")),
+        LibreOffice => {
+            #[cfg(feature = "native")]
+            { ox_odf::soffice_status()
+                .map(|p| format!("LibreOffice at {}", p.display()))
+                .map_err(|why| format!("LibreOffice {why}")) }
+            #[cfg(not(feature = "native"))]
+            { libreoffice() }
+        },
         Node => html2ox(),
     };
     match res {
@@ -523,7 +535,10 @@ pub fn export(
     let bytes = match r.id {
         "wordcraft-docx" | "gridcraft-xlsx" | "deckcraft-pptx" => ooxml,
         id if id.starts_with("libreoffice-") => {
-            ox_odf::to_odf(&ooxml, r.ext).map_err(|e| FormatError::Failed(e.to_string()))?
+            #[cfg(feature = "native")]
+            { ox_odf::to_odf(&ooxml, r.ext).map_err(|e| FormatError::Failed(e.to_string()))? }
+            #[cfg(not(feature = "native"))]
+            { return Err(FormatError::Failed("LibreOffice is not included in this browser build".into())); }
         }
         id if id.starts_with("wordcraft-") => {
             let doc =
@@ -556,7 +571,10 @@ pub fn import(kind: Kind, ext: &str, bytes: Vec<u8>) -> Result<(Vec<u8>, Choice)
     let out = match r.id {
         "wordcraft-docx" | "gridcraft-xlsx" | "deckcraft-pptx" => bytes,
         id if id.starts_with("libreoffice-") => {
-            ox_odf::from_odf(&bytes, r.ext).map_err(|e| FormatError::Failed(e.to_string()))?
+            #[cfg(feature = "native")]
+            { ox_odf::from_odf(&bytes, r.ext).map_err(|e| FormatError::Failed(e.to_string()))? }
+            #[cfg(not(feature = "native"))]
+            { return Err(FormatError::Failed("LibreOffice is not included in this browser build".into())); }
         }
         id => return Err(FormatError::Failed(format!("route {id} has no importer"))),
     };

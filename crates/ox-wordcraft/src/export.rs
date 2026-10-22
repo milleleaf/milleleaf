@@ -516,8 +516,8 @@ pub fn export(node: &Composed, layers: &[String], assets: &std::path::Path) -> R
     export_with(node, layers, ox_core::PictureSource::Read(assets))
 }
 
-/// The export, or the importer's comparison export (stand-ins for pictures).
-pub(crate) fn export_with(node: &Composed, layers: &[String], assets: ox_core::PictureSource) -> Result<(Document, ExportReport), WordError> {
+/// [`export`], with pictures from `assets` (a folder, memory, or stand-ins).
+pub fn export_with(node: &Composed, layers: &[String], assets: ox_core::PictureSource) -> Result<(Document, ExportReport), WordError> {
     let mut pics = Pics { assets, media: Default::default() };
     let wd = obj(node, "word::document")
         .ok_or_else(|| WordError::NotADocument(node.path.clone()))?

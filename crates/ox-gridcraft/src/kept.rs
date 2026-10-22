@@ -211,9 +211,9 @@ pub fn keep_charts(layer: &mut ox_core::Layer, bytes: &[u8], pics: &mut crate::P
 /// kept or the changes can be made in that XML ([`patch`]), else `None` with a warning.
 pub(crate) fn original(c: &Value, ch: &Chart, assets: ox_core::PictureSource, at: &str, n: usize, warnings: &mut Vec<String>) -> Option<Vec<u8>> {
     let x = c.get("xml")?;
-    let ox_core::PictureSource::Read(root) = assets else { return None };
+    if matches!(assets, ox_core::PictureSource::StandIn(_)) { return None; }
     let blob = x.get("blob").and_then(Value::as_str)?;
-    let xml = match ox_core::read_blob(root, blob) {
+    let xml = match ox_core::picture_bytes(assets, blob) {
         Ok(b) => b,
         Err(e) => {
             warnings.push(format!("{at}: chart {n}'s own XML can't be read ({e}); GridCraft's is used"));

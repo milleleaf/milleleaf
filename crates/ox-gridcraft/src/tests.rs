@@ -555,6 +555,11 @@ fn an_unchanged_chart_exports_its_own_xml_and_a_changed_one_gridcrafts() {
         loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer: layer.clone() });
         let trees = Composer::new(&ox_core::compose::flatten(&loaded)).compose_all().expect("composes");
         let (out, r) = export(&node(&trees, "adopted-chart"), &root).expect("exports");
+        let (_, memory) = crate::export_with(
+            &node(&trees, "adopted-chart"), ox_core::PictureSource::Memory(&report.pictures),
+        ).expect("exports from memory");
+        assert_eq!(memory.kept_charts, r.kept_charts, "memory keeps the same chart XML as disk");
+        assert_eq!(memory.warnings, r.warnings);
         let bytes = crate::with_kept_charts(to_xlsx(&out).unwrap(), &r.kept_charts).unwrap();
         (xlsx_part(&bytes, "xl/charts/chart1.xml"), r.warnings)
     };

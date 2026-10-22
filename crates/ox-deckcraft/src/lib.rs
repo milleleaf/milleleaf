@@ -19,8 +19,9 @@ mod export;
 mod import;
 mod table;
 
-pub use export::{ExportReport, export};
-pub use import::{ImportReport, adopt, exported_revision, import, import_in};
+pub use export::{ExportReport, export, export_with};
+pub use table::same_table_formatting;
+pub use import::{ImportReport, adopt, adopt_for_comparison, exported_path, exported_revision, import, import_for_comparison, import_in};
 
 use sha2::{Digest, Sha256};
 

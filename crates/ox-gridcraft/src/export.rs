@@ -204,8 +204,8 @@ pub fn export(node: &Composed, assets: &std::path::Path) -> Result<(Workbook, Ex
     export_with(node, ox_core::PictureSource::Read(assets))
 }
 
-/// The export, or the importer's comparison export (stand-ins for pictures).
-pub(crate) fn export_with(node: &Composed, assets: ox_core::PictureSource) -> Result<(Workbook, ExportReport), GridError> {
+/// [`export`], with pictures from `assets` (a folder, memory, or stand-ins).
+pub fn export_with(node: &Composed, assets: ox_core::PictureSource) -> Result<(Workbook, ExportReport), GridError> {
     let gw = obj(node, "grid::workbook")
         .ok_or_else(|| GridError::NotAWorkbook(node.path.clone()))?
         .clone();

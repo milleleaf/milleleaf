@@ -355,9 +355,8 @@ pub fn export(deck: &Composed, assets: &Path) -> Result<(Presentation, ExportRep
     export_with(deck, ox_core::PictureSource::Read(assets))
 }
 
-/// [`export`], with where pictures' bytes come from (an importer's comparison export uses
-/// stand-ins, see [`ox_core::PictureSource`]).
-pub(crate) fn export_with(deck: &Composed, assets: ox_core::PictureSource) -> Result<(Presentation, ExportReport), DeckError> {
+/// [`export`], with pictures from `assets` (a folder, memory, or stand-ins).
+pub fn export_with(deck: &Composed, assets: ox_core::PictureSource) -> Result<(Presentation, ExportReport), DeckError> {
     let d = obj(deck, "deck::deck")
         .ok_or_else(|| DeckError::NotADeck(deck.path.clone()))?
         .clone();

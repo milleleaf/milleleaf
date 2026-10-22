@@ -1,0 +1,23 @@
+[package]
+name = "ox-web"
+description = "Milleleaf browser adoption, comparison, loss inventory and signed layers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ox-core.workspace = true
+ox-wordcraft = { path = "../ox-wordcraft", default-features = false }
+ox-gridcraft.workspace = true
+ox-deckcraft.workspace = true
+ox-formats = { path = "../ox-formats", default-features = false }
+ox-store = { path = "../ox-store", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen = "=0.2.129"
+# Browser randomness for the existing signing implementations.
+getrandom = { version = "=0.2.17", features = ["js"] }
+zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }

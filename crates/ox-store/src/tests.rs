@@ -30,6 +30,49 @@ impl Drop for TempDir {
     }
 }
 
+#[test]
+fn detached_signatures_agree_with_the_store() {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD as B64;
+    use crate::{check_signature, sign_hash};
+    let t = TempDir::new("detached-signatures");
+    let store = hello(&t);
+    let layer = layer("detached", vec![(TOTAL, "office::data::value", json!({"value": 12}))]);
+    let (hash, _) = store.put_layer(&layer).unwrap();
+    let key = KeyPair::generate_demo("Demo editor").unwrap();
+    let known: Vec<_> = key.publics().into_iter().map(|p| (key.name.clone(), p)).collect();
+    assert_eq!(known.len(), 2, "demo keys have only Ed25519 and ML-DSA-65");
+    let signatures = sign_hash(&hash, &key, false, "2026-10-22T10:00:00Z").unwrap();
+    assert_eq!(signatures.len(), 2);
+    for signature in &signatures {
+        let info = check_signature(signature, &hash, &known);
+        assert!(info.valid);
+        assert_eq!(info.known_as.as_deref(), Some("Demo editor"));
+        let unknown = check_signature(signature, &hash, &[]);
+        assert!(unknown.valid);
+        assert!(unknown.known_as.is_none());
+        assert!(!check_signature(signature, &"0".repeat(64), &known).valid);
+        let mut damaged = signature.clone();
+        let mut bytes = B64.decode(&damaged.signature).unwrap();
+        bytes[0] ^= 1;
+        damaged.signature = B64.encode(bytes);
+        assert!(!check_signature(&damaged, &hash, &known).valid);
+    }
+    for file in store.sign(&hash, &key, false).unwrap() {
+        let signature = serde_json::from_slice(&fs::read(file).unwrap()).unwrap();
+        assert!(check_signature(&signature, &hash, &known).valid);
+    }
+    let full_key = KeyPair::generate("archive").unwrap();
+    let archive = sign_hash(&hash, &full_key, true, "2026-10-22T10:00:00Z").unwrap();
+    assert_eq!(archive.len(), 3);
+    assert!(archive.iter().all(|s| check_signature(s, &hash, &[]).valid));
+    let mut future = signatures[0].clone();
+    future.alg = Some("future-algorithm".into());
+    let info = check_signature(&future, &hash, &known);
+    assert!(!info.valid);
+    assert!(info.problem.unwrap().contains("unknown algorithm"));
+}
+
 fn example(file: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../examples/hello-table")
