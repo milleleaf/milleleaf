@@ -535,14 +535,15 @@ fn a_merge_made_in_word_on_an_existing_table_comes_back() {
     assert_eq!(wt["merges"], json!([{ "row": 1, "col": 0, "rows": 2, "cols": 1 }]));
 }
 
-/// The real board report, adopted the way `ox adopt` does it, then imported from files Word 16.114
-/// and LibreOffice 24.2 saved from Milleleaf's export (`examples/real/fixtures`).
-fn board_report_node() -> Composed {
+/// The real paper ("10 simple rules", examples/real/paper.docx), adopted the way `ox adopt`
+/// does it, then imported from files Word and LibreOffice 24.2 saved from Milleleaf's export
+/// (`examples/real/fixtures`).
+fn paper_node() -> Composed {
     let real = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real");
-    let bytes = std::fs::read(real.join("board-report.docx")).unwrap();
+    let bytes = std::fs::read(real.join("paper.docx")).unwrap();
     // `ox adopt`'s path for this file: stable_id("adopt|" + its SHA-256).
-    let root = "f5bb6935-f60f-5b56-96e8-6ed886cc9246";
-    let (layer, _) = crate::adopt(&from_docx(&bytes).unwrap(), root, "board-report", header()).expect("adopts");
+    let root = "239ca6b3-1319-5dda-b48e-45b32b0abb90";
+    let (layer, _) = crate::adopt(&from_docx(&bytes).unwrap(), root, "paper", header()).expect("adopts");
     let mut loaded = ox_core::load_stack(&example("../../schema/office.ox.json")).expect("schema");
     loaded.push(ox_core::LoadedLayer { source: PathBuf::from("memory"), layer });
     let flat = ox_core::compose::flatten(&loaded);
@@ -555,53 +556,57 @@ fn real_fixture(name: &str) -> Document {
     from_docx(&std::fs::read(p).expect("fixture")).expect("reads")
 }
 
-#[test]
-fn a_blank_line_typed_in_word_comes_back_and_word_resaves_stay_clean() {
-    let node = board_report_node();
-    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
-    assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
-
-    // Word: Enter at the end of paragraph 3. One new, empty paragraph; nothing else changes.
-    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-blank-line.docx"), header()).expect("imports");
-    assert_eq!((report.added.len(), report.changed.len(), report.removed.len()), (1, 0, 0), "{report:?}");
-    let added = layer.data.iter().find(|n| n.path == report.added[0]).expect("new node");
-    let runs = added.attributes["word::paragraph"]["runs"].as_array().cloned().unwrap_or_default();
-    assert!(runs.iter().all(|r| r["text"].as_str().is_none_or(|t| t.trim().is_empty())), "{added:?}");
-
-    // LibreOffice drops the tag of an empty paragraph: it is matched by place, as a best guess,
-    // not reported as one removed and one added. (Its re-save still differs in list numbers,
-    // border colours, tabs and table borders: known, see the plan.)
-    let (_, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
-    assert_eq!((report.added.len(), report.removed.len()), (0, 0), "{report:?}");
-    assert!(report.matches.iter().any(|m| m.by == "an empty paragraph in the same place"), "{:?}", report.matches);
+/// A fixture only Microsoft Office can make (the Office packet): `None`, said out loud, until it's there.
+fn office_fixture(name: &str) -> Option<Document> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
+    if !p.exists() {
+        eprintln!("PENDING: examples/real/fixtures/{name} (a Microsoft Office re-save) isn't there yet; that part isn't checked");
+        return None;
+    }
+    Some(from_docx(&std::fs::read(p).expect("fixture")).expect("reads"))
 }
 
 #[test]
-fn the_report_logo_comes_in_and_a_swapped_one_is_a_change() {
-    let node = board_report_node();
-    let logo = |v: &serde_json::Value| -> Option<serde_json::Value> {
-        v["headers"].as_object()?.values().flat_map(|ps| ps.as_array().cloned().unwrap_or_default())
-            .flat_map(|p| p["runs"].as_array().cloned().unwrap_or_default())
-            .find_map(|r| r.get("picture").cloned())
+fn a_blank_line_typed_in_word_comes_back_and_resaves_stay_clean() {
+    let node = paper_node();
+    // LibreOffice 24.2's re-save is no change.
+    let (layer, report) = import(&node, &real_fixture("paper.libreoffice-resaved.docx"), header()).expect("imports");
+    assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
+
+    if let Some(doc) = office_fixture("paper.msoffice-resaved.docx") {
+        let (layer, report) = import(&node, &doc, header()).expect("imports");
+        assert!(report.is_empty() && layer.data.is_empty(), "{report:?}");
+    }
+    // Word: Enter at the end of paragraph 3. One new, empty paragraph; nothing else changes.
+    if let Some(doc) = office_fixture("paper.msoffice-blank-line.docx") {
+        let (layer, report) = import(&node, &doc, header()).expect("imports");
+        assert_eq!((report.added.len(), report.changed.len(), report.removed.len()), (1, 0, 0), "{report:?}");
+        let added = layer.data.iter().find(|n| n.path == report.added[0]).expect("new node");
+        let runs = added.attributes["word::paragraph"]["runs"].as_array().cloned().unwrap_or_default();
+        assert!(runs.iter().all(|r| r["text"].as_str().is_none_or(|t| t.trim().is_empty())), "{added:?}");
+    }
+}
+
+#[test]
+fn the_papers_figure_comes_in_and_a_swapped_one_is_a_change() {
+    let node = paper_node();
+    let figure = |v: &serde_json::Value| -> Option<serde_json::Value> {
+        v["runs"].as_array()?.iter().find_map(|r| r.get("picture").cloned())
     };
-    // Ofsted's logo floats in the first page's header, in front of the text.
-    let pic = logo(&node.attributes["word::document"]).expect("the header logo");
-    assert_eq!(pic["float"]["wrap"], json!("inFrontOfText"), "{pic}");
-    assert!(pic["blob"].as_str().unwrap().starts_with("sha256-"));
+    // Figure 1 (the authors' table of identifier examples) sits in a body paragraph.
+    let holder = node.children.iter().find(|c| c.attributes.get("word::paragraph").and_then(figure).is_some()).expect("the figure");
+    let pic = figure(&holder.attributes["word::paragraph"]).unwrap();
+    assert!(pic["blob"].as_str().unwrap().starts_with("sha256-"), "{pic}");
 
-    // LibreOffice's re-save keeps it.
-    let (layer, report) = import(&node, &real_fixture("board-report.libreoffice-resaved.docx"), header()).expect("imports");
-    let doc_changed = layer.data.iter().find(|n| n.path == node.path).and_then(|n| logo(&n.attributes["word::document"]));
-    assert!(doc_changed.is_none(), "LibreOffice changed the logo: {doc_changed:?} {:?}", report.warnings);
-
-    // Someone swaps the picture in Word.
-    let mut doc = real_fixture("board-report.msoffice-resaved.docx");
-    let swapped = b"\xff\xd8\xffnot really a jpeg".to_vec();
+    // Someone swaps the picture (in LibreOffice's re-save): that paragraph changes, to the new
+    // picture by its hash.
+    let mut doc = real_fixture("paper.libreoffice-resaved.docx");
+    let swapped = b"\x89PNG\r\n\x1a\nnot really a png".to_vec();
     let key = doc.media.keys().next().expect("a picture").clone();
     doc.media.insert(key, Arc::new(swapped.clone()));
     let (layer, report) = import(&node, &doc, header()).expect("imports");
-    assert_eq!(report.changed, vec![node.path.clone()], "{:?}", report.warnings);
-    let now = logo(&layer.data[0].attributes["word::document"]).expect("the new logo");
+    assert_eq!(report.changed, vec![holder.path.clone()], "{:?}", report.warnings);
+    let now = figure(&layer.data[0].attributes["word::paragraph"]).expect("the new figure");
     let blob = ox_core::integrity_of(&swapped);
     assert_eq!(now["blob"], json!(blob));
     assert_eq!(report.pictures[&blob].1, swapped);
@@ -627,9 +632,9 @@ fn a_resave_is_no_change_against_a_node_from_the_store() {
         n.attributes.values_mut().for_each(as_stored);
         n.children.iter_mut().for_each(node_as_stored);
     }
-    let mut node = board_report_node();
+    let mut node = paper_node();
     node_as_stored(&mut node);
-    let (layer, report) = import(&node, &real_fixture("board-report.msoffice-resaved.docx"), header()).expect("imports");
+    let (layer, report) = import(&node, &real_fixture("paper.libreoffice-resaved.docx"), header()).expect("imports");
     assert!(report.is_empty() && layer.data.is_empty(), "{:?}", report.changed);
 }
 
