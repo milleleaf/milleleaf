@@ -1,0 +1,4 @@
+Contact: mailto:security@milleleaf.com
+Expires: 2027-10-22T00:00:00Z
+Preferred-Languages: en
+Canonical: https://milleleaf.com/.well-known/security.txt
