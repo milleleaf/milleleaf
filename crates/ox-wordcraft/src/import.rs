@@ -712,7 +712,7 @@ fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> S
                                 cm.insert("para".into(), f);
                             }
                             if !p.text.is_empty() {
-                                if let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change"]) {
+                                if let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change", "link", "ins", "del"]) {
                                     cm.insert("chr".into(), ch);
                                 }
                             }

@@ -376,6 +376,9 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
             if l == b"tc" {
                 tc_at.push(depth);
             }
+            if l == b"hyperlink" && !tc_at.is_empty() {
+                *tags.entry("hyperlinks in table cells").or_default() += 1;
+            }
             if l == b"shd"
                 && tc_at.last().map(|d| d + 2) == Some(depth)
                 && !matches!(attr(e, b"fill").as_deref(), None | Some("auto" | "FFFFFF" | "ffffff"))
@@ -542,6 +545,7 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
     c.insert("rows in nested tables", g("rows in nested tables"));
     c.insert("cells in nested tables", g("cells in nested tables"));
     c.insert("hyperlinks", g("hyperlink"));
+    c.insert("hyperlinks in table cells", g("hyperlinks in table cells"));
     c.insert("fields", g("fldSimple") + g("fldChar begin"));
     c.insert("text boxes", g("txbxContent"));
     c.insert("bold text chars", norm_len(&bold_text));
@@ -1006,7 +1010,7 @@ fn carried(kind: &str) -> &'static [(&'static str, Option<&'static str>)] {
             ("header/footer text chars", None),
             ("footnote separator lines", None),
             ("media files", Some("pictures in the text, headers and footers are kept; embedded objects and other media aren't")),
-            ("hyperlinks", Some("web and mail links on text are kept; a link to a bookmark keeps its target, but bookmarks aren't carried")),
+            ("hyperlinks", Some("web and mail links on text are kept (not in table cells, counted on their own); a link to a bookmark keeps its target, but bookmarks aren't carried")),
         ],
         "xlsx" => &[
             ("sheets", None),

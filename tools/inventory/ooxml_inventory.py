@@ -148,6 +148,7 @@ def docx(z):
         "tracked changes (insertions and deletions)": sum(count(body, W + t) for t in ("ins", "del", "moveFrom", "moveTo")),
         "sections": count(body, W + "sectPr"),
         "hyperlinks": count(body, W + "hyperlink"),
+        "hyperlinks in table cells": len({id(h) for r in body for tc in r.iter(W + "tc") for h in tc.iter(W + "hyperlink")}),
         # A complex field is one fldChar begin, however many instrText pieces its instruction is split into.
         "fields": count(body, W + "fldSimple") + sum(1 for r in body for e in r.iter(W + "fldChar") if e.get(W + "fldCharType") == "begin"),
         "text boxes": count(body, W + "txbxContent"),

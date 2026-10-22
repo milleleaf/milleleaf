@@ -840,3 +840,25 @@ fn a_field_kept_as_a_range_stays_a_field() {
     assert!(instrs.iter().any(|i| i.contains("REF _Ref153888714")), "{instrs:?}");
     assert_eq!(p.plain_text(), "see Annex A below");
 }
+
+#[test]
+fn a_link_starting_a_cell_isnt_spread_over_the_cell() {
+    // The paper's version tables: a cell starting with a linked accession number ("P12345.1"),
+    // then plain text. The cell's look took its first character's formatting, link included, so
+    // the export linked the whole cell. Links in cells aren't carried (a listed loss, "hyperlinks
+    // in table cells"); none is made up either.
+    use wordcraft_doc::{Cell, Table};
+    let mut doc = Document::new();
+    doc.body.clear();
+    let mut t = Table::new(2, 1, 400.0);
+    t.rows[0].cells[0] = Cell::with_text("Example");
+    let mut p = Paragraph::with_text("P12345.1", CharProps { link: Some("http://www.uniprot.org/uniprot/P12345.1".into()), ..CharProps::default() });
+    p.append(Paragraph::with_text(" to P12345", CharProps::default()));
+    t.rows[1].cells[0].blocks = vec![wordcraft_doc::para_block(p)];
+    doc.body.push(Arc::new(Block::Table(t)));
+    let out = adopt_and_export(&doc);
+    let cell = &first_table(&out).rows[1].cells[0];
+    let p = cell.blocks.iter().find_map(|b| b.as_para()).unwrap();
+    let at = p.text.find(" to").unwrap();
+    assert!(p.props_of_char(at).link.is_none(), "{p:?}");
+}
