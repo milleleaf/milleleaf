@@ -3,6 +3,9 @@ target/
 node_modules/
 web/demo/pkg/
 web/demo/_shots/
+web/flow/pkg/
+web/flow/_shots/
+web/flow/_office/
 __pycache__/
 *.pyc
 .DS_Store

@@ -17,6 +17,7 @@ const MAX_PARTS: usize = 20_000;
 
 type Pictures = BTreeMap<String, (String, Vec<u8>)>;
 mod describe;
+pub mod flow;
 
 struct Adopted {
     root: String,
