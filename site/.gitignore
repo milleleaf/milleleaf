@@ -4,3 +4,4 @@ dist/
 _shots/
 _out/
 src/routeTree.gen.ts
+.cloudflare/
