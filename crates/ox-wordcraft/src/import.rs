@@ -292,6 +292,40 @@ fn unmark(runs: &[Value]) -> Vec<Value> {
     canonical(&runs)
 }
 
+/// The colour a paragraph's style gives its text (`#rrggbb`): the document defaults, then the
+/// style and each style it's based on.
+fn style_colour(doc: &Document, p: &Paragraph) -> Option<String> {
+    let mut chr = doc.styles.default_chr.clone();
+    let pstyle = p.props.style.clone().or_else(|| doc.styles.find("Normal").map(|s| s.id.clone()));
+    for st in pstyle.as_deref().map(|id| doc.styles.chain(id)).unwrap_or_default() {
+        chr.overlay(&st.chr);
+    }
+    chr.color.as_ref().and_then(hex)
+}
+
+/// Runs without a colour their paragraph's style already gives them, in canonical form: a reader
+/// sees the same text. Word 16 drops such a run colour when it saves. Seen in paper.docx's
+/// paragraph "…used with any version: UniProt:P12345.3 → http://www.uniprot.org/uniprot/P12345.3.":
+/// its style LO-normal sets `<w:color w:val="000000"/>`, Milleleaf's export gives five of its runs
+/// the same `<w:color w:val="000000"/>`, and Word's re-save writes those runs with no `w:color`
+/// (the style unchanged); nobody touched them.
+fn without_style_colour(runs: &[Value], colour: Option<&str>) -> Vec<Value> {
+    let Some(colour) = colour else { return runs.to_vec() };
+    let runs: Vec<Value> = runs
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if let Some(o) = r.as_object_mut()
+                && o.get("color").and_then(Value::as_str).is_some_and(|c| c.eq_ignore_ascii_case(colour))
+            {
+                o.remove("color");
+            }
+            r
+        })
+        .collect();
+    canonical(&runs)
+}
+
 /// Links a file shows only as empty HYPERLINK fields (see [`comparable`]).
 fn emptied_links(runs: &[Value]) -> BTreeSet<String> {
     runs.iter()
@@ -1536,6 +1570,8 @@ fn import_into(
                             new_c = runs;
                             spread = n;
                         }
+                        let styled = style_colour(edited, p);
+                        let (old_c, new_c) = (without_style_colour(&old_c, styled.as_deref()), without_style_colour(&new_c, styled.as_deref()));
                         let same_runs = ox_core::same(&Value::Array(old_c), &Value::Array(new_c));
                         if same_runs {
                             spread_links += spread;

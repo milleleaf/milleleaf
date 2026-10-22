@@ -621,6 +621,31 @@ fn word_laying_out_an_autofit_table_again_is_no_change_and_a_dragged_column_is()
 }
 
 #[test]
+fn a_run_colour_its_style_already_gives_is_no_change_and_another_colour_is() {
+    use wordcraft_doc::TextColor;
+    let node = paper_node();
+    let black = Some(TextColor::Rgb(wordcraft_doc::Rgb(0, 0, 0)));
+    fn para(d: &mut Document) -> &mut Paragraph {
+        d.body.iter_mut().filter_map(|b| match Arc::make_mut(b) {
+            Block::Para(p) => Some(p),
+            _ => None,
+        }).find(|p| p.text.contains("UniProt:P12345.3")).expect("the paragraph")
+    }
+    // Its style (LO-normal) sets black text; the export gives five of its runs black too. Word's
+    // re-save writes those runs with no colour.
+    let mut doc = paper_export(&node);
+    let p = para(&mut doc);
+    assert_eq!(p.runs.iter().filter(|r| r.props.color == black).count(), 5);
+    p.runs.iter_mut().filter(|r| r.props.color == black).for_each(|r| r.props.color = None);
+    let (layer, report) = import(&node, &doc, header()).expect("imports");
+    assert!(report.changed.is_empty() && layer.data.is_empty(), "{report:?}");
+    // A colour the style doesn't give is still a change.
+    para(&mut doc).runs.iter_mut().for_each(|r| if r.props.color.is_none() { r.props.color = Some(TextColor::Rgb(wordcraft_doc::Rgb(200, 0, 0))) });
+    let (_, report) = import(&node, &doc, header()).expect("imports");
+    assert_eq!(report.changed.len(), 1, "{report:?}");
+}
+
+#[test]
 fn the_papers_figure_comes_in_and_a_swapped_one_is_a_change() {
     let node = paper_node();
     let figure = |v: &serde_json::Value| -> Option<serde_json::Value> {
