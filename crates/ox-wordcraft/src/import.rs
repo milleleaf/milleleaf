@@ -1353,6 +1353,21 @@ fn import_into(
     // Where the last matched block sits among the original's children.
     let child_idx: HashMap<&str, usize> = node.children.iter().enumerate().map(|(i, c)| (c.path.as_str(), i)).collect();
     let mut last_seen: Option<usize> = None;
+    // A new block's path: from where it is and what it holds, unless a node has that path already.
+    // An adopted document's blocks got theirs the same way, so a block typed where the adopted one
+    // had a block with the same content would take that block's path: one node for two blocks. Seen
+    // on Word 16's blank line in the paper: the new empty paragraph sits at body index 6, as the
+    // adopted empty paragraph after "Throughout this document…" did, and took its path.
+    let new_path = |base: String, nodes: &[Node]| {
+        let taken = |p: &str| by_path.contains_key(p) || nodes.iter().any(|n| n.path == p);
+        let mut path = stable_id(&base);
+        let mut i = 2;
+        while taken(&path) {
+            path = stable_id(&format!("{base}|{i}"));
+            i += 1;
+        }
+        path
+    };
     let tags_in_file: BTreeSet<String> = edited
         .body
         .iter()
@@ -1470,7 +1485,7 @@ fn import_into(
                 let para_path = match existing {
                     Some(c) => c.path.clone(),
                     None => tag.clone().filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t))
-                        .unwrap_or_else(|| stable_id(&format!("{}|word-edit|{}|{}", node.path, index, ex.text))),
+                        .unwrap_or_else(|| new_path(format!("{}|word-edit|{}|{}", node.path, index, ex.text), &nodes)),
                 };
                 // Resolve field runs to child names, adding a child when a field was copied here.
                 let mut children: BTreeMap<String, Option<String>> = BTreeMap::new();
@@ -1732,12 +1747,12 @@ fn import_into(
                         }
                     }
                     None => {
-                        let path = tag.filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t)).unwrap_or_else(|| stable_id(&format!(
+                        let path = tag.filter(|t| adopting && file_comparison && !nodes.iter().any(|n| &n.path == t)).unwrap_or_else(|| new_path(format!(
                             "{}|word-edit-table|{}|{:?}",
                             node.path,
                             index,
                             grid.first()
-                        )));
+                        ), &nodes));
                         let header = grid.first().cloned().unwrap_or_default();
                         let mut wt = table_look(t);
                         let mut list_of = |num| {
