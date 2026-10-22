@@ -12,6 +12,9 @@ const header = take(/<header class="site-header[\s\S]*?<\/header>/, 'header')
   .replace(/ aria-current="page"/g, '')
 const footer = take(/<footer class="site-footer[\s\S]*?<\/footer>/, 'footer')
 
+// Both demos are reached from the site's Demo link; this switcher links them to each other.
+const switcher = name => `<nav class="demo-switch wrap" aria-label="Demos">${[['flow', 'Make it once: linked content'], ['demo', 'Follow the file: compare versions']]
+  .map(([n, label]) => `<a href="/${n}/"${n === name ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
 const apps = {
   demo: ['index.html', 'demo.css', 'demo.js', 'worker.js', 'README.md', 'pkg'],
   flow: ['index.html', 'flow.css', 'flow.js', 'worker.js', 'README.md', 'pkg'],
@@ -24,7 +27,7 @@ for (const [name, files] of Object.entries(apps)) {
   const before = html
   html = html
     .replace(/<link rel="stylesheet"/, '<link rel="stylesheet" href="/styles.css"><link rel="stylesheet"')
-    .replace(/<header class="masthead">[\s\S]*?<\/header>/, header.replace(/(href="\/demo\/?")/, name === 'demo' ? '$1 aria-current="page"' : '$1'))
+    .replace(/<header class="masthead">[\s\S]*?<\/header>/, header.replaceAll('href="/flow/"', 'href="/flow/" aria-current="page"') + switcher(name))
     .replace(/<footer[ >][\s\S]*?<\/footer>/, footer)
   // Demo B has no dark design yet; pin the site's light theme so the site's dark colours don't reach it.
   if (name === 'flow') html = html.replace('<html lang="en">', '<html lang="en" data-theme="light">')

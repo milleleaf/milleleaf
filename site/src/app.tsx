@@ -5,7 +5,7 @@ import { pages } from './content'
 import { DatasetTables } from './dataset-tables'
 import { Comparison, ContentFlow } from './hero'
 
-const nav = [['Demo', '/demo/'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['GitHub', 'https://github.com/milleleaf']]
+const nav = [['Demo', '/flow/'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['GitHub', 'https://github.com/milleleaf']]
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 function Logo() {

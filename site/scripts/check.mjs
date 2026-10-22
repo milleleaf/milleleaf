@@ -185,6 +185,8 @@ try {
     assert.equal(await page.locator('.site-header').count(), 1, `Site header on ${path}`)
     assert.equal(await page.locator('.site-footer').count(), 1, `Site footer on ${path}`)
     assert.equal(await page.locator('iframe:not([sandbox])').count(), 0, `No embedding frame on ${path}`)
+    assert.equal(await page.locator('.demo-switch a').count(), 2, `Demo switcher on ${path}`)
+    assert.equal(await page.locator('.demo-switch a[aria-current=page]').getAttribute('href'), path, `Switcher marks ${path}`)
     if (path === '/demo/') assert.equal(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'), demoCsp)
     console.log(`PASS demo page ${path}: engine ready, site header and footer`)
   }
