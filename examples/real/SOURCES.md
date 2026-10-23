@@ -123,13 +123,15 @@ Editor re-saves **of Milleleaf's export** of each real file (`tools/inventory/ro
 adopts the file and exports it again), and real edits made in the editors. The tests import them
 against the adopted file: a re-save must be no change, an edit exactly that edit.
 
-**Converted, not as saved (23 Oct 2026):** these files, `milleleaf-deck.deckcraft.pptx` and the
-`examples/hello-table/fixtures` files made before the rename to Milleleaf had their Milleleaf
-markers rewritten from the pre-release `ox` names (`ox:` tags, `ox_` names, `oxrevision=`, layer
-ids `milleleaf/…`) and their recorded revisions recomputed. Nothing else in them changed, apart from the folder path Excel records
-(`x15ac:absPath`), trimmed to `~/` in the two `lca-model.msoffice-*` files and `milleleaf-charts.excel.xlsx`. They
-are to be replaced by fresh saves of new exports; until then the hashes below are of the converted
-files.
+**Re-made after the rename to Milleleaf (23 Oct 2026):** the LibreOffice re-saves and
+`milleleaf-deck.deckcraft.pptx` were made again from new exports by
+`examples/hello-table/fixtures/make/make.sh` (on the box, LibreOffice 24.2.7.2). **The Microsoft
+Office files are converted, not as saved:** their Milleleaf markers were rewritten from the
+pre-release `ox` names (`ox:` tags, `ox_` names, `oxrevision=`, layer ids `milleleaf/…`) and their
+recorded revisions recomputed; nothing else changed, apart from the folder path Excel records
+(`x15ac:absPath`), trimmed to `~/` in the two `lca-model.msoffice-*` files and
+`milleleaf-charts.excel.xlsx`. They are to be replaced by fresh saves; until then the hashes below
+are of the converted files.
 
 | File | Made by | How |
 |---|---|---|
@@ -149,7 +151,7 @@ step 18 shows those lines). All six are there since 22 Oct.
 **The Microsoft Office files (22 Oct 2026):** the maintainer made them on the Mac from the packet the box
 prepared (`<box-data>/real-swap/packet/README.txt` has the steps and the inputs' SHA-256:
 `paper.reexport.docx` `45a4eddf…bbb34`, `lca-model.reexport.xlsx` `ecbde260…5ff0a`,
-`milleleaf-deck.reexport.pptx` `924035f8…299d1`, the last being `milleleaf-deck.deckcraft.pptx`),
+`milleleaf-deck.reexport.pptx` `9ed9c7ea…3d478`, the last being `milleleaf-deck.deckcraft.pptx`),
 changing nothing but what each step says. Application and version are from each file's
 `docProps/app.xml`.
 
@@ -214,7 +216,7 @@ it is used as supplied, rendered from `brand/milleleaf-mark.svg` without croppin
 |---|---|---|---|
 | `milleleaf-deck.impress.pptx` | `7ea91ae5bceb6d76460a5671721cdf6b5d401eb6b00b7b8f95c3a6d6d517b4b1` | 130,606 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-deck.impress.odp` | `3350611b064759bf165c4fff3e1de5fe99c5e724169a32637247cae8f3923f6a` | 105,776 | LibreOffice/24.2.7.2 Linux |
-| `milleleaf-deck.deckcraft.pptx` | `924035f8cf358bdcd605569098f691562dd6b8853f2b2959fd4abffce67299d1` | 98,059 | DeckCraft |
+| `milleleaf-deck.deckcraft.pptx` | `9ed9c7ea3e7c82dce878d02752da747e13c34d362b6906368056bd544a53d478` | 98,304 | DeckCraft |
 | `milleleaf-impress-native.pptx` | `d64cafb7635ad86c2437e54c9fa725e361f52a94458125adfd0f350bc557c489` | 23,166 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-impress-native.odp` | `168100519d222f52bb430b0264f4c7593efcebbdd446359998825a1745f133c6` | 16,808 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-deck.powerpoint.pptx` | `03032fb5c82070224ac311aac1da0b1adb605ea45937fcf619a7ed42db987042` | 136,741 | Microsoft Macintosh PowerPoint 16.0000 |

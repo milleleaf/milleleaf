@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="Edits" script:language="StarBasic">
+REM The LibreOffice edits of Hello Table's exports, made in LibreOffice itself by this macro (run
+REM headless by make.sh). Each file is saved as OOXML and as ODF, the same edits in both.
+REM FX_IN holds report.docx, finance.xlsx and deck.pptx; results go to FX_OUT.
+
+Function Prop(n As String, v) As com.sun.star.beans.PropertyValue
+	Dim p As New com.sun.star.beans.PropertyValue
+	p.Name = n
+	p.Value = v
+	Prop = p
+End Function
+
+Function LoadDoc(path As String)
+	LoadDoc = StarDesktop.loadComponentFromURL(ConvertToURL(path), &quot;_blank&quot;, 0, Array(Prop(&quot;Hidden&quot;, True)))
+End Function
+
+Sub Save(oDoc, path As String, filter As String)
+	oDoc.storeToURL(ConvertToURL(path), Array(Prop(&quot;FilterName&quot;, filter)))
+End Sub
+
+Sub ReplaceOnce(oDoc, a As String, b As String)
+	Dim d
+	d = oDoc.createReplaceDescriptor()
+	d.SearchString = a
+	d.ReplaceString = b
+	If oDoc.replaceAll(d) &lt;&gt; 1 Then Error 1
+End Sub
+
+Function Shape(oPage, name As String)
+	Dim i
+	For i = 0 To oPage.getCount() - 1
+		If oPage.getByIndex(i).Name = name Then
+			Shape = oPage.getByIndex(i)
+			Exit Function
+		End If
+	Next
+	Error 1
+End Function
+
+REM Word: summary reworded, $999 typed over Hong Kong in the linked table (LibreOffice doesn&apos;t
+REM enforce the lock), an italic paragraph added at the end.
+Sub Report(inDir As String, outDir As String)
+	Dim oDoc, oText, oCur
+	oDoc = LoadDoc(inDir &amp; &quot;/report.docx&quot;)
+	ReplaceOnce(oDoc, &quot;Total revenue for the quarter&quot;, &quot;Group revenue for the quarter&quot;)
+	ReplaceOnce(oDoc, &quot;$541,500&quot;, &quot;$999&quot;)
+	oText = oDoc.getText()
+	oCur = oText.createTextCursor()
+	oCur.gotoEnd(False)
+	oText.insertControlCharacter(oCur, com.sun.star.text.ControlCharacter.PARAGRAPH_BREAK, False)
+	oCur.ParaStyleName = &quot;Standard&quot;
+	oCur.CharPosture = com.sun.star.awt.FontSlant.ITALIC
+	oText.insertString(oCur, &quot;Prepared for the October board meeting.&quot;, False)
+	Save(oDoc, outDir &amp; &quot;/report.libreoffice-edited.docx&quot;, &quot;MS Word 2007 XML&quot;)
+	Save(oDoc, outDir &amp; &quot;/report.libreoffice-edited.odt&quot;, &quot;writer8&quot;)
+	oDoc.close(True)
+End Sub
+
+REM Excel: sheet renamed, a Perth row inserted inside the table, Singapore restated.
+Sub Finance(inDir As String, outDir As String)
+	Dim oDoc, oSheet
+	oDoc = LoadDoc(inDir &amp; &quot;/finance.xlsx&quot;)
+	oSheet = oDoc.getSheets().getByIndex(0)
+	oSheet.setName(&quot;Q3 2026&quot;)
+	oSheet.getRows().insertByIndex(3, 1)
+	oSheet.getCellRangeByName(&quot;A4&quot;).setString(&quot;Perth&quot;)
+	oSheet.getCellRangeByName(&quot;B4&quot;).setValue(120000)
+	oSheet.getCellRangeByName(&quot;B5&quot;).setValue(305250)
+	oDoc.calculateAll()
+	Save(oDoc, outDir &amp; &quot;/finance.libreoffice-edited.xlsx&quot;, &quot;Calc MS Excel 2007 XML&quot;)
+	Save(oDoc, outDir &amp; &quot;/finance.libreoffice-edited.ods&quot;, &quot;calc8&quot;)
+	oDoc.close(True)
+End Sub
+
+REM PowerPoint: title moved 1 cm down, accent bar deleted, notes rewritten, summary reworded
+REM around its live numbers, $999 typed in the linked table, a bullet extended, a text box added.
+Sub Deck(inDir As String, outDir As String)
+	Dim oDoc, oPages, p1, p2, p3, s, pos, c, e, para, size As New com.sun.star.awt.Size, at As New com.sun.star.awt.Point
+	oDoc = LoadDoc(inDir &amp; &quot;/deck.pptx&quot;)
+	oPages = oDoc.getDrawPages()
+	p1 = oPages.getByIndex(0) : p2 = oPages.getByIndex(1) : p3 = oPages.getByIndex(2)
+
+	s = Shape(p1, &quot;mleaf:79cf7543-79e8-551e-992b-1899612ea818&quot;)
+	pos = s.getPosition() : pos.Y = pos.Y + 1000 : s.setPosition(pos)
+	p1.remove(Shape(p1, &quot;mleaf:ed7bca33-ef98-5495-a223-3046476144b1&quot;))
+	s = p1.getNotesPage().getByIndex(1)
+	If InStr(s.getString(), &quot;Open with the headline&quot;) &lt;&gt; 1 Then Error 1
+	s.setString(&quot;Open with the headline, then hand over to Finance.&quot;)
+
+	c = Shape(p2, &quot;mleaf:1f3d316c-9724-5069-b314-93f167a63dbb&quot;).getText().createTextCursor()
+	c.gotoStart(False) : c.goRight(5, True)
+	If c.getString() &lt;&gt; &quot;Total&quot; Then Error 1
+	c.setString(&quot;Group&quot;)
+	c = Shape(p2, &quot;mleaf:987b7602-b694-53d2-b390-57f9d8ca3870&quot;).Model.getCellByPosition(1, 2).createTextCursor()
+	c.gotoStart(False) : c.gotoEnd(True)
+	If c.getString() &lt;&gt; &quot;$541,500&quot; Then Error 1
+	c.setString(&quot;$999&quot;)
+
+	s = Shape(p3, &quot;mleaf:fe7234e8-6154-5a93-9672-691664c55a4c&quot;)
+	e = s.getText().createEnumeration()
+	para = e.nextElement() : para = e.nextElement()
+	s.getText().insertString(para.getEnd(), &quot; (two deals)&quot;, False)
+	s = oDoc.createInstance(&quot;com.sun.star.drawing.TextShape&quot;)
+	p3.add(s)
+	at.X = 2000 : at.Y = 15000 : s.setPosition(at)
+	size.Width = 12000 : size.Height = 1200 : s.setSize(size)
+	s.setString(&quot;Owner: Finance&quot;)
+	c = s.getText().createTextCursor()
+	c.gotoStart(False) : c.gotoEnd(True)
+	c.CharFontName = &quot;Arial&quot; : c.CharHeight = 18
+
+	Save(oDoc, outDir &amp; &quot;/deck.libreoffice-edited.pptx&quot;, &quot;Impress MS PowerPoint 2007 XML&quot;)
+	Save(oDoc, outDir &amp; &quot;/deck.libreoffice-edited.odp&quot;, &quot;impress8&quot;)
+	oDoc.close(True)
+End Sub
+
+Sub Main
+	Dim inDir As String, outDir As String
+	inDir = Environ(&quot;FX_IN&quot;) : outDir = Environ(&quot;FX_OUT&quot;)
+	On Error GoTo Failed
+	Report(inDir, outDir)
+	Finance(inDir, outDir)
+	Deck(inDir, outDir)
+	Exit Sub
+Failed:
+	Dim n As Integer
+	n = FreeFile
+	Open outDir &amp; &quot;/macro.log&quot; For Output As #n
+	Print #n, &quot;error &quot; &amp; Err &amp; &quot; at line &quot; &amp; Erl &amp; &quot;: &quot; &amp; Error$
+	Close #n
+End Sub
+</script:module>
