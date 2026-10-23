@@ -276,7 +276,7 @@ export function FlowDemo() {
           <Preview kind="deck" value={snapshot?.deck} /></article>
       </div>
     </section>
-    <p className="mix-note">Any app in, any app out. A Calc workbook can feed a Word report and a DeckCraft deck. These Office-format files open in Microsoft Office, LibreOffice and the ArtCraft apps. <a href="#checked">See the evidence and limits.</a></p>
+    <p className="mix-note">Any app in, any app out. Today: Microsoft Office, LibreOffice and the ArtCraft apps, through DOCX, XLSX, PPTX, ODT, ODS and ODP. A Calc workbook can feed a Word report and a DeckCraft deck. These Office-format files open in Microsoft Office, LibreOffice and the ArtCraft apps. <a href="#checked">See the evidence and limits.</a></p>
     <section id="project" hidden={!snapshot}>
       <div className="section-heading"><div><h2>Change it anywhere. Bring it back.</h2></div>
         <p id="keep-note" className="caption">This project lives only in this browser tab. Leaving or reloading the page discards it; download the project layers to keep them.</p>

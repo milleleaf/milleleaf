@@ -54,7 +54,7 @@ function AppChecks() {
 }
 
 function AppFamilies() {
-  return <section className="wrap app-families" aria-label="Any app in, any app out"><h2>Any app in. Any app out.</h2><p>One project mixes apps from Microsoft Office, LibreOffice and the ArtCraft apps at the same time. Every app is a place where the content is made or shown.</p><div>{[
+  return <section className="wrap app-families" aria-label="Any app in, any app out"><h2>Any app in. Any app out.</h2><p>Today: Microsoft Office, LibreOffice and the ArtCraft apps, through DOCX, XLSX, PPTX, ODT, ODS and ODP.</p><p>One project mixes apps from Microsoft Office, LibreOffice and the ArtCraft apps at the same time. Every app is a place where the content is made or shown.</p><div>{[
     ['A Calc workbook', 'feeds a Word report and a DeckCraft deck', 'Checked: the example above, with the real CLI'],
     ['An Excel workbook', 'feeds a LibreOffice Writer report and a PowerPoint deck', 'Being checked in the browser flow'],
     ['An edit made in WordCraft', 'comes back while the deck was last saved by Impress', 'Being checked in the browser flow'],

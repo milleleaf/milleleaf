@@ -6,6 +6,8 @@ Website, demos and status: [milleleaf.com](https://milleleaf.com).
 
 ## Any app in. Any app out.
 
+Today: Microsoft Office, LibreOffice and the ArtCraft apps, through DOCX, XLSX, PPTX, ODT, ODS and ODP.
+
 Microsoft Office, LibreOffice, the ArtCraft apps ([WordCraft](https://github.com/storytold/wordcraft), [GridCraft](https://github.com/storytold/gridcraft), [DeckCraft](https://github.com/storytold/deckcraft), [PdfCraft](https://github.com/storytold/pdfcraft)) and your own software are equals. One project can mix them: a Calc workbook can feed a Word report and a DeckCraft deck. Every app is a place where the content is made or shown.
 
 Milleleaf works on the files themselves, through the places the file standards allow (content-control tags, defined names, shape names, custom properties). Nothing is installed into Word, Excel, PowerPoint, LibreOffice or the ArtCraft apps, and the files stay ordinary office files.
@@ -48,7 +50,35 @@ The layered model follows the composition ideas of Pixar's Universal Scene Descr
 
 ## Try it
 
-The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install. There is no packaged release yet; to run the CLI, build it from source. It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub), Node 20+, and cmake, a C/C++ compiler and libclang, which build BoringSSL for the sealing crate (on Debian or Ubuntu: `apt install build-essential cmake clang libclang-dev`; on macOS: Xcode command-line tools and `brew install cmake`). Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files.
+The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install.
+
+### Quickstart (about 5 minutes)
+
+1. Download the archive for your system from [Releases](https://github.com/milleleaf/milleleaf/releases): Linux (x86_64), macOS (Apple silicon) or Windows (x86_64), and unpack it. It holds the `mleaf` command and the Hello Table example. To check that it was built by this repository's release workflow: `gh attestation verify <archive> --repo milleleaf/milleleaf`. Or build from source (below) and use `target/release/mleaf`.
+2. Export the example's report and workbook (on Windows, use `..\..\mleaf.exe`):
+
+```sh
+cd examples/hello-table
+../../mleaf validate project.mleaf.json
+../../mleaf docx-export project.mleaf.json 3f1c2a90-0000-4c1e-9a00-000000000020 --out report.docx
+../../mleaf xlsx-export project.mleaf.json 3f1c2a90-0000-4c1e-9a00-000000000010 --out finance.xlsx
+```
+
+`validate` composes the project's layers and reports 0 errors. `report.docx` has a table and two fields linked to the workbook; `finance.xlsx` is that workbook.
+
+3. Open `report.docx` in Word, LibreOffice Writer or WordCraft. Reword a sentence, type a different number into the linked table, and save. Then bring it back:
+
+```sh
+../../mleaf docx-import project.mleaf.json 3f1c2a90-0000-4c1e-9a00-000000000020 report.docx --out my-edit.mleaf.json --author sam --id edit/sam
+```
+
+The reworded text comes back as a change in a new layer, `my-edit.mleaf.json`. The number typed over the linked table comes back as a conflict, because the workbook is its source. No editor at hand? Import `fixtures/report.libreoffice-edited.docx` instead, which has those edits.
+
+4. `../../mleaf formats` lists the routes in and out of each format on your machine. The ODF routes need LibreOffice.
+
+### Build from source
+
+It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub), Node 20+, and cmake, a C/C++ compiler and libclang, which build BoringSSL for the sealing crate (on Debian or Ubuntu: `apt install build-essential cmake clang libclang-dev`; on macOS: Xcode command-line tools and `brew install cmake`). Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files.
 
 ```sh
 cargo test
