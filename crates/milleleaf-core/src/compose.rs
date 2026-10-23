@@ -414,7 +414,41 @@ impl<'a> Composer<'a> {
         for root in roots {
             out.push(self.compose(&root, None, &mut Vec::new())?);
         }
+        // A cycle no root reaches would otherwise vanish silently. Every node composed above is
+        // memoized with its warnings already given, so warnings from this pass (nodes no root
+        // reaches, such as inherit sources) are dropped.
+        let given = self.warnings.len();
+        let mut done = BTreeSet::new();
+        let paths: Vec<String> = self.flat.nodes.keys().cloned().collect();
+        for p in paths {
+            self.child_cycle(&p, &mut Vec::new(), &mut done)?;
+        }
+        self.warnings.truncate(given);
         Ok(out)
+    }
+
+    fn child_cycle(
+        &mut self,
+        path: &str,
+        ancestors: &mut Vec<String>,
+        done: &mut BTreeSet<String>,
+    ) -> Result<(), MleafError> {
+        if ancestors.iter().any(|p| p == path) {
+            let mut chain = ancestors.clone();
+            chain.push(path.to_string());
+            return Err(MleafError::ChildCycle(chain.join(" → ")));
+        }
+        if done.contains(path) || !self.flat.nodes.contains_key(path) {
+            return Ok(());
+        }
+        let children: Vec<String> = self.effective(path)?.children.into_values().collect();
+        ancestors.push(path.to_string());
+        for c in children {
+            self.child_cycle(&c, ancestors, done)?;
+        }
+        ancestors.pop();
+        done.insert(path.to_string());
+        Ok(())
     }
 
     pub fn compose(

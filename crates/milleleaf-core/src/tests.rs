@@ -137,6 +137,42 @@ fn integrity_is_checked() {
         json!({"header": header("bad"), "imports": [{"uri": "a.json", "integrity": "sha256-00"}]}),
     );
     assert!(matches!(load_stack(&bad), Err(MleafError::Integrity { .. })));
+    // A pin on a later import of an already-loaded file is checked too.
+    let late = t.write(
+        "late.json",
+        json!({"header": header("late"), "imports": [{"uri": "a.json"}, {"uri": "bad.json"}]}),
+    );
+    assert!(matches!(load_stack(&late), Err(MleafError::Integrity { .. })));
+    let twice = t.write(
+        "twice.json",
+        json!({"header": header("twice"), "imports": [{"uri": "a.json"}, {"uri": "ok.json"}]}),
+    );
+    assert!(load_stack(&twice).is_ok());
+}
+
+#[test]
+fn large_integers_compare_exactly() {
+    use crate::stack::same;
+    assert!(!same(&json!(9007199254740993u64), &json!(9007199254740992u64)));
+    assert!(!same(&json!(-9007199254740993i64), &json!(-9007199254740992i64)));
+    assert!(same(&json!(12), &json!(12.0)));
+    assert!(same(&json!({"a": [1, 2.5]}), &json!({"a": [1.0, 2.5]})));
+}
+
+#[test]
+fn cycle_no_root_reaches_is_an_error() {
+    let t = TempDir::new("island");
+    let f = t.write(
+        "a.json",
+        json!({"header": header("a"), "data": [
+            {"path": "r"},
+            {"path": "x", "children": {"y": "y"}}, {"path": "y", "children": {"x": "x"}}
+        ]}),
+    );
+    let flat = flatten(&load_stack(&f).unwrap());
+    assert!(matches!(Composer::new(&flat).compose_all(), Err(MleafError::ChildCycle(_))));
+    let issues = validate(&flat).unwrap();
+    assert!(issues.iter().any(|i| i.level == Level::Error && i.message.contains("cycle")));
 }
 
 #[test]

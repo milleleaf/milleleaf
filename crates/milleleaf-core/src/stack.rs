@@ -1,6 +1,6 @@
 //! Loading a layer stack: a file plus everything it imports, bottom layer first.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -23,10 +23,11 @@ pub fn integrity_of(bytes: &[u8]) -> String {
 }
 
 /// Loads `root` and its imports, depth first, so that every layer comes after the layers it
-/// imports. A file imported twice is loaded once, at its first position. Later layers win.
+/// imports. A file imported twice is loaded once, at its first position, and every import's
+/// integrity pin is checked against it, not only the first one. Later layers win.
 pub fn load_stack(root: &Path) -> Result<Vec<LoadedLayer>, MleafError> {
     let mut out = Vec::new();
-    let mut done = HashSet::new();
+    let mut done = HashMap::new();
     let mut visiting = Vec::new();
     visit(root, None, &mut out, &mut done, &mut visiting)?;
     Ok(out)
@@ -36,7 +37,7 @@ fn visit(
     file: &Path,
     expected_integrity: Option<&str>,
     out: &mut Vec<LoadedLayer>,
-    done: &mut HashSet<PathBuf>,
+    done: &mut HashMap<PathBuf, String>,
     visiting: &mut Vec<PathBuf>,
 ) -> Result<(), MleafError> {
     let canon = fs::canonicalize(file).map_err(|e| MleafError::Io(file.to_path_buf(), e))?;
@@ -45,20 +46,20 @@ fn visit(
         chain.push(canon.display().to_string());
         return Err(MleafError::ImportCycle(chain.join(" → ")));
     }
-    if done.contains(&canon) {
-        return Ok(());
+    let check = |canon: &PathBuf, actual: &str| match expected_integrity {
+        Some(expected) if actual != expected => Err(MleafError::Integrity {
+            file: canon.clone(),
+            expected: expected.to_string(),
+            actual: actual.to_string(),
+        }),
+        _ => Ok(()),
+    };
+    if let Some(actual) = done.get(&canon) {
+        return check(&canon, actual);
     }
     let bytes = fs::read(&canon).map_err(|e| MleafError::Io(canon.clone(), e))?;
-    if let Some(expected) = expected_integrity {
-        let actual = integrity_of(&bytes);
-        if actual != expected {
-            return Err(MleafError::Integrity {
-                file: canon,
-                expected: expected.to_string(),
-                actual,
-            });
-        }
-    }
+    let actual = integrity_of(&bytes);
+    check(&canon, &actual)?;
     let layer = Layer::from_json(&bytes).map_err(|e| MleafError::Parse(canon.clone(), e))?;
     visiting.push(canon.clone());
     let dir = canon.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -75,7 +76,7 @@ fn visit(
         )?;
     }
     visiting.pop();
-    done.insert(canon.clone());
+    done.insert(canon.clone(), actual);
     out.push(LoadedLayer {
         source: canon,
         layer,
@@ -202,10 +203,12 @@ pub fn media_type_for(name: &str) -> &'static str {
 }
 
 /// JSON equality with numbers compared by value: a stored layer is canonical JSON (RFC 8785),
-/// which writes `12.0` as `12`, and `serde_json` holds those as different numbers.
+/// which writes `12.0` as `12`, and `serde_json` holds those as different numbers. Two integers
+/// compare exactly: distinct ones above 2^53 would round to the same `f64`.
 pub fn same(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     use serde_json::Value;
     match (a, b) {
+        (Value::Number(x), Value::Number(y)) if !x.is_f64() && !y.is_f64() => x == y,
         (Value::Number(x), Value::Number(y)) => x == y || x.as_f64() == y.as_f64(),
         (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| same(a, b)),
         (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))),
