@@ -1,45 +1,25 @@
 # Milleleaf
 
-**Make it once. Use it in every app.** One table or chart, in the workbook, report, deck and PDF. Each
-keeps its own style. When the numbers change, every use follows. Edits come back for review.
+**Make it once. Use it in every app.** One table or chart, in the workbook, report, deck and PDF. Each keeps its own style. When the numbers change, every use follows. Edits come back for review.
 
 Website, demos and status: [milleleaf.com](https://milleleaf.com).
 
 ## Any app in. Any app out.
 
-Microsoft Office, LibreOffice, the ArtCraft apps
-([WordCraft](https://github.com/storytold/wordcraft), [GridCraft](https://github.com/storytold/gridcraft),
-[DeckCraft](https://github.com/storytold/deckcraft), [PdfCraft](https://github.com/storytold/pdfcraft)) and
-your own software are equals. One project can mix them: a Calc workbook can feed a Word report and a
-DeckCraft deck. Every app is a place where the content is made or shown.
+Microsoft Office, LibreOffice, the ArtCraft apps ([WordCraft](https://github.com/storytold/wordcraft), [GridCraft](https://github.com/storytold/gridcraft), [DeckCraft](https://github.com/storytold/deckcraft), [PdfCraft](https://github.com/storytold/pdfcraft)) and your own software are equals. One project can mix them: a Calc workbook can feed a Word report and a DeckCraft deck. Every app is a place where the content is made or shown.
 
-Milleleaf works on the files themselves, through the places the file standards allow (content-control
-tags, defined names, shape names, custom properties). Nothing is installed into Word, Excel, PowerPoint,
-LibreOffice or the ArtCraft apps, and the files stay ordinary office files.
+Milleleaf works on the files themselves, through the places the file standards allow (content-control tags, defined names, shape names, custom properties). Nothing is installed into Word, Excel, PowerPoint, LibreOffice or the ArtCraft apps, and the files stay ordinary office files.
 
-- **One layered source.** A project is a stack of layers composed into one model. Each app reads and writes
-  its own part of shared nodes, and every value knows which layer set it.
-- **Edits come back for review.** An edited file imports as a new layer. Typing over a linked value becomes
-  a conflict instead of overwriting the source. The import report says which matches are certain and which
-  are best guesses, and lists what the format could not carry.
-- **History you can check.** Layers and pictures are stored by content hash, with history, blame and
-  checkpoints. Signatures (optional, hybrid post-quantum) and time-stamps verify a layer against a key; they
-  don't establish that its content is correct.
-- **HTML in and out.** An agent's HTML deck, written to a restricted profile (`deck/0`), comes in as a
-  reviewable proposal layer, and the model renders back to HTML that re-imports onto the same nodes.
+- **One layered source.** A project is a stack of layers composed into one model. Each app reads and writes its own part of shared nodes, and every value knows which layer set it.
+- **Edits come back for review.** An edited file imports as a new layer. Typing over a linked value becomes a conflict instead of overwriting the source. The import report says which matches are certain and which are best guesses, and lists what the format could not carry.
+- **History you can check.** Layers and pictures are stored by content hash, with history, blame and checkpoints. Signatures (optional, hybrid post-quantum) and time-stamps verify a layer against a key; they don't establish that its content is correct.
+- **HTML in and out.** An agent's HTML deck, written to a restricted profile (`deck/0`), comes in as a reviewable proposal layer, and the model renders back to HTML that re-imports onto the same nodes.
 
 ## Status: in development
 
-Layers, signed history and selected round trips are built and checked on example projects and real-file
-fixtures: Word, Excel and PowerPoint 16 for Mac, LibreOffice (ODF through LibreOffice), and the ArtCraft
-writers. That is not production readiness. Refresh uses the CLI today; there is no one-click refresh inside
-the apps. Review approvals, shared folders, peer-to-peer sync and a browser workspace are planned. Known
-limits and what is checked: [milleleaf.com/status](https://milleleaf.com/status).
+Layers, signed history and selected round trips are built and checked on example projects and real-file fixtures: Word, Excel and PowerPoint 16 for Mac, LibreOffice (ODF through LibreOffice), and the ArtCraft writers. That is not production readiness. Refresh uses the CLI today; there is no one-click refresh inside the apps. Review approvals, shared folders, peer-to-peer sync and a browser workspace are planned. Known limits and what is checked: [milleleaf.com/status](https://milleleaf.com/status).
 
-The layered model follows the composition ideas of Pixar's Universal Scene Description (OpenUSD), as adopted
-by buildingSMART's IFC5. The export for AI tools follows the DocLang 0.8 specification (doclang.ai,
-Apache-2.0) and is checked with the DocLang validator. The schema and code are written independently; no
-USD, IFC5 or DocLang code or schema text is included.
+The layered model follows the composition ideas of Pixar's Universal Scene Description (OpenUSD), as adopted by buildingSMART's IFC5. The export for AI tools follows the DocLang 0.8 specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and code are written independently; no USD, IFC5 or DocLang code or schema text is included.
 
 ## What's here
 
@@ -68,10 +48,7 @@ USD, IFC5 or DocLang code or schema text is included.
 
 ## Try it
 
-The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install. There is no
-packaged release yet; to run the CLI, build it from source. It needs Rust 1.95+ (the first build fetches the
-ArtCraft crates from GitHub) and Node 20+. Optional: `pdftotext` (poppler), which `run.sh` uses to check
-the pack, and LibreOffice, for OpenDocument files.
+The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install. There is no packaged release yet; to run the CLI, build it from source. It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub) and Node 20+. Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files.
 
 ```sh
 cargo test
@@ -79,18 +56,8 @@ cd tools/html2mleaf && npm install && npx playwright install chromium && cd ../.
 examples/hello-table/run.sh
 ```
 
-`run.sh` walks the whole loop on a small example: an agent's HTML deck becomes a proposal layer, a finance
-review restates one number, and the report, workbook and deck all follow. They are exported through
-WordCraft, GridCraft and DeckCraft; copies edited in LibreOffice (and, from the stored fixtures, in Word,
-Excel and PowerPoint 16) come back as edit layers, and a number typed over a linked table comes back as a
-conflict. It then publishes one PDF board pack from a single snapshot, puts the project into a revision
-store (signed commits, a stale edit refused and rebased, blame, checkpoints, verification), round-trips
-real-world files with every loss listed, and exports the project for AI tools as DocLang, checked by the
-official validator. `mleaf formats` lists the routes available on your machine and the tools missing.
+`run.sh` walks the whole loop on a small example: an agent's HTML deck becomes a proposal layer, a finance review restates one number, and the report, workbook and deck all follow. They are exported through WordCraft, GridCraft and DeckCraft; copies edited in LibreOffice (and, from the stored fixtures, in Word, Excel and PowerPoint 16) come back as edit layers, and a number typed over a linked table comes back as a conflict. It then publishes one PDF board pack from a single snapshot, puts the project into a revision store (signed commits, a stale edit refused and rebased, blame, checkpoints, verification), round-trips real-world files with every loss listed, and exports the project for AI tools as DocLang, checked by the official validator. `mleaf formats` lists the routes available on your machine and the tools missing.
 
 ## Licence
 
-Code: MIT OR Apache-2.0, at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Third-party material and its
-licences: `NOTICE` and `ATTRIBUTION.md`. The Milleleaf name and logo are not open source; their terms are in
-`brand/LICENSE-brand.txt`. Questions and contributions: hello@milleleaf.com. Security reports:
-security@milleleaf.com.
+Code: MIT OR Apache-2.0, at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Third-party material and its licences: `NOTICE` and `ATTRIBUTION.md`. The Milleleaf name and logo are not open source; their terms are in `brand/LICENSE-brand.txt`. Questions and contributions: hello@milleleaf.com. Security reports: security@milleleaf.com.

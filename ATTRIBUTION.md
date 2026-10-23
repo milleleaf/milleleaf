@@ -1,15 +1,8 @@
 # Attribution
 
-Every non-code asset and bundled third-party item in this repository, with its author, source and
-licence. Milleleaf's own code and original assets are MIT OR Apache-2.0 (see
-[`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE) and [`NOTICE`](NOTICE)); the
-Milleleaf name and logo are not (see [`brand/LICENSE-brand.txt`](brand/LICENSE-brand.txt)). When you
-add an asset, add a row here in the same change; third-party material must be permissively licensed
-and keep its licence file next to it or in [`licenses/`](licenses/).
+Every non-code asset and bundled third-party item in this repository, with its author, source and licence. Milleleaf's own code and original assets are MIT OR Apache-2.0 (see [`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE) and [`NOTICE`](NOTICE)); the Milleleaf name and logo are not (see [`brand/LICENSE-brand.txt`](brand/LICENSE-brand.txt)). When you add an asset, add a row here in the same change; third-party material must be permissively licensed and keep its licence file next to it or in [`licenses/`](licenses/).
 
-Licences were checked on 22 October 2026 against each source (its licence file at the pinned
-revision, the font's name table, or the record's licence field). "Unverified" says where that wasn't
-possible.
+Licences were checked on 22 October 2026 against each source (its licence file at the pinned revision, the font's name table, or the record's licence field). "Unverified" says where that wasn't possible.
 
 ## Built into the `mleaf` program
 
@@ -21,9 +14,7 @@ possible.
 | `webpki-root-certs` 1.0.9 (dependency of `milleleaf-cli`) | Mozilla's root certificates (CCADB) | The rustls project, from Mozilla | <https://github.com/rustls/webpki-roots> | CDLA-Permissive-2.0 | [`licenses/CDLA-Permissive-2.0-webpki-root-certs.txt`](licenses/CDLA-Permissive-2.0-webpki-root-certs.txt) (the crate's own `LICENSE`) |
 | `krilla` (in craft-libs rev `82a24b0`), compiled in | Compact ICC profiles (sRGB, sGrey; v2 and v4) | Clinton Ingram | <https://github.com/saucecontrol/Compact-ICC-Profiles> | CC0-1.0 | none needed |
 
-Other Rust and JavaScript dependencies are MIT, Apache-2.0 or both, and carry their own licence files
-in their packages; deckcraft, gridcraft and craft-pdf embed no fonts at the pinned revisions (the
-craft-fonts set is used only when `CRAFT_FONTS_DIR` is set, which nothing here does).
+Other Rust and JavaScript dependencies are MIT, Apache-2.0 or both, and carry their own licence files in their packages; deckcraft, gridcraft and craft-pdf embed no fonts at the pinned revisions (the craft-fonts set is used only when `CRAFT_FONTS_DIR` is set, which nothing here does).
 
 ## Website (`site/`)
 
@@ -57,17 +48,8 @@ craft-fonts set is used only when `CRAFT_FONTS_DIR` is set, which nothing here d
 
 ## Ideas followed (no material included)
 
-Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
-(OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
-specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and
-code are written independently; no USD, IFC5 or DocLang code or schema text is included.
+Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description (OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8 specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and code are written independently; no USD, IFC5 or DocLang code or schema text is included.
 
 ## Tools installed for checks (not bundled)
 
-`tools/ci/doclang-requirements.txt` (the DocLang validator in CI) and
-`examples/real/authored/requirements.txt` (the authoring scripts) install Python packages; none of them
-ships in the repository or in `mleaf`. Their licences (PyPI metadata, 22 October 2026): doclang
-Apache-2.0; lxml BSD-3-Clause; click BSD-3-Clause; rich MIT; Pygments BSD-2-Clause; markdown-it-py
-MIT; mdurl MIT; annotated-doc MIT; typer MIT; shellingham ISC; saxonche (no licence in its metadata;
-SaxonC-HE is published by Saxonica as MPL-2.0, unverified); python-pptx MIT; openpyxl MIT; et_xmlfile
-MIT; Pillow MIT-CMU; typing_extensions PSF-2.0; XlsxWriter BSD-2-Clause.
+`tools/ci/doclang-requirements.txt` (the DocLang validator in CI) and `examples/real/authored/requirements.txt` (the authoring scripts) install Python packages; none of them ships in the repository or in `mleaf`. Their licences (PyPI metadata, 22 October 2026): doclang Apache-2.0; lxml BSD-3-Clause; click BSD-3-Clause; rich MIT; Pygments BSD-2-Clause; markdown-it-py MIT; mdurl MIT; annotated-doc MIT; typer MIT; shellingham ISC; saxonche (no licence in its metadata; SaxonC-HE is published by Saxonica as MPL-2.0, unverified); python-pptx MIT; openpyxl MIT; et_xmlfile MIT; Pillow MIT-CMU; typing_extensions PSF-2.0; XlsxWriter BSD-2-Clause.
