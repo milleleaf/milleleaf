@@ -9,12 +9,11 @@ sections).
 
 **How they were found (21 Oct 2026):** Zenodo's API was searched for Word, Excel and PowerPoint files
 under CC0 or CC BY 4.0 (about 1,100 decks, 690 documents and 1,200 workbooks), and each file's parts
-were read through HTTP range requests to count its features. Downloads were made on the trial box,
-each into its own new directory, with the record's JSON (its licence) beside it, and nothing in
-them was run. The pictures of about 30 leading candidates were looked at, on the box: almost every
+were read through HTTP range requests to count its features. Downloads were made on a separate
+machine, each into its own new directory, with the record's JSON (its licence) beside it, and nothing in
+them was run. The pictures of about 30 leading candidates were looked at: almost every
 real document and deck carries an institution's or project's logo, a licence button, stock clipart
-or screenshots of someone else's site, which the bar excludes. The candidates are listed at the
-end of this file; what their round trips found is in the project notes.
+or screenshots of someone else's site, which the bar excludes.
 
 **How the counts were made:** with `python3 -I`, `zipfile` and `xml.etree`, and
 `tools/inventory/ooxml_inventory.py`. The personal-data scan ran email and phone regexes over the
@@ -32,7 +31,7 @@ properties' people.
 | Source | Zenodo record 31765, https://zenodo.org/records/31765, DOI 10.5281/zenodo.31765; file `10RulesIdentifiers_MS_2015-09-24_Final_Clean.docx` |
 | Date | published 2015-10-02 |
 | Licence | CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/): the record's licence field, shown on the record page as "Creative Commons Attribution 4.0 International". Read from the record's JSON (`metadata.license.id` = `cc-by-4.0`) on 2026-10-21; checked again by the orchestrator through Zenodo's API on 2026-10-22 |
-| Fetched | 2026-10-21, on the box |
+| Fetched | 2026-10-21 |
 | SHA-256 | `d27cb6868923246393d72274da8959142a68e7112446b6943cc7cbdf6851dec7` |
 | Size | 130,459 bytes |
 | Application | Microsoft Macintosh Word, AppVersion 14.0000 (Word 2011 for Mac), template Normal.dotm, company "EBI" |
@@ -64,7 +63,7 @@ page, and references as a numbered list. Shortfall against the brief: no comment
 | Source | Zenodo record 4742246, https://zenodo.org/records/4742246, DOI 10.5281/zenodo.4742246; file `ESI-2_Results_SIB-LCA_Final.xlsx` |
 | Date | published 2021-05-07 (version 1) |
 | Licence | CC BY 4.0: the record's licence field ("Creative Commons Attribution 4.0 International"), `metadata.license.id` = `cc-by-4.0`, read 2026-10-21; checked again by the orchestrator 2026-10-22 |
-| Fetched | 2026-10-21, on the box |
+| Fetched | 2026-10-21 |
 | SHA-256 | `72f9cddfe62a8ce414760c3c601751d9e829029974bfa24ed0d0025190c88cf7` |
 | Size | 833,295 bytes |
 | Application | Microsoft Excel, AppVersion 16.0300 |
@@ -96,7 +95,7 @@ brief: no comments and no defined names.
 | Source | Zenodo record 7948769, https://zenodo.org/records/7948769, DOI 10.5281/zenodo.7948769; file `Interactive_LCOH_Calculator_v3.xlsx` |
 | Date | published 2023-04-19 |
 | Licence | CC BY 4.0: the record's licence field, `cc-by-4.0`, read 2026-10-21; checked again by the orchestrator 2026-10-22 |
-| Fetched | 2026-10-21, on the box |
+| Fetched | 2026-10-21 |
 | SHA-256 | `4912378ef1ee27973192dd4747059dde8a8a271ea4b01153a12c2de9172b3ccd` |
 | Size | 63,942 bytes |
 | Application | Microsoft Excel, AppVersion 16.0300 |
@@ -125,13 +124,13 @@ against the adopted file: a re-save must be no change, an edit exactly that edit
 
 **Re-made after the rename to Milleleaf (23 Oct 2026):** every file in this table was made again from
 new exports: the LibreOffice re-saves and `milleleaf-deck.deckcraft.pptx` by
-`examples/hello-table/fixtures/make/make.sh` (on the box, LibreOffice 24.2.7.2), the Microsoft Office
+`examples/hello-table/fixtures/make/make.sh` (LibreOffice 24.2.7.2 on Linux), the Microsoft Office
 files by hand with the same steps as before. Their metadata was scrubbed as before (last modified
 by Milleleaf, Excel's folder path trimmed).
 
 | File | Made by | How |
 |---|---|---|
-| `paper.libreoffice-resaved.docx` | LibreOffice 24.2.7.2 (Linux, the CI image on the box, `--network none`) | `soffice --headless --convert-to docx:"MS Word 2007 XML"` of `paper.reexport.docx` |
+| `paper.libreoffice-resaved.docx` | LibreOffice 24.2.7.2 (Linux, in the project's CI container, `--network none`) | `soffice --headless --convert-to docx:"MS Word 2007 XML"` of `paper.reexport.docx` |
 | `lca-model.libreoffice-resaved.xlsx` | LibreOffice 24.2.7.2, the same way | `soffice --headless --convert-to xlsx:"Calc MS Excel 2007 XML"` of `lca-model.reexport.xlsx` |
 | `paper.msoffice-resaved.docx` | Word 16 (Mac), by hand | open `paper.reexport.docx`, save as .docx |
 | `paper.msoffice-blank-line.docx` | Word 16 (Mac), by hand | open `paper.reexport.docx`, press Enter at the end of paragraph 3 ("Throughout this document…", the third after the heading), save |
@@ -144,7 +143,7 @@ by Milleleaf, Excel's folder path trimmed).
 If a Microsoft Office file is missing, its part of the test prints `PENDING` and is skipped (run.sh
 step 18 shows those lines). All six are there (made again 23 Oct, after the rename).
 
-**The Microsoft Office files (made again 23 Oct 2026, after the rename):** the maintainer made them on the Mac from a
+**The Microsoft Office files (made again 23 Oct 2026, after the rename):** made by hand on a Mac from a
 packet of new exports made by `examples/hello-table/fixtures/make/make.sh` (inputs' SHA-256:
 `paper.reexport.docx` `d4775a7b…5c1f1`, `lca-model.reexport.xlsx` `053754de…63b86`,
 `milleleaf-deck.reexport.pptx` `9ed9c7ea…3d478`, the last being `milleleaf-deck.deckcraft.pptx`),
@@ -165,11 +164,11 @@ the model's under CC BY 4.0 with the attributions above (modified: exported by M
 re-saved or edited in Word or Excel as the table says); the deck's under the repository's licence,
 the Milleleaf mark excepted (see the authored deck below).
 
-**Personal data:** Office wrote the maintainer's full name as `cp:lastModifiedBy` in each file's
-`docProps/core.xml`. On 22 Oct 2026 that one field was changed to `Milleleaf` in all
-eight Microsoft files, by replacing only that zip entry (`zip` updating `docProps/core.xml`; every
-other entry and the entry order untouched); the SHA-256 and sizes above are after that change. No
-email address but the deck's own `hello@milleleaf.com`.
+**Personal data:** Office writes the saver's full name as `cp:lastModifiedBy` in each file's
+`docProps/core.xml`, and Excel the folder it was saved in. That field was changed to `Milleleaf` and
+the folder trimmed to `~/`, rewriting only those zip entries (every other entry and the entry order
+untouched); the SHA-256 and sizes above are after that change. No email address but the deck's own
+`hello@milleleaf.com`.
 
 **What they show** (the tests, run.sh step 18 and the demo): the three re-saves are no change, once
 three Word and Excel rewrites are settled (an autofit table's grid, a run colour its style already
@@ -185,10 +184,10 @@ No public deck met the bar (almost every one carries a logo, a licence button, c
 else's screenshots), so the deck is ours. **Its content is ours**: our own text
 and numbers, the Milleleaf mark and a chart picture we made; nothing third-party. The text, numbers and
 chart picture are under the repository's licence (MIT OR Apache-2.0). **The Milleleaf mark is not**:
-the Milleleaf name and logo are outside the open-source licence (`brand/LICENSE-brand.txt` on main);
-it is used as supplied, rendered from `brand/milleleaf-mark.svg` without cropping or recolouring.
+the Milleleaf name and logo are outside the open-source licence (`brand/LICENSE-brand.txt`);
+it is used as supplied, rendered from its SVG without cropping or recolouring.
 
-**How it was made (22 Oct 2026, on the trial box, in the CI image with `--network none`):**
+**How it was made (22 Oct 2026, on Linux in the project's CI container, with `--network none`):**
 1. `authored/make_deck.py` writes the content with python-pptx 1.0.2 (pins in
    `authored/requirements.txt`): `authored/milleleaf-deck.python-pptx.pptx`. Its `app.xml` says
    "Microsoft Macintosh PowerPoint" because python-pptx copies its default template's: **no PowerPoint
@@ -198,7 +197,7 @@ it is used as supplied, rendered from `brand/milleleaf-mark.svg` without croppin
    (`soffice --headless --convert-to pptx:"Impress MS PowerPoint 2007 XML"`) and
    `milleleaf-deck.impress.odp`. **The tests use `milleleaf-deck.impress.pptx`.**
 3. **DeckCraft** (Milleleaf's export, `tools/inventory/roundtrip.sh`) of the Impress file:
-   `milleleaf-deck.deckcraft.pptx`. It is also the file in the Office packet, `milleleaf-deck.reexport.pptx`.
+   `milleleaf-deck.deckcraft.pptx`. It is also the Microsoft Office packet's input, `milleleaf-deck.reexport.pptx`.
 4. **A deck authored in Impress itself**, by a Basic macro (`authored/Module1.xba`, run headless by
    `authored/run_macro.sh`): titles, a two-level list, filled boxes joined by connectors, a table with
    merged cells, web and mail links, notes. Impress saved it as `milleleaf-impress-native.odp` and
@@ -230,7 +229,7 @@ a shape without text; native bar, line, pie and combo charts (4). **Charts in de
 author and last-modified-by are "Milleleaf" (python-pptx's default template names its own author there;
 `make_deck.py` overwrites it).
 
-**What it covers that the GOV.UK deck did:** placeholders, bullets, tables, notes, pictures, links.
+**What it covers:** placeholders, bullets, tables, notes, pictures, links.
 **More:** merged table cells, connectors, slide-jump links, a crop, native charts and a deck made by a
 second app (Impress natively). **Less:** it isn't a stranger's real deck; its mess is what python-pptx,
 Impress and DeckCraft make, not years of template reuse.
@@ -259,47 +258,4 @@ number formats, formulas and a drop-down. Ours, under the repository's licence (
 | `milleleaf-charts.excel.xlsx` | `dde045e554935bd093ee5cdee48211df40d435ef0df8260a43261551465db556` | 15,534 | Microsoft Macintosh Excel 16.0300 |
 | `authored/milleleaf-charts.openpyxl.xlsx` | `88783115b1baf295842edd70bbb9982abf143f5a9e920741d5420ae0130f22c2` | 10,491 | openpyxl 3.1.5 |
 
-Every authored file round-trips with every loss listed (`0 problem(s)`; inventories in
-the project notes).
-
----
-
-## Replaced on 21 Oct 2026
-
-The first set (16 Oct) was three GOV.UK files under the Open Government Licence v3.0: Ofsted's Board
-minutes of 7 February 2017 (`board-report.docx`), Homes England's Reference Class Forecasting Workbook
-(`finance.xlsx`) and the Ofqual/DfE slide pack (`briefing.pptx`). OGL v3 doesn't cover departmental logos and
-crests: the Ofsted logo in the minutes and the Ofqual imagery in the deck aren't licensed by it, so
-those files can't go into a public repo. The minutes and the workbook were
-replaced by `paper.docx` and `lca-model.xlsx` (with `lcoh-calculator.xlsx` added), and the deck by
-the authored deck (22 Oct), once it covered what the deck tests check. Their records (sources,
-hashes, inventories, rejected candidates) are in git history: this file as of commit bbe3173.
-
-## Candidates looked at in the 21 Oct search and not chosen
-
-Rejected for logos or third-party pictures:
-- Word: Uni Bonn's RDM exercise (Zenodo 16928497; the university's logo), the Alliance SMP template
-  (13242504; Digital Research Alliance of Canada logo), EFSA's food consumption release note
-  (14415042; EFSA and EU logos), the Skills4EOSC minimum viable skillset template (10977747; project
-  logos), WUR's SMP template (10473646), the Dataverse curation guide (5579820) and DANS's FAIR-Aware
-  exercise (8089501; logos), HSLU's report template (2811269; screenshots of Word's ribbon).
-- Excel: the QBS-ar toolbox sheet (14070537; project and institute logos), RISE-DE (3585556; a CC
-  licence button, its only picture).
-- PowerPoint: none met the bar (every candidate had logos, licence buttons, stock clipart or others'
-  screenshots); see the review.
-
-Rejected for personal data (an individual's email address): the KonsortSWD data-use contracts
-(10406480; the richest Word candidate: 28 comments, tracked changes, nested tables), the Alliance
-research software framework workbook (10214741), the LCA tool (14268168), the OtF revenue modeller
-(7003979), MetallKIDD (11506192), a statistics course deck (14515234; students' addresses).
-
-Weaker or other reasons:
-- Word: the NLM-Chem and NLM-Gene annotation guidelines (4628233, 5089049; no tables or links), the
-  Charité DMP template (20048956; text from the European Commission's template, licence unclear).
-- Excel: the RDA FAIR maturity model workbook (3909563; 296 formulas, 5 charts, no pictures; a good
-  runner-up), the Imperial College COVID-19 bibliography (3754178), the GFEI visualisation workbook
-  (14046031; written by openpyxl first), ALIGNED's carbon-flux model (17434695; CC BY-SA).
-
-Round trips of seven of the candidates (KonsortSWD, SIB-LCA, FAIR, COVID-19, the DDI, Navarra and
-CDIF decks) found losses Milleleaf didn't report; they were fixed or listed before the swap (see
-the review).
+Every authored file round-trips with every loss listed (`0 problem(s)`).

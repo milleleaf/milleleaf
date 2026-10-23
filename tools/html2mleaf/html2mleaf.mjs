@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// html2mleaf — measure an HTML deck written to the Milleleaf HTML deck profile and write it as an Milleleaf
+// html2mleaf — measure an HTML deck written to the Milleleaf HTML deck profile and write it as a Milleleaf
 // proposal layer (plus assets and a loss report).
 //
 //   node html2mleaf.mjs deck.html --out deck.proposal.mleaf.json [--onto base.mleaf.json]

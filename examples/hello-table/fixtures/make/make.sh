@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Re-make the test files a program makes, and the inputs for the Microsoft Office saves (the maintainer,
-# 23 Oct 2026). Run inside the CI image (LibreOffice 24.2.7.2), from the repo root:
-#   tools/dev/box.sh sh 'bash examples/hello-table/fixtures/make/make.sh _out/fixtures'
+# Re-make the test files a program makes, and the inputs for the Microsoft Office saves. Run on Linux
+# with LibreOffice 24.2.7.2, Node and a Rust toolchain (the project's CI container), from the repo root:
+#   bash examples/hello-table/fixtures/make/make.sh _out/fixtures
 # OUT/fixtures  -> examples/hello-table/fixtures (LibreOffice re-saves and edits)
 # OUT/real      -> examples/real/fixtures (LibreOffice re-saves) and examples/real (DeckCraft's export)
 # OUT/office    -> the packet for Microsoft Office (exports, the unlocked report, the real re-exports)

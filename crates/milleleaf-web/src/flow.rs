@@ -2741,7 +2741,7 @@ mod tests {
             "need resaves and edits for workbook, report and deck"
         );
     }
-    /// the maintainer's Microsoft Office 16 (Mac) saves of the Demo B exports, returned in
+    /// Microsoft Office 16 (Mac) saves, made by hand, of the Demo B exports, returned in
     /// OFFICE-STEPS.md order: re-saves, the workbook edit, the heading edits, then the linked edit.
     #[test]
     fn microsoft_office_saves_in_office_steps_order() {

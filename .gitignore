@@ -11,9 +11,6 @@ _to_delete/
 Claude outputs/
 .omx/
 
-# Licensed standards (BSI, ISO, …): never redistributed, so never in a repo that could be pushed.
-# The index of what's there stays tracked.
-
 # GSD planning lives outside the repo (symlink), and local agent settings stay local
 .planning
 .claude/settings.local.json

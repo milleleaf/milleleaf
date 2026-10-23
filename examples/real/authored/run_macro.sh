@@ -1,5 +1,5 @@
 #!/bin/bash
-# Inside the CI image: install Module1 as the user's Standard Basic library, then run it headless.
+# Inside the CI image (LibreOffice 24.2.7.2): install Module1 as the user's Standard Basic library, then run it headless.
 set -e
 cd /work/deck
 soffice --headless --norestore --terminate_after_init >/dev/null 2>&1 || true

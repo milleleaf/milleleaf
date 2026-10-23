@@ -127,7 +127,7 @@ try {
   assert.deepEqual(state.deck.chart.series[0].values, [40, 35, 25]);
   await download('#download-report', '.docx'); await download('#download-deck', '.pptx');
   await page.screenshot({ path: `${root}/flow-cross-sheet.png`, fullPage: true });
-  // A real workbook with hundreds of error cells (/flow broke on lca-model.xlsx).
+  // A real workbook with hundreds of error cells (/flow once broke on lca-model.xlsx).
   await page.locator('#workbook-file').setInputFiles('../examples/real/lca-model.xlsx');
   await page.locator('#status[aria-busy="true"] .working-bar').waitFor({ timeout: 5000 });
   await settled();

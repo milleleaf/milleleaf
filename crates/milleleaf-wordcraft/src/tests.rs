@@ -556,7 +556,7 @@ fn real_fixture(name: &str) -> Document {
     from_docx(&std::fs::read(p).expect("fixture")).expect("reads")
 }
 
-/// A fixture only Microsoft Office can make (the Office packet): `None`, said out loud, until it's there.
+/// A fixture only Microsoft Office can make (saved by hand): `None`, said out loud, until it's there.
 fn office_fixture(name: &str) -> Option<Document> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/real/fixtures").join(name);
     if !p.exists() {

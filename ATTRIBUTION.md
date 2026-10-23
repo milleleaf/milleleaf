@@ -31,7 +31,7 @@ craft-fonts set is used only when `CRAFT_FONTS_DIR` is set, which nothing here d
 |---|---|---|---|---|---|
 | `site/public/fonts/commissioner-variable.ttf` | Commissioner, variable, version 1.001 | The Commissioner Project Authors (Kostas Bartsokas) | <https://github.com/kosbarts/Commissioner> | OFL-1.1 | [`site/public/fonts/OFL-Commissioner.txt`](site/public/fonts/OFL-Commissioner.txt) |
 | `site/public/fonts/ibm-plex-sans-regular.ttf`, `ibm-plex-sans-semibold.ttf` | IBM Plex Sans, version 3.201 (not referenced by the site today) | IBM Corp. | <https://github.com/IBM/plex> | OFL-1.1 | [`site/public/fonts/OFL.txt`](site/public/fonts/OFL.txt) |
-| `site/public/brand/*.svg`, `brand/*` | Milleleaf logo, dark logo, mark and avatar | Helen Kwok | Original work | Milleleaf brand terms (not open source) | [`brand/LICENSE-brand.txt`](brand/LICENSE-brand.txt) |
+| `site/public/brand/*.svg` | Milleleaf logo, dark logo and mark | Helen Kwok | Original work | Milleleaf brand terms (not open source) | [`brand/LICENSE-brand.txt`](brand/LICENSE-brand.txt) |
 
 ## Examples and fixtures
 

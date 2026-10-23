@@ -1215,7 +1215,7 @@ pub fn import_for_comparison(
     Ok((layer, report))
 }
 
-/// The document identity recorded by an Milleleaf export, when present.
+/// The document identity recorded by a Milleleaf export, when present.
 pub fn exported_path(edited: &Document) -> Option<String> {
     custom_prop(edited, PROP_DOCUMENT).map(String::from)
 }

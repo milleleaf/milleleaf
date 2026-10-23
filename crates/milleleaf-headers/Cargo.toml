@@ -10,7 +10,7 @@ name = "milleleaf-headers"
 path = "src/main.rs"
 
 # A separate binary so tokio, libsecp256k1 (C) and the P2P code stay out of `mleaf`
-#. Provenance: the project notes, "Light client".
+# (spiked first, 18 Oct 2026).
 [dependencies]
 milleleaf-store = { workspace = true }
 bip157 = "=0.7.0"

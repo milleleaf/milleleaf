@@ -1,5 +1,5 @@
-//! `mleaf search`: find text in a project, on this machine, after decryption (plan M4 item 5; the maintainer,
-//! 18 Oct 2026: "mleaf search + sealed index").
+//! `mleaf search`: find text in a project, on this machine, after decryption (plan M4 item 5:
+//! "mleaf search + sealed index").
 //!
 //! The head is searched in its composed form, so a hit is what the project says now. `--history`
 //! searches every stored layer, superseded values included, through a per-layer index in

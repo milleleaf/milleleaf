@@ -265,10 +265,10 @@ fn edited_fixture_reports() {
             ],
             "hello-table/fixtures/deck.libreoffice-edited.pptx"
             | "hello-table/fixtures/deck.msoffice-edited.pptx" => deck.to_vec(),
-            // Expectations for the maintainer's hand-made files (packet README): check them when the files land.
-            // the maintainer's edit, and what it does to the sheet's floating objects: the charts and the
+            // Expectations for the files saved by hand in Microsoft Office: check them when the files land.
+            // The edit, and what it does to the sheet's floating objects: the charts and the
             // legend picture on Graphs sit between cells (their `xdr:from`/`xdr:to` cells are the
-            // same in the file as in the export), over columns of the default width, so the new
+            // same in the saved file as in the export), over columns of the default width, so the new
             // Standard Width (12) widens them, as the file shows them. Real changes, not Excel's
             // rewrites: its plain re-save (`real_workbook_resaved_b`) changes nothing.
             "real/fixtures/lca-model.msoffice-margins.xlsx" => {
@@ -286,7 +286,7 @@ fn edited_fixture_reports() {
                 );
                 v
             }
-            // The maintainer pressed Enter at the end of "Throughout this document…" (the third body
+            // Enter was pressed at the end of "Throughout this document…" (the third body
             // paragraph after the heading). The demo counts every paragraph, the paper's empty
             // ones too (Introduction, Life science…, empty, Building on…, empty, Throughout…), so
             // the new one is paragraph 7.

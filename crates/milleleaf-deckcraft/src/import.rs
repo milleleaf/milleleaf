@@ -729,7 +729,7 @@ pub fn adopt_for_comparison(
     adopt_file(edited, path, title, header, true)
 }
 
-/// The deck identity recorded by an Milleleaf export, when present.
+/// The deck identity recorded by a Milleleaf export, when present.
 pub fn exported_path(edited: &Presentation) -> Option<String> {
     keyword(edited, KEY_DECK)
 }

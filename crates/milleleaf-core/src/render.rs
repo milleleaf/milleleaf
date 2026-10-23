@@ -1,6 +1,6 @@
 //! Model → HTML views of a composed tree.
 //!
-//! Decks render to the Milleleaf HTML deck profile, so the output can be
+//! Decks render to the Milleleaf HTML deck profile (`deck/0`), so the output can be
 //! measured back into a layer; every element carries `data-mleaf-path`, so a re-import edits the
 //! same nodes instead of creating new ones. Documents render to plain semantic HTML.
 
@@ -241,7 +241,7 @@ fn link_attr(n: &Composed) -> String {
     }
 }
 
-/// Renders a composed `deck::deck` node as an Milleleaf HTML deck.
+/// Renders a composed `deck::deck` node as a Milleleaf HTML deck.
 pub fn deck_html(deck: &Composed) -> String {
     let d = attr(deck, "deck::deck").cloned().unwrap_or_default();
     let (w, h) = (f(&d, "width").max(1.0), f(&d, "height").max(1.0));

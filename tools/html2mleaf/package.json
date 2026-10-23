@@ -2,7 +2,7 @@
   "name": "html2mleaf",
   "version": "0.1.0",
   "private": true,
-  "description": "Measure an HTML deck (Milleleaf HTML deck profile) into an Milleleaf proposal layer",
+  "description": "Measure an HTML deck (Milleleaf HTML deck profile) into a Milleleaf proposal layer",
   "type": "module",
   "bin": { "html2mleaf": "./html2mleaf.mjs" },
   "license": "MIT OR Apache-2.0",

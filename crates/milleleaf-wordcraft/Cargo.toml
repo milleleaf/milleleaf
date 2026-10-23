@@ -1,6 +1,6 @@
 [package]
 name = "milleleaf-wordcraft"
-description = "Milleleaf ↔ WordCraft adapter: composed Milleleaf documents to WordCraft/DOCX, and edited DOCX back to an Milleleaf layer"
+description = "Milleleaf ↔ WordCraft adapter: composed Milleleaf documents to WordCraft/DOCX, and edited DOCX back to a Milleleaf layer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,4 +1,4 @@
-// Runs inside the page (Playwright `page.evaluate`). Walks an Milleleaf HTML deck and returns plain
+// Runs inside the page (Playwright `page.evaluate`). Walks a Milleleaf HTML deck and returns plain
 // data: slides, frames with measured geometry, text runs, tables, and every loss it notices.
 // Elements that need bytes from the Node side (images, SVG, canvas screenshots) are tagged with
 // `data-mleaf-tmp` and returned as `asset` requests.

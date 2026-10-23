@@ -22,8 +22,8 @@ getrandom = "0.2"
 base64 = "0.22"
 serde_json_canonicalizer = "=0.3.2"
 # Post-quantum signatures (plan decision 5, 18 Oct 2026).
-# Pure Rust, never independently audited. ML-DSA: RustCrypto. SLH-DSA: fips205, a final release
-#; one parameter set compiled in.
+# Pure Rust, never independently audited. ML-DSA: RustCrypto. SLH-DSA: fips205, a final release;
+# one parameter set compiled in.
 ml-dsa = { version = "=0.1.1", default-features = false, features = ["alloc"] }
 fips205 = { version = "=0.4.1", default-features = false, features = ["slh_dsa_sha2_192s"] }
 # fips205's RNG traits (we hand it randomness drawn with getrandom).

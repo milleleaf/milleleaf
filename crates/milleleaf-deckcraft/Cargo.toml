@@ -1,6 +1,6 @@
 [package]
 name = "milleleaf-deckcraft"
-description = "Milleleaf ↔ DeckCraft adapter: composed Milleleaf decks to DeckCraft/PPTX, and edited PPTX back to an Milleleaf layer"
+description = "Milleleaf ↔ DeckCraft adapter: composed Milleleaf decks to DeckCraft/PPTX, and edited PPTX back to a Milleleaf layer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

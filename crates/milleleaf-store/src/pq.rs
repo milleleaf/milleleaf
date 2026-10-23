@@ -8,7 +8,7 @@
 use fips205::traits::{KeyGen, SerDes, Signer, Verifier};
 use ml_dsa::{ExpandedSigningKey, Keypair, MlDsa65, SigningKey as MlKey};
 
-/// The SLH-DSA parameter set. To switch (the maintainer may choose SHA2-128s), change both lines, the
+/// The SLH-DSA parameter set. To switch (to SHA2-128s, say), change both lines, the
 /// `fips205` feature in Cargo.toml and `RcSlh` in the tests; a test checks they agree.
 use fips205::slh_dsa_sha2_192s as slh;
 pub const SLH: &str = "slhdsa-sha2-192s";

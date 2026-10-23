@@ -1,5 +1,5 @@
 //! Composed tree → DocLang 0.8 (`https://www.doclang.ai/ns/v0`), the open XML format AI tools read
-//! documents in (plan M2.7 item 2; mapping spiked in the project notes).
+//! documents in (plan M2.7 item 2; the mapping was spiked first).
 //!
 //! One-way: text, headings, emphasis, links, tables with merges, slides (one page each, with their
 //! frames' locations), bullet lists, charts with their data and pictures go into DocLang elements.

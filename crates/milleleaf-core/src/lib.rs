@@ -2,8 +2,8 @@
 //!
 //! One project is a stack of JSON layers (base data, an agent's proposal, a reviewer's
 //! corrections …). Composing the stack gives the single source of truth that WordCraft,
-//! GridCraft, DeckCraft and PdfCraft adapters read from and write layers back to. See
-//! the project notes.
+//! GridCraft, DeckCraft and PdfCraft adapters read from and write layers back to. The format is
+//! described by `schema/mleaf.tsp`.
 
 pub mod compose;
 pub mod doclang;
