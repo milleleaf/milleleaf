@@ -21,7 +21,7 @@ Other Rust and JavaScript dependencies are MIT, Apache-2.0 or both, and carry th
 | Path | What | Author | Source | Licence | Licence file |
 |---|---|---|---|---|---|
 | `site/public/fonts/commissioner-variable.ttf` | Commissioner, variable, version 1.001 | The Commissioner Project Authors (Kostas Bartsokas) | <https://github.com/kosbarts/Commissioner> | OFL-1.1 | [`site/public/fonts/OFL-Commissioner.txt`](site/public/fonts/OFL-Commissioner.txt) |
-| `site/public/fonts/ibm-plex-sans-regular.ttf`, `ibm-plex-sans-semibold.ttf` | IBM Plex Sans, version 3.201 (not referenced by the site today) | IBM Corp. | <https://github.com/IBM/plex> | OFL-1.1 | [`site/public/fonts/OFL.txt`](site/public/fonts/OFL.txt) |
+| `site/public/fonts/ibm-plex-sans-regular.ttf`, `ibm-plex-sans-semibold.ttf` | IBM Plex Sans, version 3.201 (not referenced by the site today) | IBM Corp. | <https://github.com/IBM/plex> | OFL-1.1 | [`site/public/fonts/OFL.txt`](site/public/fonts/OFL.txt), byte for byte IBM's `packages/plex-sans/fonts/complete/ttf/license.txt` at tag `@ibm/plex-sans@1.1.0` |
 | `site/public/brand/*.svg` | Milleleaf logo, dark logo and mark | Helen Kwok | Original work | Milleleaf brand terms (not open source) | [`brand/LICENSE-brand.txt`](brand/LICENSE-brand.txt) |
 
 ## Examples and fixtures

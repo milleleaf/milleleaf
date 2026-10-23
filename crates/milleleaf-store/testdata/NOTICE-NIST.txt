@@ -1,9 +1,4 @@
-The ML-DSA and SLH-DSA test vectors in pq-vectors.json are a subset of the National Institute of
-Standards and Technology (NIST) ACVP-Server test vectors
-(https://github.com/usnistgov/ACVP-Server, commit 975de31eb83d87039ec88934fdc47d8c312b892d,
-gen-val/json-files/*-FIPS204 and *-FIPS205). Source: NIST. Changed by the Milleleaf contributors on
-2026-10-18: a few test cases picked per parameter set and fields trimmed (pq-vectors-subset.py); the
-values themselves are unchanged. The NIST notice, from that commit's README:
+The ML-DSA and SLH-DSA test vectors in pq-vectors.json are a subset of the National Institute of Standards and Technology (NIST) ACVP-Server test vectors (https://github.com/usnistgov/ACVP-Server, commit 975de31eb83d87039ec88934fdc47d8c312b892d, gen-val/json-files/*-FIPS204 and *-FIPS205). Source: NIST. Changed by the Milleleaf contributors on 2026-10-18: a few test cases picked per parameter set and fields trimmed (pq-vectors-subset.py); the values themselves are unchanged. The NIST notice, from that commit's README:
 
 
 NIST-developed software is provided by NIST as a public service. You may use, copy, and distribute copies of the software in any medium, provided that you keep intact this entire notice. You may improve, modify, and create derivative works of the software or any portion of the software, and you may copy and distribute such modifications or works. Modified works should carry a notice stating that you changed the software and should note the date and nature of any such change. Please explicitly acknowledge the National Institute of Standards and Technology as the source of the software. 
