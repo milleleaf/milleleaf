@@ -123,15 +123,11 @@ Editor re-saves **of Milleleaf's export** of each real file (`tools/inventory/ro
 adopts the file and exports it again), and real edits made in the editors. The tests import them
 against the adopted file: a re-save must be no change, an edit exactly that edit.
 
-**Re-made after the rename to Milleleaf (23 Oct 2026):** the LibreOffice re-saves and
-`milleleaf-deck.deckcraft.pptx` were made again from new exports by
-`examples/hello-table/fixtures/make/make.sh` (on the box, LibreOffice 24.2.7.2). **The Microsoft
-Office files are converted, not as saved:** their Milleleaf markers were rewritten from the
-pre-release `ox` names (`ox:` tags, `ox_` names, `oxrevision=`, layer ids `milleleaf/…`) and their
-recorded revisions recomputed; nothing else changed, apart from the folder path Excel records
-(`x15ac:absPath`), trimmed to `~/` in the two `lca-model.msoffice-*` files and
-`milleleaf-charts.excel.xlsx`. They are to be replaced by fresh saves; until then the hashes below
-are of the converted files.
+**Re-made after the rename to Milleleaf (23 Oct 2026):** every file in this table was made again from
+new exports: the LibreOffice re-saves and `milleleaf-deck.deckcraft.pptx` by
+`examples/hello-table/fixtures/make/make.sh` (on the box, LibreOffice 24.2.7.2), the Microsoft Office
+files by hand with the same steps as before. Their metadata was scrubbed as before (last modified
+by Milleleaf, Excel's folder path trimmed).
 
 | File | Made by | How |
 |---|---|---|
@@ -146,23 +142,23 @@ are of the converted files.
 | `milleleaf-deck.msoffice-edited.pptx` | PowerPoint 16 (Mac), by hand | open `milleleaf-deck.reexport.pptx`, add " (revised)" at the end of slide 1's subtitle, save |
 
 If a Microsoft Office file is missing, its part of the test prints `PENDING` and is skipped (run.sh
-step 18 shows those lines). All six are there since 22 Oct.
+step 18 shows those lines). All six are there (made again 23 Oct, after the rename).
 
-**The Microsoft Office files (22 Oct 2026):** the maintainer made them on the Mac from the packet the box
-prepared (`<box-data>/real-swap/packet/README.txt` has the steps and the inputs' SHA-256:
-`paper.reexport.docx` `45a4eddf…bbb34`, `lca-model.reexport.xlsx` `ecbde260…5ff0a`,
+**The Microsoft Office files (made again 23 Oct 2026, after the rename):** the maintainer made them on the Mac from a
+packet of new exports made by `examples/hello-table/fixtures/make/make.sh` (inputs' SHA-256:
+`paper.reexport.docx` `d4775a7b…5c1f1`, `lca-model.reexport.xlsx` `053754de…63b86`,
 `milleleaf-deck.reexport.pptx` `9ed9c7ea…3d478`, the last being `milleleaf-deck.deckcraft.pptx`),
 changing nothing but what each step says. Application and version are from each file's
 `docProps/app.xml`.
 
 | File | SHA-256 | Size | Application |
 |---|---|---|---|
-| `paper.msoffice-resaved.docx` | `924dbbb9f55e3e02bed0336e36113267a1da89faceb7ccbf43b4d0227b79216b` | 117,369 | Microsoft Office Word 16.0000 |
-| `paper.msoffice-blank-line.docx` | `c27aab93dcf6f8a0c062a7619befa6ed3eca8038b1867279c5ffebbb13cbeec1` | 117,360 | Microsoft Office Word 16.0000 |
-| `lca-model.msoffice-resaved.xlsx` | `71cd9d2ab27125bdbf546e2fc7b4dce371b29d3faeac86027ea96b063528bf7b` | 2,124,474 | Microsoft Macintosh Excel 16.0300 |
-| `lca-model.msoffice-margins.xlsx` | `3a20ffa87468e4b5634f1bdcf48eb5d83ea5b91848b09e47651182af77a057ae` | 2,124,529 | Microsoft Macintosh Excel 16.0300 |
-| `milleleaf-deck.msoffice-resaved.pptx` | `bc21ef560315fb35185c34e06369f59cabb8cde2299485e66d1659812b2c20c4` | 99,199 | Microsoft Macintosh PowerPoint 16.0000 |
-| `milleleaf-deck.msoffice-edited.pptx` | `b22fb01042c756867b46c1c3b5b5de134b933a35f3c6dfba75ae17f061555ef1` | 99,288 | Microsoft Macintosh PowerPoint 16.0000 |
+| `paper.msoffice-resaved.docx` | `e1ced427bc54c39d313c14cf5940e63dace13b6605c35593e9159d1fec75480e` | 116,688 | Microsoft Office Word 16.0000 |
+| `paper.msoffice-blank-line.docx` | `b28ba2dcf1f419b7193ac73612c105e38792ecc644e78d15dd41d7aced59fb74` | 116,720 | Microsoft Office Word 16.0000 |
+| `lca-model.msoffice-resaved.xlsx` | `beb42dffc34d544d856b2c8c83364f3842a0f0a48e6b0c332d45743aad44ae26` | 2,124,210 | Microsoft Macintosh Excel 16.0300 |
+| `lca-model.msoffice-margins.xlsx` | `70847313ed8e77689af9b06eb80cb493278302b82199babc260db8dbfa3c7a67` | 2,124,307 | Microsoft Macintosh Excel 16.0300 |
+| `milleleaf-deck.msoffice-resaved.pptx` | `dccdc517d730a1f0ac14e2e49d255ca884255638c44957d85a1b585d1fe907bf` | 99,152 | Microsoft Macintosh PowerPoint 16.0000 |
+| `milleleaf-deck.msoffice-edited.pptx` | `2bc27ce204e14582049c981c0baaa9f0f1591d1f3f0ad322557d55320a685725` | 99,239 | Microsoft Macintosh PowerPoint 16.0000 |
 
 **Licence:** each is a modified copy of its original and keeps the original's terms: the paper's and
 the model's under CC BY 4.0 with the attributions above (modified: exported by Milleleaf, then
