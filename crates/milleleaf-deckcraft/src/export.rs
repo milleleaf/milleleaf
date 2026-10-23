@@ -409,7 +409,8 @@ pub fn export_with(deck: &Composed, assets: milleleaf_core::PictureSource) -> Re
         }
         // Shapes by frame path, and connector ends to attach once every shape is made.
         let mut ids: std::collections::HashMap<&str, ShapeId> = std::collections::HashMap::new();
-        let mut ends: Vec<(usize, Option<(String, u32)>, Option<(String, u32)>)> = Vec::new();
+        type End = Option<(String, u32)>;
+        let mut ends: Vec<(usize, End, End)> = Vec::new();
         for fr in &slide_node.children {
             let g = obj(fr, "deck::frame").cloned().unwrap_or_default();
             let xfrm = Xfrm {

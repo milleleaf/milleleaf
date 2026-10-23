@@ -67,8 +67,8 @@ fn picture_run(doc_media: &BTreeMap<String, std::sync::Arc<Vec<u8>>>, o: &Inline
     if crop.iter().any(|c| c.abs() > 1e-4) {
         pic.insert("crop".into(), json!(crop.map(|c| ((c as f64) * 1e4).round() / 1e4)));
     }
-    if *float != Default::default() {
-        if let Ok(Value::Object(mut f)) = serde_json::to_value(float) {
+    if *float != Default::default()
+        && let Ok(Value::Object(mut f)) = serde_json::to_value(float) {
             // f32 points, to 0.01 pt (401.04998779296875 is 401.05).
             for v in f.values_mut() {
                 if let Some(x) = v.as_f64().filter(|_| v.is_f64()) {
@@ -79,7 +79,6 @@ fn picture_run(doc_media: &BTreeMap<String, std::sync::Arc<Vec<u8>>>, o: &Inline
             }
             pic.insert("float".into(), Value::Object(f));
         }
-    }
     if !bytes.starts_with(milleleaf_core::STAND_IN) {
         pics.insert(blob, (media_type, bytes.to_vec()));
     }
@@ -930,11 +929,10 @@ fn table_style_look(doc: &Document, t: &Table, list_of: &mut dyn FnMut(u32) -> S
                             if let Some(f) = para_format(doc, p) {
                                 cm.insert("para".into(), f);
                             }
-                            if !p.text.is_empty() {
-                                if let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change", "link", "ins", "del"]) {
+                            if !p.text.is_empty()
+                                && let Some(ch) = strip(serde_json::to_value(p.props_of_char(0)).ok(), &["fmtChange", "change", "link", "ins", "del"]) {
                                     cm.insert("chr".into(), ch);
                                 }
-                            }
                         }
                         Value::Object(cm)
                     })
@@ -1205,11 +1203,10 @@ pub fn import_for_comparison(
     edited: &Document,
     header: Header,
 ) -> Result<(Layer, ImportReport), WordError> {
-    if let Some(found) = exported_path(edited) {
-        if found != node.path {
+    if let Some(found) = exported_path(edited)
+        && found != node.path {
             return Err(WordError::WrongDocument { expected: node.path.clone(), found });
         }
-    }
     let (mut layer, report) = import_into(node, edited, header, false, None, true)?;
     milleleaf_core::matching::flag_best_guesses(&mut layer, &report.matches);
     Ok((layer, report))
@@ -1430,21 +1427,18 @@ fn import_into(
                 }
                 // Captions belong to their table node, including a tagged file adopted as a
                 // self-contained snapshot rather than reconstructed from its original stack.
-                if adopting && file_comparison {
-                    if let Some(table_path) = tag.as_deref().and_then(|t| t.strip_suffix(CAPTION_SUFFIX)) {
-                        if let Some(table) = nodes.iter_mut().find(|n| n.path == table_path && n.attributes.contains_key("word::table")) {
+                if adopting && file_comparison
+                    && let Some(table_path) = tag.as_deref().and_then(|t| t.strip_suffix(CAPTION_SUFFIX))
+                        && let Some(table) = nodes.iter_mut().find(|n| n.path == table_path && n.attributes.contains_key("word::table")) {
                             if let Some(look) = table.attributes.get_mut("word::table") {
                                 look["caption"] = json!(ex.text.trim());
                             }
                             continue;
                         }
-                    }
-                }
                 // Captions belong to their table node.
                 if let Some(table_path) =
                     tag.as_deref().and_then(|t| t.strip_suffix(CAPTION_SUFFIX))
-                {
-                    if let Some(t) = by_path.get(table_path) {
+                    && let Some(t) = by_path.get(table_path) {
                         captions_seen.insert(table_path.to_string());
                         let wt = obj(t, "word::table").cloned().unwrap_or_default();
                         let caption = ex.text.trim().to_string();
@@ -1465,7 +1459,6 @@ fn import_into(
                     }
                     // A caption for a table this document doesn't have: keep it as a paragraph
                     // rather than dropping its text.
-                }
                 let style = style_name(edited, p);
                 let existing = tag
                     .as_deref()
@@ -1591,11 +1584,10 @@ fn import_into(
                         // Numbering turned off where the stack has no list: an editor writing the
                         // "off" out (LibreOffice does, for headings its outline numbering covers),
                         // still unnumbered. Not an edit.
-                        if old.get("list").is_none() && new_para.get("list").and_then(|l| l.get("id")).and_then(Value::as_str) == Some("") {
-                            if let Some(o) = new_para.as_object_mut() {
+                        if old.get("list").is_none() && new_para.get("list").and_then(|l| l.get("id")).and_then(Value::as_str) == Some("")
+                            && let Some(o) = new_para.as_object_mut() {
                                 o.remove("list");
                             }
-                        }
                         let old_runs: Vec<Value> = old
                             .get("runs")
                             .and_then(Value::as_array)
@@ -1922,11 +1914,10 @@ fn import_into(
     // an adopted file's own Normal (its font, size, alignment), or a style changed in Word.
     if let Some(od) = &ours_doc {
         let ids = used_style_names(edited);
-        if used_styles(edited, &ids) != used_styles(od, &ids) {
-            if let Ok(v) = serde_json::to_value(&edited.styles) {
+        if used_styles(edited, &ids) != used_styles(od, &ids)
+            && let Ok(v) = serde_json::to_value(&edited.styles) {
                 wd2.insert("styles".into(), v);
             }
-        }
     }
     // Compared on what a reader sees (size, orientation, margins, columns): editors rewrite the
     // rest (grid, header distance) on every save.
@@ -1938,11 +1929,10 @@ fn import_into(
         })
     };
     let page = page_setup(edited);
-    if seen(&page) != seen(&ours) {
-        if let Some(p) = page {
+    if seen(&page) != seen(&ours)
+        && let Some(p) = page {
             wd2.insert("page".into(), p);
         }
-    }
     // Headers and footers, and which pages they're for.
     // Compared, page kind by page kind, with what Milleleaf's own export reads back as: an
     // editor's rewrite (field switches, tab stops repeated from the style) isn't an edit. A part
@@ -1988,11 +1978,8 @@ fn import_into(
             } else {
                 false
             };
-            match if keep { stored.get(which) } else { now } {
-                Some(x) => {
-                    merged.insert(which.into(), x.clone());
-                }
-                None => {}
+            if let Some(x) = if keep { stored.get(which) } else { now } {
+                merged.insert(which.into(), x.clone());
             }
         }
         if merged.is_empty() {
@@ -2012,11 +1999,10 @@ fn import_into(
     // template that removes the line would otherwise get it back.
     let mut seps = Map::new();
     for (k, ns) in [("footnote", &edited.footnote_separators), ("endnote", &edited.endnote_separators)] {
-        if !ns.is_empty() {
-            if let Ok(v) = serde_json::to_value(ns) {
+        if !ns.is_empty()
+            && let Ok(v) = serde_json::to_value(ns) {
                 seps.insert(k.into(), v);
             }
-        }
     }
     // A file with no notes may write no separators (LibreOffice): nothing to compare then.
     let ours_seps = ours_doc.as_ref().map(|od| (serde_json::to_value(&od.footnote_separators).ok(), serde_json::to_value(&od.endnote_separators).ok()));

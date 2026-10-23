@@ -170,8 +170,7 @@ enum Ev<'e> {
 fn walk(xml: &[u8], mut f: impl FnMut(Ev)) {
     let mut r = NsReader::from_reader(xml);
     let mut buf = Vec::new();
-    loop {
-        let Ok((res, ev)) = r.read_resolved_event_into(&mut buf) else { break };
+    while let Ok((res, ev)) = r.read_resolved_event_into(&mut buf) {
         let ns: Vec<u8> = match res {
             ResolveResult::Bound(n) => n.as_ref().to_vec(),
             _ => Vec::new(),
@@ -235,11 +234,10 @@ fn norm_len(s: &str) -> u64 {
 fn count_tag(xml: &[u8], ns: &[u8], tag: &[u8]) -> u64 {
     let mut n = 0;
     walk(xml, |ev| {
-        if let Ev::Open(x, l, _) = ev {
-            if x == ns && l == tag {
+        if let Ev::Open(x, l, _) = ev
+            && x == ns && l == tag {
                 n += 1;
             }
-        }
     });
     n
 }
@@ -533,11 +531,10 @@ fn docx(body: &[u8], hf: &[Vec<u8>], notes: &[Vec<u8>], comments: &[Vec<u8>], na
                     top.1 = true;
                 }
             }
-            Ev::Close(n, l) if n == W && (l == b"footnote" || l == b"endnote") => {
-                if stack.pop() == Some((true, true)) {
+            Ev::Close(n, l) if n == W && (l == b"footnote" || l == b"endnote")
+                && stack.pop() == Some((true, true)) => {
                     separators += 1;
                 }
-            }
             _ => {}
         });
     }

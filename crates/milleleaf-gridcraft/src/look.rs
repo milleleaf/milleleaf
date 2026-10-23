@@ -88,11 +88,10 @@ pub(crate) fn sheet_look(sh: &Sheet, pics: &mut Pictures) -> Map<String, Value> 
     if !comments.is_empty() {
         m.insert("comments".into(), Value::Object(comments));
     }
-    if !sh.validations.is_empty() {
-        if let Ok(v) = serde_json::to_value(&sh.validations) {
+    if !sh.validations.is_empty()
+        && let Ok(v) = serde_json::to_value(&sh.validations) {
             m.insert("validations".into(), v);
         }
-    }
     let rows: Map<String, Value> = sh
         .rows
         .iter()
@@ -150,11 +149,10 @@ pub(crate) fn sheet_look(sh: &Sheet, pics: &mut Pictures) -> Map<String, Value> 
     if (sh.default_col_width, sh.default_row_height) != (blank.default_col_width, blank.default_row_height) {
         m.insert("defaults".into(), json!({ "colWidth": sh.default_col_width, "rowHeight": sh.default_row_height }));
     }
-    if sh.print != PrintSettings::default() {
-        if let Ok(v) = serde_json::to_value(&sh.print) {
+    if sh.print != PrintSettings::default()
+        && let Ok(v) = serde_json::to_value(&sh.print) {
             m.insert("print".into(), v);
         }
-    }
     m
 }
 
@@ -403,8 +401,8 @@ pub(crate) fn read_styles(v: Option<&Value>, warnings: &mut Vec<String>) -> Vec<
 /// When the workbook carries its own styles (`styles` not empty) the map is the whole story: a
 /// cell it doesn't list is in the default style, not in the one Milleleaf would give its value.
 pub(crate) fn apply_cell_styles(wb: &mut Workbook, si: usize, map: Option<&Value>, styles: &[Option<Style>], at: &str, warnings: &mut Vec<String>) {
-    if !styles.is_empty() {
-        if let Some(sh) = wb.sheet_mut(si) {
+    if !styles.is_empty()
+        && let Some(sh) = wb.sheet_mut(si) {
             let styled: Vec<CellRef> = sh.cells.iter().filter(|(_, c)| c.style != StyleId::DEFAULT).map(|(at, _)| at).collect();
             for c in styled {
                 let mut cell = sh.cell(c).cloned().unwrap_or_default();
@@ -412,7 +410,6 @@ pub(crate) fn apply_cell_styles(wb: &mut Workbook, si: usize, map: Option<&Value
                 sh.set_cell(c, cell);
             }
         }
-    }
     for (idx, ranges) in map.and_then(Value::as_object).into_iter().flatten() {
         let Some(style) = idx.parse::<usize>().ok().and_then(|i| styles.get(i)).and_then(Option::clone) else {
             warnings.push(format!("{at}: cell style `{idx}` isn't in the workbook's styles; skipped"));
@@ -467,7 +464,7 @@ pub(crate) fn cell_looks(wb: &Workbook, si: usize) -> std::collections::BTreeMap
             // the cells along that edge may carry them.
             if let Some(m) = sh.merges.iter().find(|m| m.start == at) {
                 let edge = |cells: Vec<CellRef>, pick: fn(&Borders) -> &BorderLine| {
-                    cells.into_iter().filter_map(|c| sh.cell(c)).map(|n| pick(&wb.styles.get(n.style).borders).clone()).find(|l| l.style != BorderStyle::None)
+                    cells.into_iter().filter_map(|c| sh.cell(c)).map(|n| *pick(&wb.styles.get(n.style).borders)).find(|l| l.style != BorderStyle::None)
                 };
                 let rows = || m.start.row..=m.end.row;
                 let cols = || m.start.col..=m.end.col;
@@ -494,7 +491,7 @@ pub(crate) fn cell_looks(wb: &Workbook, si: usize) -> std::collections::BTreeMap
                 if r < 0 || c < 0 {
                     return None;
                 }
-                sh.cell(CellRef::new(r as u32, c as u32)).map(|n| pick(&wb.styles.get(n.style).borders).clone())
+                sh.cell(CellRef::new(r as u32, c as u32)).map(|n| *pick(&wb.styles.get(n.style).borders))
             };
             let (r0, c0, r1, c1) = (at.row as i64, at.col as i64, end_r as i64, end_c as i64);
             let b = &mut st.borders;
@@ -757,11 +754,10 @@ pub(crate) fn settle(now: &mut Map<String, Value>, was: &Map<String, Value>, lib
         };
         let texts = ["header", "footer", "first_header", "first_footer", "even_header", "even_footer"];
         for t in texts {
-            if let (Some(a), Some(b)) = (n.get(t).and_then(Value::as_str), w.get(t).and_then(Value::as_str)) {
-                if a != b && hf(a) == hf(b) {
+            if let (Some(a), Some(b)) = (n.get(t).and_then(Value::as_str), w.get(t).and_then(Value::as_str))
+                && a != b && hf(a) == hf(b) {
                     n.insert(t.into(), json!(b));
                 }
-            }
         }
         if n.get("fit_to").is_some_and(|f| !f.is_null()) && n.get("fit_to") == w.get("fit_to") {
             n.insert("scale".into(), w.get("scale").cloned().unwrap_or(Value::Null));
@@ -837,6 +833,7 @@ pub(crate) fn external_ref(f: &str) -> bool {
 ///   and quotes a literal series name;
 /// - every editor places a chart by its own row heights and column widths: Excel moves the size by a
 ///   few points, LibreOffice re-anchors it up to two rows away and stores it as move-only.
+///
 /// `theme` is the editor's workbook's.
 pub(crate) fn same_charts(now: &Value, was: &Value, theme: &gridcraft_model::Theme, libreoffice: bool) -> bool {
     let (Ok(now), Ok(was)) = (serde_json::from_value::<Vec<Chart>>(now.clone()), serde_json::from_value::<Vec<Chart>>(was.clone())) else {

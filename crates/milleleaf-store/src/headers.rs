@@ -179,7 +179,7 @@ fn u32_at(h: &[u8], at: usize) -> u32 {
 /// Checks a whole header file (80 bytes per height, from genesis). With `cp`, the chain must reach
 /// that checkpoint, with exactly its hash and chain work. Never panics on bad input.
 pub fn check(file: &[u8], cp: Option<&Checkpoint>) -> Result<Chain, String> {
-    if file.is_empty() || file.len() % 80 != 0 {
+    if file.is_empty() || !file.len().is_multiple_of(80) {
         return Err(format!("the header file is {} bytes, not a whole number of 80-byte headers", file.len()));
     }
     if file[..80] != genesis()[..] {

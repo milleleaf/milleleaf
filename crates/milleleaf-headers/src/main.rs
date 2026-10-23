@@ -206,7 +206,7 @@ async fn follow(b: Builder, buf: &mut Vec<u8>, path: &Path) -> (Result<(), Strin
                     if let Err(x) = apply(buf, c) {
                         break Err(x);
                     }
-                    if buf.len() / 80 % 50_000 == 0 {
+                    if (buf.len() / 80).is_multiple_of(50_000) {
                         eprintln!("milleleaf-headers: block {}", buf.len() / 80 - 1);
                     }
                     if buf.len() >= saved + SAVE_EVERY * 80 {

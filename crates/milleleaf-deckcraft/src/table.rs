@@ -104,7 +104,8 @@ fn builtin_look(ctx: &resolve::Ctx, t: &Table, r: usize, c: usize) -> StyleLook 
     let white = Rgba::WHITE;
     let dark_text = ctx.color(&ColorRef::scheme(SchemeSlot::Tx1), None);
     let edge = header || total || first_col || last_col;
-    let (fill, text, bold, border): (Option<Rgba>, Option<Rgba>, bool, Option<(Rgba, f64)>) = match t.style.split('-').next().unwrap_or("medium2") {
+    type Look = (Option<Rgba>, Option<Rgba>, bool, Option<(Rgba, f64)>);
+    let (fill, text, bold, border): Look = match t.style.split('-').next().unwrap_or("medium2") {
         "none" => (None, None, false, None),
         "grid" => (None, None, false, Some((dark_text, 0.75))),
         "light1" => ((band || band_c).then(|| tint(20000)), None, edge, header.then_some((a, 1.0))),

@@ -207,11 +207,10 @@ pub(crate) fn canonical_para(p: &Map<String, Value>) -> Value {
         }
     }
     // Spaces at the end of a paragraph can't be seen.
-    if let Some(t) = joined.last_mut().and_then(|r| r.get_mut("text")).and_then(|t| t.as_str().map(|s| s.trim_end_matches(' ').to_string())) {
-        if let Some(r) = joined.last_mut() {
+    if let Some(t) = joined.last_mut().and_then(|r| r.get_mut("text")).and_then(|t| t.as_str().map(|s| s.trim_end_matches(' ').to_string()))
+        && let Some(r) = joined.last_mut() {
             r.insert("text".into(), json!(t));
         }
-    }
     let runs = joined;
     // An empty line shows neither a bullet nor a level (LibreOffice resets both).
     let blank = runs.iter().all(|r| r.get("text").and_then(Value::as_str).is_none_or(|t| t.trim().is_empty()));
@@ -741,11 +740,10 @@ pub fn import_for_comparison(
     edited: &Presentation,
     header: Header,
 ) -> Result<(Layer, ImportReport), DeckError> {
-    if let Some(found) = exported_path(edited) {
-        if found != deck.path {
+    if let Some(found) = exported_path(edited)
+        && found != deck.path {
             return Err(DeckError::WrongDeck { expected: deck.path.clone(), found });
         }
-    }
     import_into(deck, edited, header, false, None, true)
 }
 

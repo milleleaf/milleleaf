@@ -130,8 +130,11 @@ fn drawing_charts(xml: &[u8]) -> Vec<(Option<CellRef>, String)> {
     out
 }
 
+/// Chart parts by sheet name: (anchor cell, the part's bytes).
+type ChartParts = HashMap<String, Vec<(Option<CellRef>, Vec<u8>)>>;
+
 /// Every chart part in an XLSX, by sheet name: (anchor cell, the part's bytes).
-pub(crate) fn chart_parts(bytes: &[u8]) -> HashMap<String, Vec<(Option<CellRef>, Vec<u8>)>> {
+pub(crate) fn chart_parts(bytes: &[u8]) -> ChartParts {
     let mut out = HashMap::new();
     let Ok(mut z) = zip::ZipArchive::new(Cursor::new(bytes)) else { return out };
     let wb_rels = rels(&mut z, "xl/workbook.xml");
@@ -220,7 +223,7 @@ pub(crate) fn original(c: &Value, ch: &Chart, assets: milleleaf_core::PictureSou
             return None;
         }
     };
-    let Some(was) = x.get("was").and_then(|w| serde_json::from_value::<Chart>(w.clone()).ok()) else { return None };
+    let was = x.get("was").and_then(|w| serde_json::from_value::<Chart>(w.clone()).ok())?;
     let now = unplaced(ch);
     if was == now {
         return Some(xml);
@@ -285,7 +288,7 @@ pub(crate) fn patch(xml: &[u8], was: &Chart, now: &Chart) -> Option<Vec<u8>> {
             Event::Eof => break,
             Event::Start(e) | Event::Empty(e) => {
                 let local = e.local_name().as_ref().to_vec();
-                let under = |names: &[&[u8]]| stack.len() >= names.len() + 1 && stack[1..=names.len()].iter().zip(names).all(|(a, b)| a == b);
+                let under = |names: &[&[u8]]| stack.len() > names.len() && stack[1..=names.len()].iter().zip(names).all(|(a, b)| a == b);
                 let in_chart = stack.len() == 2 && stack[1] == b"chart";
                 // Removed parts: the title, the legend.
                 if in_chart && (local == b"title" && now.title.is_none() || local == b"legend" && now.legend == LegendPos::None) {

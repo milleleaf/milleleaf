@@ -422,18 +422,18 @@ fn merge_cells(t: &mut Table, merges: Option<&Value>, path: &str, report: &mut E
             report.warnings.push(format!("{path}: merged cells at row {r0}, column {c0} are outside the table; not merged"));
             continue;
         }
-        for r in r0..r0 + rows {
-            let row = &mut t.rows[r].cells;
+        for (i, (row, dropped)) in t.rows[r0..r0 + rows].iter_mut().zip(&mut drop[r0..r0 + rows]).enumerate() {
+            let row = &mut row.cells;
             let width: Option<f32> = row[c0..c0 + cols].iter().map(|c| c.props.width).sum();
             let first = &mut row[c0].props;
             first.span = cols as u32;
             first.width = width;
-            first.vmerge = match (rows > 1, r == r0) {
+            first.vmerge = match (rows > 1, i == 0) {
                 (false, _) => VMerge::None,
                 (true, true) => VMerge::Restart,
                 (true, false) => VMerge::Continue,
             };
-            drop[r].extend(c0 + 1..c0 + cols);
+            dropped.extend(c0 + 1..c0 + cols);
         }
     }
     for (row, d) in t.rows.iter_mut().zip(drop) {

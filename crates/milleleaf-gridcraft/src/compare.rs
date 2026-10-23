@@ -170,11 +170,10 @@ pub fn adopt_for_comparison(
             });
         }
         for (cell, p) in &old_children {
-            if covered.contains(cell) {
-                if let Some(p) = p {
+            if covered.contains(cell)
+                && let Some(p) = p {
                     remove.insert(p.clone());
                 }
-            }
         }
         sheet.children.retain(|cell, _| !covered.contains(cell));
         for (cell, p) in named {
@@ -249,12 +248,11 @@ pub fn import_for_comparison(
             guessed.push(sheet.path.clone());
         }
         for item in &sheet.children {
-            if present.insert(name_for(&item.path)) {
-                if let Some(r) = item.attributes["grid::range"]["ref"].as_str() {
+            if present.insert(name_for(&item.path))
+                && let Some(r) = item.attributes["grid::range"]["ref"].as_str() {
                     add_name(wb, &item.path, &now, r);
                     guessed.push(item.path.clone());
                 }
-            }
         }
     }
     let revision = crate::revision_of(node);
