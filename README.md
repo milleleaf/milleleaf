@@ -78,7 +78,7 @@ The reworded text comes back as a change in a new layer, `my-edit.mleaf.json`. T
 
 ### Build from source
 
-It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub), Node 20+, and cmake, a C/C++ compiler and libclang, which build BoringSSL for the sealing crate (on Debian or Ubuntu: `apt install build-essential cmake clang libclang-dev`; on macOS: Xcode command-line tools and `brew install cmake`). Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files.
+It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub), Node 20+, and cmake, a C/C++ compiler and libclang, which build BoringSSL for the sealing crate (on Debian or Ubuntu: `apt install build-essential cmake clang libclang-dev`; on macOS: Xcode command-line tools and `brew install cmake`). Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files, with the Carlito and Caladea fonts (on Debian or Ubuntu: `fonts-crosextra-carlito fonts-crosextra-caladea`); without them LibreOffice measures Calibri with another font, and changed column widths come back as edits. The LibreOffice tests are ignored by default; run them with `cargo test -p milleleaf-odf --test libreoffice -- --ignored`.
 
 ```sh
 cargo test

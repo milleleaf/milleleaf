@@ -14,10 +14,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Tools (BoringSSL build needs, LibreOffice for the ODF tests)
+      # Carlito and Caladea have Calibri's and Cambria's metrics. Without them LibreOffice measures Calibri with
+      # another font, and the ODS round trip reports different column widths as edits.
+      - name: Tools (BoringSSL build needs, LibreOffice and fonts for the ODF tests)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake clang libclang-dev libreoffice-writer libreoffice-calc libreoffice-impress
+          sudo apt-get install -y --no-install-recommends cmake clang libclang-dev libreoffice-writer libreoffice-calc libreoffice-impress fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
           rustup toolchain install 1.98.0 --profile minimal --component clippy
           rustup default 1.98.0
       - name: Tests
