@@ -1,0 +1,90 @@
+name: Release
+
+# A version tag (v0.1.0, ...) builds the mleaf command for Linux, macOS and Windows and creates a draft
+# release with the archives, SHA-256 sums and build-provenance attestations. Publishing the draft is a
+# person's decision.
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, exe: mleaf }
+          - { os: macos-15, target: aarch64-apple-darwin, exe: mleaf }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, exe: mleaf.exe }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake clang libclang-dev
+      - name: Tools (macOS)
+        if: runner.os == 'macOS'
+        run: command -v cmake || brew install cmake
+      - name: Tools (Windows)
+        if: runner.os == 'Windows'
+        # BoringSSL builds with cmake and NASM; bindgen needs libclang from the preinstalled LLVM.
+        run: |
+          choco install nasm --no-progress -y
+          printf '%s\n' 'C:\Program Files\NASM' >> "$GITHUB_PATH"
+          printf '%s\n' 'LIBCLANG_PATH=C:\Program Files\LLVM\bin' >> "$GITHUB_ENV"
+      - name: Rust
+        run: rustup toolchain install 1.98.0 --profile minimal && rustup default 1.98.0
+      - name: Build
+        run: cargo build --locked --release -p milleleaf-cli --bin mleaf
+      - name: Package
+        id: package
+        run: |
+          name="mleaf-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "$name/examples" "$name/schema"
+          cp "target/release/${{ matrix.exe }}" "$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE NOTICE "$name/"
+          cp schema/office.mleaf.json "$name/schema/"
+          cp -R examples/hello-table "$name/examples/"
+          if [ "$RUNNER_OS" = Windows ]; then 7z a -tzip "$name.zip" "$name" >/dev/null; echo "file=$name.zip" >> "$GITHUB_OUTPUT"
+          else tar -czf "$name.tar.gz" "$name"; echo "file=$name.tar.gz" >> "$GITHUB_OUTPUT"; fi
+      - name: Smoke test
+        run: |
+          cd "mleaf-${GITHUB_REF_NAME}-${{ matrix.target }}/examples/hello-table"
+          ../../${{ matrix.exe }} validate project.mleaf.json
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.package.outputs.file }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ steps.package.outputs.file }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes "Early release: see the README's Quickstart and milleleaf.com/status for what works and what doesn't. Check a download with: gh attestation verify <file> --repo $GITHUB_REPOSITORY" ./*

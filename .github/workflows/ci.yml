@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tools (BoringSSL build needs, LibreOffice for the ODF tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake clang libclang-dev libreoffice-writer libreoffice-calc libreoffice-impress
+          rustup toolchain install 1.98.0 --profile minimal --component clippy
+          rustup default 1.98.0
+      - name: Tests
+        run: cargo test --locked --workspace
+      - name: LibreOffice tests (ignored by default, run here because LibreOffice is installed)
+        run: cargo test --locked -p milleleaf-odf --test libreoffice -- --ignored
+      - name: Clippy (the browser engine)
+        run: cargo clippy --locked -p milleleaf-web -- -D warnings
