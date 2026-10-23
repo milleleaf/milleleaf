@@ -20,7 +20,7 @@ function Header({ path }: { path: string }) {
 }
 
 function Footer() {
-  return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/standards">Standards</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><span>hello@milleleaf.com</span><span>security@milleleaf.com</span></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. <a href="https://github.com/milleleaf/milleleaf">Source on GitHub</a>.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
+  return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/standards">Standards</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><span>hello@milleleaf.com</span><span>security@milleleaf.com</span></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. <a href="https://github.com/milleleaf/milleleaf">Source on GitHub</a>.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
 }
 
 // The two browser demos: the site renders their page; each demo is one component.

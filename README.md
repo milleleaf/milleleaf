@@ -60,4 +60,4 @@ examples/hello-table/run.sh
 
 ## Licence
 
-Code: MIT OR Apache-2.0, at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Third-party material and its licences: `NOTICE` and `ATTRIBUTION.md`. The Milleleaf name and logo are not open source; their terms are in `brand/LICENSE-brand.txt`. Questions and contributions: hello@milleleaf.com. Security reports: security@milleleaf.com.
+Code: MIT OR Apache-2.0, at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Third-party material and its licences: `NOTICE` and `ATTRIBUTION.md`. The Milleleaf name and logo are not open source; their terms are in `brand/LICENSE-brand.txt`. What Milleleaf collects (nothing): `DATA-POLICY.md`. Questions and contributions: hello@milleleaf.com. Security reports: security@milleleaf.com.

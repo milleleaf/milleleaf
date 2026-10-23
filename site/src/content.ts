@@ -95,6 +95,16 @@ export const pages: ContentPage[] = [
     ],
   },
   {
+    path: '/privacy', title: 'We collect nothing about you.', kicker: 'Privacy',
+    intro: 'No accounts, no telemetry, no crash reports, no analytics and no update check. Your files stay where you keep them.',
+    sections: [
+      { title: 'The tool and libraries', body: ['Your files stay on your machine or wherever your project lives. Milleleaf needs no server of its own and sends your files nowhere. LibreOffice and the ArtCraft apps run on your machine as local programs.', 'The network is used only when you ask for it, and only to services you choose: a time-stamp authority or OpenTimestamps calendar you name (only a hash is sent), and public Bitcoin block headers for online verification. Each reveals your IP address to the service you contact. There is no default time-stamp service.'], links: [{ label: 'The full data policy', href: 'https://github.com/milleleaf/milleleaf/blob/main/DATA-POLICY.md' }] },
+      { title: 'This website', body: ['The site is static files served by Cloudflare, which handles each request (your IP address and browser details) to deliver the page. Cloudflare request logging and Web Analytics are off, and the site loads no third-party scripts, fonts or trackers.', 'If you pick a light or dark theme, your browser remembers it (localStorage, milleleaf-theme). It never leaves your browser.'] },
+      { title: 'The demos', body: ['Files you drop are read and processed on your own device by the document engine, running as WebAssembly. The demo pages block every network connection after the page loads, so a file cannot be sent anywhere. Automated checks load a demo, go offline and run every operation, with zero network requests after loading.'], links: [{ label: 'Demo', href: '/demo' }] },
+      { title: 'Questions and changes', body: ['Questions about privacy: hello@milleleaf.com.', 'Any change to this policy is made in the repository, so its history is public.'] },
+    ],
+  },
+  {
     path: '/about', title: 'Useful tools. Evidence in view.', kicker: 'About Milleleaf',
     intro: 'An office tool, public data pipelines, WorldViews and the AI Output to Value method.',
     sections: [
