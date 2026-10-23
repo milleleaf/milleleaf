@@ -20,7 +20,7 @@ function Header({ path }: { path: string }) {
 }
 
 function Footer() {
-  return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/standards">Standards</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><span>hello@milleleaf.com</span><span>security@milleleaf.com</span></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. <a href="https://github.com/milleleaf/milleleaf">Source on GitHub</a>.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
+  return <footer className="site-footer"><div className="wrap footer-main"><Logo /><p>One source.<br />A leaf for every change.</p><nav aria-label="Footer"><a href="/how-it-works">How it works</a><a href="/standards">Standards</a><a href="/status">Status</a><a href="/method">Method</a><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/about#open-work-individual-terms">Licence</a><a href="/.well-known/security.txt">Security</a></nav><div className="footer-contact"><a href="mailto:hello@milleleaf.com">hello@milleleaf.com</a><a href="mailto:security@milleleaf.com">security@milleleaf.com</a></div></div><div className="wrap footer-bottom"><span>Office tool: MIT OR Apache-2.0. <a href="https://github.com/milleleaf/milleleaf">Source on GitHub</a>.</span><span>Data has its own terms. <a href="/data/datasets">Read the register.</a></span></div></footer>
 }
 
 // The two browser demos: the site renders their page; each demo is one component.
@@ -70,6 +70,11 @@ function MethodLadder() {
   return <ol className="evidence-ladder" aria-label="Evidence rungs">{rungs.map(([name, meaning]) => <li key={name}><strong>{name}</strong><span>{meaning}</span></li>)}</ol>
 }
 
+// Email addresses in page text become mailto links.
+function Mail({ text }: { text: string }) {
+  return <>{text.split(/([\w.+-]+@milleleaf\.com)/).map((part, i) => i % 2 ? <a key={i} href={`mailto:${part}`}>{part}</a> : part)}</>
+}
+
 function Content({ path }: { path: string }) {
   const page = pages.find(p => p.path === path)!
   const parent = path.startsWith('/data/') ? ['Data', '/data'] : path.startsWith('/docs/') ? ['Docs', '/docs'] : null
@@ -84,7 +89,7 @@ function Content({ path }: { path: string }) {
       {path === '/how-it-works' && <><ContentFlow /><AppChecks /></>}
       {(path === '/data/round-trip') && <Comparison />}
       {(path === '/docs' || path === '/docs/getting-started') && <div className="command-sheet"><span>Inspect the available routes</span><code>mleaf formats</code><p>CLI command. Public installation instructions are coming with the release.</p></div>}
-      <div className="page-leaves">{page.sections.map(section => <section id={slug(section.title)} key={section.title} className="page-leaf"><h2>{section.title}</h2><div>{section.body.map(p => <p key={p}>{p}</p>)}{section.links && <div className="article-links">{section.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</div></section>)}</div>
+      <div className="page-leaves">{page.sections.map(section => <section id={slug(section.title)} key={section.title} className="page-leaf"><h2>{section.title}</h2><div>{section.body.map(p => <p key={p}><Mail text={p} /></p>)}{section.links && <div className="article-links">{section.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</div></section>)}</div>
     </>}
   </main>
 }

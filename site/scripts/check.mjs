@@ -45,6 +45,8 @@ try {
   assert((await security.text()).includes('Contact: mailto:security@milleleaf.com'))
   await staticPage.goto(origin + '/about')
   assert((await staticPage.locator('main').innerText()).includes('security@milleleaf.com'))
+  assert.equal(await staticPage.locator('main a[href="mailto:security@milleleaf.com"]').count(), 1, 'Emails in page text are mailto links')
+  assert.equal(await staticPage.locator('.footer-contact a[href^="mailto:"]').count(), 2, 'Footer emails are mailto links')
   await staticPage.goto(origin + '/standards')
   assert.equal(await staticPage.locator('.standards-table tbody tr').count(), 13)
   assert(!(await staticPage.locator('main').innerText()).includes('—'))
