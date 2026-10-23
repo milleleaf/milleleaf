@@ -1,44 +1,28 @@
 Milleleaf
 Copyright (c) 2026 Helen Kwok and the Milleleaf contributors.
-Licensed under the MIT License or the Apache License, Version 2.0, at your option
-(LICENSE-MIT, LICENSE-APACHE).
+Licensed under the MIT License or the Apache License, Version 2.0, at your option (LICENSE-MIT, LICENSE-APACHE).
 
-The Milleleaf name, logo, wordmark and mark (site/public/brand/) belong to Helen Kwok. They
-are not open source and are not covered by the licence above; their terms are in
-brand/LICENSE-brand.txt.
+The Milleleaf name, logo, wordmark and mark (site/public/brand/) belong to Helen Kwok. They are not open source and are not covered by the licence above; their terms are in brand/LICENSE-brand.txt.
 
 Third-party material
 
-This repository and the programs built from it include third-party material under its own licence,
-listed below. The per-file list (author, source, licence) is in ATTRIBUTION.md.
+This repository and the programs built from it include third-party material under its own licence, listed below. The per-file list (author, source, licence) is in ATTRIBUTION.md.
 
 Built into the mleaf program (through its dependencies):
-Inter, JetBrains Mono, Source Sans 3 and Source Serif 4 fonts (WordCraft) and Dancing Script
-  (PdfCraft) — SIL Open Font License 1.1. See licenses/OFL-*.txt.
-Mozilla root certificates (webpki-root-certs 1.0.9) — Community Data License Agreement Permissive 2.0.
-  See licenses/CDLA-Permissive-2.0-webpki-root-certs.txt.
+Inter, JetBrains Mono, Source Sans 3 and Source Serif 4 fonts (WordCraft) and Dancing Script (PdfCraft) — SIL Open Font License 1.1. See licenses/OFL-*.txt.
+Mozilla root certificates (webpki-root-certs 1.0.9) — Community Data License Agreement Permissive 2.0. See licenses/CDLA-Permissive-2.0-webpki-root-certs.txt.
 Compact ICC profiles (krilla, through craft-libs) — CC0 1.0.
 
 In the website (site/):
-Commissioner font (site/public/fonts/commissioner-variable.ttf) — SIL Open Font License 1.1. See
-  site/public/fonts/OFL-Commissioner.txt.
-IBM Plex Sans fonts (site/public/fonts/ibm-plex-sans-*.ttf) — SIL Open Font License 1.1. See
-  site/public/fonts/OFL.txt.
+Commissioner font (site/public/fonts/commissioner-variable.ttf) — SIL Open Font License 1.1. See site/public/fonts/OFL-Commissioner.txt.
+IBM Plex Sans fonts (site/public/fonts/ibm-plex-sans-*.ttf) — SIL Open Font License 1.1. See site/public/fonts/OFL.txt.
 
 Test files and examples:
-Real-world Office files in examples/real/ (paper.docx, lca-model.xlsx, lcoh-calculator.xlsx and the
-  re-saves derived from them) — Creative Commons Attribution 4.0, by their authors. See
-  examples/real/SOURCES.md for each file's attribution and examples/real/LICENSE-CC-BY-4.0.txt.
-NIST ACVP-Server test vectors (crates/milleleaf-store/testdata/pq-vectors.json) — NIST software notice;
-  source: NIST. See crates/milleleaf-store/testdata/NOTICE-NIST.txt.
-Wycheproof test vectors (crates/milleleaf-store/testdata/pq-vectors.json) — Apache License 2.0. See
-  LICENSE-APACHE.
-X-Wing HPKE test vector (crates/milleleaf-seal/vectors/) — from the IETF draft-ietf-hpke-pq repository;
-  see ATTRIBUTION.md.
+Real-world Office files in examples/real/ (paper.docx, lca-model.xlsx, lcoh-calculator.xlsx and the re-saves derived from them) — Creative Commons Attribution 4.0, by their authors. See examples/real/SOURCES.md for each file's attribution and examples/real/LICENSE-CC-BY-4.0.txt.
+NIST ACVP-Server test vectors (crates/milleleaf-store/testdata/pq-vectors.json) — NIST software notice; source: NIST. See crates/milleleaf-store/testdata/NOTICE-NIST.txt.
+Wycheproof test vectors (crates/milleleaf-store/testdata/pq-vectors.json) — Apache License 2.0. See LICENSE-APACHE.
+X-Wing HPKE test vector (crates/milleleaf-seal/vectors/) — from the IETF draft-ietf-hpke-pq repository; see ATTRIBUTION.md.
 
 Design credits
 
-Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
-(OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
-specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and
-code are written independently; no USD, IFC5 or DocLang code or schema text is included.
+Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description (OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8 specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema and code are written independently; no USD, IFC5 or DocLang code or schema text is included.

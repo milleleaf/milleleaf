@@ -1,35 +1,25 @@
 Milleleaf brand assets: terms
 
-The Milleleaf name, the Milleleaf logo, wordmark and mark (together, the "Milleleaf Marks"), including
-every file in this directory in any colour, size or format, belong to Helen Kwok. They are not open
-source. The MIT OR Apache-2.0 licence of this repository's code does not cover them, and nothing in that
-licence, in NOTICE or in any other file here gives any right to them.
+The Milleleaf name, the Milleleaf logo, wordmark and mark (together, the "Milleleaf Marks"), including every file in this directory in any colour, size or format, belong to Helen Kwok. They are not open source. The MIT OR Apache-2.0 licence of this repository's code does not cover them, and nothing in that licence, in NOTICE or in any other file here gives any right to them.
 
 What you may do
 
 You may use the Milleleaf Marks, without asking, only:
 
   1. in unmodified copies of this repository; and
-  2. in Milleleaf itself, its documentation and its official releases, to show that Milleleaf made
-     them and to link to milleleaf.com or github.com/milleleaf.
+  2. in Milleleaf itself, its documentation and its official releases, to show that Milleleaf made them and to link to milleleaf.com or github.com/milleleaf.
 
 Conditions
 
 That permission applies only while all of these hold:
 
-  - The files are used as supplied. Don't redraw, recolour, crop, distort, animate or add effects to
-    them, take parts of them, or combine them with another name, logo or artwork.
-  - They are used only to identify Milleleaf, never to suggest that Milleleaf or Helen Kwok made,
-    sponsors, endorses or certifies any other product, service, fork, plug-in, organisation or person.
-  - Neither the Marks nor the name Milleleaf appear in the name, logo, icon, domain, account name,
-    store listing or marketing of anything other than Milleleaf.
+  - The files are used as supplied. Don't redraw, recolour, crop, distort, animate or add effects to them, take parts of them, or combine them with another name, logo or artwork.
+  - They are used only to identify Milleleaf, never to suggest that Milleleaf or Helen Kwok made, sponsors, endorses or certifies any other product, service, fork, plug-in, organisation or person.
+  - Neither the Marks nor the name Milleleaf appear in the name, logo, icon, domain, account name, store listing or marketing of anything other than Milleleaf.
 
 Forks and modified versions
 
-If you publish a modified version of Milleleaf or a work derived from it, remove the Milleleaf Marks
-(or replace them with your own) and don't call it Milleleaf. You may say in plain text that it is
-based on Milleleaf. A fork kept only to propose changes back to this repository may keep the Marks
-unchanged.
+If you publish a modified version of Milleleaf or a work derived from it, remove the Milleleaf Marks (or replace them with your own) and don't call it Milleleaf. You may say in plain text that it is based on Milleleaf. A fork kept only to propose changes back to this repository may keep the Marks unchanged.
 
 Everything else
 
