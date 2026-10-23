@@ -54,7 +54,7 @@ The demos on [milleleaf.com](https://milleleaf.com) run in your browser with not
 
 ### Quickstart (about 5 minutes)
 
-1. Download the archive for your system from [Releases](https://github.com/milleleaf/milleleaf/releases): Linux (x86_64), macOS (Apple silicon) or Windows (x86_64), and unpack it. It holds the `mleaf` command and the Hello Table example. To check that it was built by this repository's release workflow: `gh attestation verify <archive> --repo milleleaf/milleleaf`. Or build from source (below) and use `target/release/mleaf`. The macOS binary is signed and notarized. The Windows one isn't signed yet: run it from PowerShell or cmd as below; double-clicked in Explorer, SmartScreen asks first.
+1. Download the archive for your system from [Releases](https://github.com/milleleaf/milleleaf/releases): Linux (x86_64), macOS (Apple silicon) or Windows (x86_64), and unpack it. It holds the `mleaf` command and the Hello Table example. To check that it was built by this repository's release workflow: `gh attestation verify <archive> --repo milleleaf/milleleaf`. Or build from source (below) and use `target/release/mleaf`. The binaries aren't signed yet. On macOS, after a browser download, run `xattr -d com.apple.quarantine mleaf` once in the unpacked folder. On Windows, run `mleaf.exe` from PowerShell or cmd as below; double-clicked in Explorer, SmartScreen asks first.
 2. Export the example's report and workbook (on Windows, use `..\..\mleaf.exe`):
 
 ```sh

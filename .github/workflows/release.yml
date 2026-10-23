@@ -51,7 +51,8 @@ jobs:
       - name: Build
         run: cargo build --locked --release -p milleleaf-cli --bin mleaf
       - name: Sign and notarize (macOS)
-        if: runner.os == 'macOS'
+        # Off unless the repository variable MACOS_SIGN is "true"; releases are unsigned until then.
+        if: runner.os == 'macOS' && vars.MACOS_SIGN == 'true'
         # Developer ID signature with the hardened runtime and a secure timestamp, then Apple's notary
         # service. A bare executable can't have the ticket stapled, so Gatekeeper fetches it online on
         # first run. The certificate goes into a throwaway keychain that the last step deletes.
@@ -83,7 +84,7 @@ jobs:
           echo "notarization: $status"
           [ "$status" = Accepted ]
       - name: Remove the signing keychain (macOS)
-        if: always() && runner.os == 'macOS'
+        if: always() && runner.os == 'macOS' && vars.MACOS_SIGN == 'true'
         run: |
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/notary.p8"
@@ -129,4 +130,4 @@ jobs:
           cd dist
           sha256sum -- * > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-            --title "$GITHUB_REF_NAME" --notes "Early release: see the README's Quickstart and milleleaf.com/status for what works and what doesn't. The macOS binary is signed with a Developer ID and notarized by Apple; the Windows one isn't signed yet (run it from PowerShell or cmd). Check a download with: gh attestation verify <file> --repo $GITHUB_REPOSITORY" ./*
+            --title "$GITHUB_REF_NAME" --notes "Early release: see the README's Quickstart and milleleaf.com/status for what works and what doesn't. The binaries aren't signed yet. macOS: after a browser download, run xattr -d com.apple.quarantine mleaf once. Windows: run mleaf.exe from PowerShell or cmd. Check a download with: gh attestation verify <file> --repo $GITHUB_REPOSITORY" ./*
