@@ -876,11 +876,11 @@ fn hybrid_signatures_old_keys_upgrade_and_policy() {
 #[test]
 fn a_time_stamp_token_is_checked_against_its_signature_file() {
     use sha2::Digest;
-    // An `openssl ts -reply` response (tools/local-tsa.mjs, 18 Oct 2026) for signed.json.
+    // An `openssl ts -reply` response (tools/local-tsa.mjs, 23 Oct 2026) for signed.json.
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/tsa");
     let data = fs::read(dir.join("signed.json")).unwrap();
     let resp = fs::read(dir.join("response.tsr")).unwrap();
-    assert_eq!(crate::tsp::check(&resp, &data).unwrap().at, "2026-10-18T06:00:04Z");
+    assert_eq!(crate::tsp::check(&resp, &data).unwrap().at, "2026-10-23T03:08:38Z");
     assert!(crate::tsp::check(&resp, b"other bytes").unwrap_err().contains("imprint"));
     assert!(crate::tsp::check(&resp[..200], &data).is_err());
     let (req, _) = crate::tsp::request(&data).unwrap();
