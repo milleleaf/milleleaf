@@ -20,7 +20,7 @@ There is no default time-stamp service: nothing is time-stamped until you name o
 
 ## The website and its demos
 
-- **The site is static files** served by Cloudflare. Like any web host, Cloudflare handles each request (your IP address and browser details) to deliver the page. Cloudflare request logging and Web Analytics are off for the site, and the site loads no third-party scripts, fonts or trackers.
+- **The site is static files** served by Cloudflare. Like any web host, Cloudflare handles each request (your IP address and browser details) to deliver the page. Cloudflare request logging (Workers Logs) and Web Analytics are off for the site. Cloudflare still shows us aggregate counts: how many requests the site got, their status codes and which of our addresses they came to, not who made them. The site loads no third-party scripts, fonts or trackers.
 - **Light or dark theme:** if you pick one, your browser remembers it (`localStorage`, key `milleleaf-theme`). It never leaves your browser.
 - **The demos run in your browser.** Files you drop are read and processed on your own device by the document engine, which runs as WebAssembly. The demo pages' security policy blocks every network connection after the page loads (`connect-src 'none'`), so a file cannot be sent anywhere. Automated checks confirm it: they load a demo, go offline, and run every operation, with zero network requests after loading.
 
