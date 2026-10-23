@@ -14,7 +14,7 @@ listed below. The per-file list (author, source, licence) is in ATTRIBUTION.md.
 
 Built into the mleaf program (through its dependencies):
 Inter, JetBrains Mono, Source Sans 3 and Source Serif 4 fonts (WordCraft) and Dancing Script
-  (PDFCraft) — SIL Open Font License 1.1. See licenses/OFL-*.txt.
+  (PdfCraft) — SIL Open Font License 1.1. See licenses/OFL-*.txt.
 Mozilla root certificates (webpki-root-certs 1.0.9) — Community Data License Agreement Permissive 2.0.
   See licenses/CDLA-Permissive-2.0-webpki-root-certs.txt.
 Compact ICC profiles (krilla, through craft-libs) — CC0 1.0.

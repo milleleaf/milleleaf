@@ -22,7 +22,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 thiserror = "2"
 
-# DeckCraft's PDF writer (through craft-pdf) needs the ArtCraft patched krilla, as DeckCraft's own
+# DeckCraft's PDF writer (through craft-pdf) needs the ArtCraft apps' patched krilla (github.com/storytold), as DeckCraft's own
 # workspace does; WordCraft's PDF writer uses the same krilla 0.8.
 [patch.crates-io]
 krilla = { git = "https://github.com/storytold/craft-libs", rev = "82a24b006eefa036b43c09a67fb9a3fbd17ffe63", version = "=0.8.2" }

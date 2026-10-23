@@ -1,6 +1,6 @@
 [package]
 name = "milleleaf-pack"
-description = "Milleleaf pack: one composed snapshot → each part's PDF through its Craft app → one PDF assembled with PdfCraft"
+description = "Milleleaf pack: one composed snapshot → each part's PDF through its ArtCraft app → one PDF assembled with PdfCraft"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

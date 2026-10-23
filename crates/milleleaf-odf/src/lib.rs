@@ -1,13 +1,13 @@
 //! OpenDocument for Milleleaf.
 //!
-//! The Craft apps don't round-trip ODF yet: WordCraft reads and writes ODT but drops content
+//! The ArtCraft apps don't round-trip ODF yet: WordCraft reads and writes ODT but drops content
 //! controls (where Milleleaf keeps node identity), GridCraft reads ODS but not its named
 //! ranges, and DeckCraft neither reads nor writes ODP. LibreOffice, on the other hand, keeps
 //! all of Milleleaf's markers through ODF (content-control tags in ODT, named ranges in ODS,
 //! shape and page names in ODP — checked with LibreOffice 24.2).
 //!
 //! So ODF goes through LibreOffice, as a converter at the edge: exports are made as OOXML by
-//! the Craft adapters and converted to ODF; imports are converted from ODF to OOXML and read by
+//! the ArtCraft adapters and converted to ODF; imports are converted from ODF to OOXML and read by
 //! the same importers. Nothing in the model depends on it, and every command says when
 //! LibreOffice is missing.
 
@@ -165,7 +165,7 @@ fn unique() -> u128 {
         .unwrap_or(0)
 }
 
-/// OOXML bytes from the Craft adapters → ODF bytes for a `.odt` / `.ods` / `.odp` path.
+/// OOXML bytes from the ArtCraft adapters → ODF bytes for a `.odt` / `.ods` / `.odp` path.
 pub fn to_odf(ooxml: &[u8], odf_ext: &str) -> Result<Vec<u8>, OdfError> {
     let (ooxml_ext, _, to_odf) = pair(odf_ext).ok_or_else(|| OdfError::Convert {
         from: odf_ext.into(),
@@ -175,7 +175,7 @@ pub fn to_odf(ooxml: &[u8], odf_ext: &str) -> Result<Vec<u8>, OdfError> {
     convert(ooxml, ooxml_ext, to_odf)
 }
 
-/// ODF bytes → OOXML bytes the Craft adapters' importers read.
+/// ODF bytes → OOXML bytes the ArtCraft adapters' importers read.
 pub fn from_odf(odf: &[u8], odf_ext: &str) -> Result<Vec<u8>, OdfError> {
     let (_, to_ooxml, _) = pair(odf_ext).ok_or_else(|| OdfError::Convert {
         from: odf_ext.into(),

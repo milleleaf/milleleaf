@@ -2,7 +2,7 @@
 //!
 //! A pack node (`office::pack`) lists parts — a `word::document`, a `grid::workbook`, a
 //! `deck::deck` — in order. [`build`] composes nothing itself: it takes the composed tree, sends
-//! each part through its Craft adapter and that app's own PDF writer (WordCraft's layout engine,
+//! each part through its ArtCraft adapter and that app's own PDF writer (WordCraft's layout engine,
 //! GridCraft's print layout, DeckCraft's slide renderer), then assembles the parts with
 //! PdfCraft: one bookmark per part, the deck's slide titles nested under it, document info
 //! naming the stack revision, and an "About this pack" page listing every layer the numbers came

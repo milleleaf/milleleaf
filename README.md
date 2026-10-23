@@ -1,54 +1,77 @@
 # Milleleaf
 
-One office workspace over the ArtCraft
-[WordCraft](https://github.com/storytold/wordcraft), [GridCraft](https://github.com/storytold/gridcraft),
-[DeckCraft](https://github.com/storytold/deckcraft) and [PdfCraft](https://github.com/storytold/pdfcraft):
-four apps, four modules, **one model**.
+**Make it once. Use it in every app.** One table or chart, in the workbook, report, deck and PDF. Each
+keeps its own style. When the numbers change, every use follows. Edits come back for review.
 
-People switch between documents, spreadsheets, slides and PDFs all day, whichever suite they
-use. Milleleaf keeps the numbers, tables and text they share as one set of objects, so a
-correction in the workbook shows up in the report and the deck, and every export comes from
-the same version.
+Website, demos and status: [milleleaf.com](https://milleleaf.com).
 
-## Ideas
+## Any app in. Any app out.
 
-- **Data-model separation, single source of truth, single-model continuity**: a project is a
-  stack of JSON layers composed into one truth; each app reads and writes its own namespace on
-  shared nodes; every value knows which layer set it.
+Microsoft Office, LibreOffice, the ArtCraft apps
+([WordCraft](https://github.com/storytold/wordcraft), [GridCraft](https://github.com/storytold/gridcraft),
+[DeckCraft](https://github.com/storytold/deckcraft), [PdfCraft](https://github.com/storytold/pdfcraft)) and
+your own software are equals. One project can mix them: a Calc workbook can feed a Word report and a
+DeckCraft deck. Every app is a place where the content is made or shown.
 
-  Milleleaf's layered model follows the composition ideas of Pixar's Universal Scene Description
-  (OpenUSD), as adopted by buildingSMART's IFC5. Its export for AI tools follows the DocLang 0.8
-  specification (doclang.ai, Apache-2.0) and is checked with the DocLang validator. The schema
-  and code are written independently; no USD, IFC5 or DocLang code or schema text is included.
-- **HTML in and out.** Agents and HTML-deck skills write HTML well. A restricted profile lets
-  their decks come in as reviewable *proposal layers*, and lets the model render back out to
-  HTML that re-imports onto the same nodes.
-- **Office formats are exports**, made from a composed snapshot (planned: DOCX, XLSX, PPTX,
-  ODF, PDF through the Craft crates).
+Milleleaf works on the files themselves, through the places the file standards allow (content-control
+tags, defined names, shape names, custom properties). Nothing is installed into Word, Excel, PowerPoint,
+LibreOffice or the ArtCraft apps, and the files stay ordinary office files.
 
-## What's here (alpha)
+- **One layered source.** A project is a stack of layers composed into one model. Each app reads and writes
+  its own part of shared nodes, and every value knows which layer set it.
+- **Edits come back for review.** An edited file imports as a new layer. Typing over a linked value becomes
+  a conflict instead of overwriting the source. The import report says which matches are certain and which
+  are best guesses, and lists what the format could not carry.
+- **History you can check.** Layers and pictures are stored by content hash, with history, blame and
+  checkpoints. Signatures (optional, hybrid post-quantum) and time-stamps verify a layer against a key; they
+  don't establish that its content is correct.
+- **HTML in and out.** An agent's HTML deck, written to a restricted profile (`deck/0`), comes in as a
+  reviewable proposal layer, and the model renders back to HTML that re-imports onto the same nodes.
+
+## Status: in development
+
+Layers, signed history and selected round trips are built and checked on example projects and real-file
+fixtures: Word, Excel and PowerPoint 16 for Mac, LibreOffice (ODF through LibreOffice), and the ArtCraft
+writers. That is not production readiness. Refresh uses the CLI today; there is no one-click refresh inside
+the apps. Review approvals, shared folders, peer-to-peer sync and a browser workspace are planned. Known
+limits and what is checked: [milleleaf.com/status](https://milleleaf.com/status).
+
+The layered model follows the composition ideas of Pixar's Universal Scene Description (OpenUSD), as adopted
+by buildingSMART's IFC5. The export for AI tools follows the DocLang 0.8 specification (doclang.ai,
+Apache-2.0) and is checked with the DocLang validator. The schema and code are written independently; no
+USD, IFC5 or DocLang code or schema text is included.
+
+## What's here
 
 | Path | What |
 |---|---|
-| `schema/mleaf.tsp` | TypeSpec for the file format; compiles to JSON Schema with `@typespec/compiler` and `@typespec/json-schema` 1.17.0 |
+| `schema/mleaf.tsp` | TypeSpec for the layer format; compiles to JSON Schema with `@typespec/compiler` and `@typespec/json-schema` 1.17.0 |
 | `schema/office.mleaf.json` | Attribute schemas: `office::`, `grid::`, `word::`, `deck::`, `mleaf::` |
-| `crates/milleleaf-core` | Rust: load stacks (imports, integrity), flatten, compose with provenance, validate, render HTML |
-| `crates/milleleaf-cli` | `mleaf layers / validate / compose / get / render / pack`, `docx-`, `xlsx-`, `pptx-` `export` / `import`, and the store: `init / commit / head / log / blame / checkpoint / verify / sign / key` |
-| `crates/milleleaf-formats` | Format registry: every route in and out, what it keeps, what it needs, and the best one on this machine |
-| `crates/milleleaf-store` | Revision store in a project's `.mleaf/` folder |
-| `crates/milleleaf-wordcraft` | WordCraft adapter: composed document → DOCX with node identity in content controls; edited DOCX → minimal edit layer |
-| `crates/milleleaf-gridcraft` | GridCraft adapter: composed workbook → recalculated XLSX with node identity in defined names; edited XLSX → edit layer recalculated by GridCraft's calc engine |
-| `crates/milleleaf-pack` | One composed snapshot → each part's PDF through WordCraft, GridCraft and DeckCraft → one bookmarked PDF assembled with PdfCraft, with an "About this pack" page |
-| `crates/milleleaf-odf` | ODT, ODS and ODP for every export and import, converted through LibreOffice, which keeps the identity markers the Craft apps' ODF code drops |
-| `crates/milleleaf-deckcraft` | DeckCraft adapter: composed deck → PPTX with native tables and charts drawn from the data; edited PPTX → edit layer |
-| `tools/html2mleaf` | Node + Playwright: measure an HTML deck into a proposal layer + loss report; `compare.mjs` for round-trip checks |
-| `examples/hello-table` | Workbook → report → agent HTML deck → finance correction → Word, Excel and PowerPoint edits made in LibreOffice, end to end |
+| `crates/milleleaf-core` | Load stacks, flatten, compose with provenance, validate, render HTML, DocLang export |
+| `crates/milleleaf-cli` | The `mleaf` command: layers, validate, compose, render, pack, Office export and import, and the revision store |
+| `crates/milleleaf-formats` | Every route in and out of each format, what it keeps, and the best one on this machine (`mleaf formats`) |
+| `crates/milleleaf-store` | The revision store in a project's `.mleaf/` folder: commits, blame, checkpoints, signatures, sealed layers, search |
+| `crates/milleleaf-wordcraft` | Composed document → DOCX through WordCraft, with node identity in content controls; edited DOCX → edit layer |
+| `crates/milleleaf-gridcraft` | Composed workbook → recalculated XLSX through GridCraft, with node identity in defined names; edited XLSX → edit layer |
+| `crates/milleleaf-deckcraft` | Composed deck → PPTX through DeckCraft, with native tables and charts drawn from the data; edited PPTX → edit layer |
+| `crates/milleleaf-pack` | One snapshot → one bookmarked PDF (PdfCraft) of report, workbook and deck, with a page listing every layer the numbers came from |
+| `crates/milleleaf-odf` | ODT, ODS and ODP, converted through LibreOffice, which keeps the identity markers |
+| `crates/milleleaf-seal` | Sealed (encrypted) layers: HPKE with X-Wing, natively through BoringSSL and in pure Rust for the browser |
+| `crates/milleleaf-headers` | Keeps the Bitcoin header file that `mleaf verify --online` checks time-stamps against |
+| `crates/milleleaf-web` | The engine behind the website's demos, built for the browser |
+| `tools/html2mleaf` | Node + Playwright: measure an HTML deck into a proposal layer and a loss report |
+| `tools/inventory` | An independent count of what an Office file contains, to check that every loss is reported |
+| `tools/local-tsa.mjs`, `tools/local-ots-calendar.mjs` | A local time-stamp authority and OpenTimestamps calendar, for tests without a network |
+| `examples/hello-table` | Workbook → report → agent HTML deck → finance correction → edits in Word, Excel, PowerPoint and LibreOffice, end to end |
+| `examples/real` | Real-world Office files (CC BY 4.0) and our own, with their sources in `SOURCES.md` |
+| `site/` | The website, milleleaf.com |
 
 ## Try it
 
-Needs Rust 1.95+ (PdfCraft's minimum; the first build fetches the Craft crates from GitHub) and
-Node 20+. Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and
-LibreOffice, for OpenDocument files.
+The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install. There is no
+packaged release yet; to run the CLI, build it from source. It needs Rust 1.95+ (the first build fetches the
+ArtCraft crates from GitHub) and Node 20+. Optional: `pdftotext` (poppler), which `run.sh` uses to check
+the pack, and LibreOffice, for OpenDocument files.
 
 ```sh
 cargo test
@@ -56,30 +79,18 @@ cd tools/html2mleaf && npm install && npx playwright install chromium && cd ../.
 examples/hello-table/run.sh
 ```
 
-`run.sh` measures `deck.html` again and checks it against the stored `deck.proposal.mleaf.json` (the same nodes and text; geometry that moves with the installed browser and fonts is only a warning), stacks that proposal with the base workbook +
-report and a finance review that restates Hong Kong revenue, shows that the slide table's rows
-come from the finance layer *via* the workbook table, renders `composed-deck.html` and
-`composed-report.html` (both now say $541,500 and $1,250,500), then re-imports the rendered
-deck and checks nothing changed. It then exports the report as `report.docx` through
-WordCraft and imports a copy edited in LibreOffice: the reworded summary and a new paragraph come
-back as `word-edit.mleaf.json`, while the number typed over the linked table is reported as a
-conflict, because the workbook owns it. Next it exports the workbook as `finance.xlsx` through
-GridCraft and imports a copy edited in LibreOffice (Singapore restated, a Perth row inserted,
-the sheet renamed) as `grid-edit.mleaf.json`, recalculated by GridCraft, and the deck as
-`deck.pptx` through DeckCraft, with a copy edited in Impress coming back as `deck-edit.mleaf.json`.
-Finally `with-edits.mleaf.json` stacks all three: the report, the workbook and the deck are
-re-exported with every edit, and the slide's table, its chart and "across 4 regions" all show
-the Perth row the workbook gained. The last step publishes `board-pack.pdf`: report, workbook
-and deck from that one snapshot, bookmarked, page-numbered, with a page listing every layer
-the numbers came from. With LibreOffice installed it also repeats the round trips as ODT, ODS
-and ODP and checks they give the same edit layers, and checks that the same edits made in
-Microsoft Word, Excel and PowerPoint 16 give the same edit layers too. Last, it puts the project
-into a revision store: commits the edits (one signed), has a stale Word edit refused and then
-rebased, blames the Q3 total on the slide back through the finance review to the workbook edit,
-checkpoints, verifies, and checks the store composes exactly like the stack files. Step 16
-prints `mleaf formats`, makes one-way copies (Markdown; ODT without LibreOffice), shows an ODP
-import refused without LibreOffice, and shows Impress's slide matches as best guesses.
+`run.sh` walks the whole loop on a small example: an agent's HTML deck becomes a proposal layer, a finance
+review restates one number, and the report, workbook and deck all follow. They are exported through
+WordCraft, GridCraft and DeckCraft; copies edited in LibreOffice (and, from the stored fixtures, in Word,
+Excel and PowerPoint 16) come back as edit layers, and a number typed over a linked table comes back as a
+conflict. It then publishes one PDF board pack from a single snapshot, puts the project into a revision
+store (signed commits, a stale edit refused and rebased, blame, checkpoints, verification), round-trips
+real-world files with every loss listed, and exports the project for AI tools as DocLang, checked by the
+official validator. `mleaf formats` lists the routes available on your machine and the tools missing.
 
-## Next Done: the Microsoft Office proof (M0), the revision store (M1), and honest
-matching with format routing (M2). Next: review rules and agent conflict resolution (M3),
-shared-folder collaboration, iroh peer-to-peer sync, and a browser workspace.
+## Licence
+
+Code: MIT OR Apache-2.0, at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Third-party material and its
+licences: `NOTICE` and `ATTRIBUTION.md`. The Milleleaf name and logo are not open source; their terms are in
+`brand/LICENSE-brand.txt`. Questions and contributions: hello@milleleaf.com. Security reports:
+security@milleleaf.com.

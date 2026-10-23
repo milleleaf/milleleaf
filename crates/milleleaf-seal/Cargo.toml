@@ -1,6 +1,6 @@
 [package]
 name = "milleleaf-seal"
-description = "milleleaf sealed layers: HPKE (RFC 9180) with X-Wing, natively through BoringSSL and in pure Rust for wasm"
+description = "Milleleaf sealed layers: HPKE (RFC 9180) with X-Wing, natively through BoringSSL and in pure Rust for wasm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

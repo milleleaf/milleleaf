@@ -244,7 +244,7 @@ export function FlowDemo() {
           <Preview kind="deck" value={snapshot?.deck} /></article>
       </div>
     </section>
-    <p className="mix-note">Any app in, any app out. A Calc workbook can feed a Word report and a DeckCraft deck. These Office-format files open in Microsoft Office, LibreOffice and the Craft apps. <a href="#checked">See the evidence and limits.</a></p>
+    <p className="mix-note">Any app in, any app out. A Calc workbook can feed a Word report and a DeckCraft deck. These Office-format files open in Microsoft Office, LibreOffice and the ArtCraft apps. <a href="#checked">See the evidence and limits.</a></p>
     <section id="project" hidden={!snapshot}>
       <div className="section-heading"><div><h2>Change it anywhere. Bring it back.</h2></div>
         <button id="download-project" className="button secondary" disabled={noProject} onClick={project}>Download project layers</button>
