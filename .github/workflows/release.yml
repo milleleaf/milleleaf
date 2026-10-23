@@ -2,10 +2,12 @@ name: Release
 
 # A version tag (v0.1.0, ...) builds the mleaf command for Linux, macOS and Windows and creates a draft
 # release with the archives, SHA-256 sums and build-provenance attestations. Publishing the draft is a
-# person's decision.
+# person's decision. A manual run (workflow_dispatch) builds, signs and notarizes the same way but makes
+# no release, to check the signing before a tag.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions: {}
 
@@ -20,6 +22,8 @@ jobs:
           - { os: windows-2025, target: x86_64-pc-windows-msvc, exe: mleaf.exe }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # The signing secrets live in this environment, which only v* tags and main may use.
+    environment: release
     permissions:
       contents: read
       id-token: write
@@ -46,6 +50,43 @@ jobs:
         run: rustup toolchain install 1.98.0 --profile minimal && rustup default 1.98.0
       - name: Build
         run: cargo build --locked --release -p milleleaf-cli --bin mleaf
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS'
+        # Developer ID signature with the hardened runtime and a secure timestamp, then Apple's notary
+        # service. A bare executable can't have the ticket stapled, so Gatekeeper fetches it online on
+        # first run. The certificate goes into a throwaway keychain that the last step deletes.
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"; kpass=$(openssl rand -hex 24)
+          security create-keychain -p "$kpass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$kpass" "$keychain"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kpass" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          codesign --force --options runtime --timestamp --keychain "$keychain" -s "Developer ID Application" target/release/mleaf
+          codesign --verify --strict --verbose=2 target/release/mleaf
+          printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k target/release/mleaf "$RUNNER_TEMP/mleaf-notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/mleaf-notarize.zip" --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait --output-format json > "$RUNNER_TEMP/notary.json"
+          rm -f "$RUNNER_TEMP/notary.p8"
+          status=$(plutil -extract status raw "$RUNNER_TEMP/notary.json" 2>/dev/null || python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["status"])' "$RUNNER_TEMP/notary.json")
+          echo "notarization: $status"
+          [ "$status" = Accepted ]
+      - name: Remove the signing keychain (macOS)
+        if: always() && runner.os == 'macOS'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/notary.p8"
       - name: Package
         id: package
         run: |
@@ -72,6 +113,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -87,4 +129,4 @@ jobs:
           cd dist
           sha256sum -- * > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-            --title "$GITHUB_REF_NAME" --notes "Early release: see the README's Quickstart and milleleaf.com/status for what works and what doesn't. Check a download with: gh attestation verify <file> --repo $GITHUB_REPOSITORY" ./*
+            --title "$GITHUB_REF_NAME" --notes "Early release: see the README's Quickstart and milleleaf.com/status for what works and what doesn't. The macOS binary is signed with a Developer ID and notarized by Apple; the Windows one isn't signed yet (run it from PowerShell or cmd). Check a download with: gh attestation verify <file> --repo $GITHUB_REPOSITORY" ./*
