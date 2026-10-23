@@ -63,6 +63,7 @@ export const pages: ContentPage[] = [
     sections: [
       { title: 'Six rungs, six different claims', body: ['Access means having a tool. Output means producing something. A checked artifact can establish a Deliverable.', 'Operating capability needs repeated operation. Outcome needs a measured change for someone. Value needs evidence of what that change is worth.'] },
       { title: 'The claim on this site', body: ['A fixture supports a claim about that file and those app versions. A passing check supports the property it checks.', 'Milleleaf has checked projects and real-file fixtures. It has no measured user Outcome or Value to claim. Planned features stay labelled planned.'] },
+      { title: 'Worked case: Keystone', body: ['Every verdict in Keystone, whether a clash, an IDS failure, a carbon figure or a revision change, is a finding with its evidence one click away, and a person decides each one.', 'The video is a Deliverable: a checked demonstration on sample models. It is not an Outcome on a live project.'], links: [{ label: 'Keystone', href: '/keystone' }] },
       { title: 'Read the method', body: ['AI Output to Value keeps its own name and public home. It guides the tool, the pipelines and this site.'], links: [{ label: 'AI Output to Value', href: 'https://milleleaf.github.io' }, { label: 'Product status', href: '/status' }] },
     ],
   },
@@ -105,11 +106,22 @@ export const pages: ContentPage[] = [
     ],
   },
   {
+    path: '/keystone', title: 'Keystone: openBIM ecosystem', kicker: 'Keystone',
+    intro: '1st place, That Open #TOP Founding Members Hackathon (results 13 October 2026).',
+    sections: [
+      { title: 'One BEP, three buildings', body: ['Keystone runs on That Open Platform. One BIM Execution Plan (BEP, as ISO 19650 describes it), executed with Juan Hoyos’s dotBEP, drives the checks for three buildings with three purposes:', 'Snowdon Towers: new-build coordination. Clash detection and resolution with Revit, a carbon report traced to CO2data.fi factor ids, and the laser scan as a Gaussian splat beside the model.', 'Chania, Rivellino del Porto: heritage conservation. The present state and its reconstruction are checked with IDS and compared.', 'Farnsworth House: design iteration. A pool edited in the Pascal editor fails the BEP’s 3 m clearance, is moved, and is re-checked.'] },
+      { title: 'Checks run, people decide', body: ['Models travel as IFC, the BEP’s information requirements run as IDS checks, and every issue becomes a finding exported as BCF. Automations and Cloud Components do the checking; people decide.'] },
+      { title: 'The video and its credits', body: ['A five-minute video shows Keystone at work.', 'Credits: Snowdon Towers © Autodesk, Revit sample, CC BY-NC-SA 3.0. Chania, Rivellino del Porto: Lip3D, Pepe and Maravelakis (GA 101173974), CC BY 4.0, doi:10.5281/zenodo.17735623. Farnsworth House: Farnsworth-ifc, MIT, Yuki Hamada / Enabler Inc. Carbon factors: CO2data.fi, CC BY 4.0, Syke. A2Heritage, MIT. dotBEP by Juan Hoyos. Pascal editor. That Open Platform is That Open Company’s.'], links: [{ label: 'Watch the video on YouTube (5 min)', href: 'https://youtu.be/GMhvG8-WGDU' }] },
+      { title: 'Want to know more?', body: ['Email hello@milleleaf.com.'] },
+    ],
+  },
+  {
     path: '/about', title: 'Useful tools. Evidence in view.', kicker: 'About Milleleaf',
     intro: 'An office tool, public data pipelines, WorldViews and the AI Output to Value method.',
     sections: [
       { title: 'Content can move', body: ['Milleleaf is being built to move content between apps with reviewable changes and a report of what could not be kept.', 'Microsoft Office, LibreOffice, the ArtCraft apps and your own software are equals. The broader review workflow remains planned.'], links: [{ label: 'How it works', href: '/how-it-works' }, { label: 'Status', href: '/status' }] },
       { title: 'Open work, individual terms', body: ['Public pipelines, dataset cards and both WorldViews maps are available now. AI Output to Value keeps its own public home.', 'The office tool is free and open source under MIT OR Apache-2.0. Dataset licences are separate.'], links: [{ label: 'Source on GitHub', href: 'https://github.com/milleleaf/milleleaf' }, { label: 'Data and WorldViews', href: '/data' }, { label: 'Method', href: '/method' }] },
+      { title: 'Keystone', body: ['Keystone, an openBIM ecosystem on That Open Platform, won 1st place in That Open’s #TOP Founding Members Hackathon.'], links: [{ label: 'Keystone', href: '/keystone' }] },
       { title: 'Contact', body: ['Questions and contributions: hello@milleleaf.com. Security reports: security@milleleaf.com.', 'For security reports, name the component and give reproduction steps without passwords, private files or other people’s data.'] },
     ],
   },

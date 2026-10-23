@@ -3,8 +3,8 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
-const paths = ['/', '/flow', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/standards']
-const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Standards, with the checks beside them.']
+const paths = ['/', '/flow', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/keystone', '/standards']
+const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
