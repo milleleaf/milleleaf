@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::OxError;
+use crate::MleafError;
 use crate::model::Layer;
 
 #[derive(Debug, Clone)]
@@ -24,7 +24,7 @@ pub fn integrity_of(bytes: &[u8]) -> String {
 
 /// Loads `root` and its imports, depth first, so that every layer comes after the layers it
 /// imports. A file imported twice is loaded once, at its first position. Later layers win.
-pub fn load_stack(root: &Path) -> Result<Vec<LoadedLayer>, OxError> {
+pub fn load_stack(root: &Path) -> Result<Vec<LoadedLayer>, MleafError> {
     let mut out = Vec::new();
     let mut done = HashSet::new();
     let mut visiting = Vec::new();
@@ -38,33 +38,33 @@ fn visit(
     out: &mut Vec<LoadedLayer>,
     done: &mut HashSet<PathBuf>,
     visiting: &mut Vec<PathBuf>,
-) -> Result<(), OxError> {
-    let canon = fs::canonicalize(file).map_err(|e| OxError::Io(file.to_path_buf(), e))?;
+) -> Result<(), MleafError> {
+    let canon = fs::canonicalize(file).map_err(|e| MleafError::Io(file.to_path_buf(), e))?;
     if visiting.contains(&canon) {
         let mut chain: Vec<String> = visiting.iter().map(|p| p.display().to_string()).collect();
         chain.push(canon.display().to_string());
-        return Err(OxError::ImportCycle(chain.join(" → ")));
+        return Err(MleafError::ImportCycle(chain.join(" → ")));
     }
     if done.contains(&canon) {
         return Ok(());
     }
-    let bytes = fs::read(&canon).map_err(|e| OxError::Io(canon.clone(), e))?;
+    let bytes = fs::read(&canon).map_err(|e| MleafError::Io(canon.clone(), e))?;
     if let Some(expected) = expected_integrity {
         let actual = integrity_of(&bytes);
         if actual != expected {
-            return Err(OxError::Integrity {
+            return Err(MleafError::Integrity {
                 file: canon,
                 expected: expected.to_string(),
                 actual,
             });
         }
     }
-    let layer = Layer::from_json(&bytes).map_err(|e| OxError::Parse(canon.clone(), e))?;
+    let layer = Layer::from_json(&bytes).map_err(|e| MleafError::Parse(canon.clone(), e))?;
     visiting.push(canon.clone());
     let dir = canon.parent().map(Path::to_path_buf).unwrap_or_default();
     for import in &layer.imports {
         if import.uri.contains("://") {
-            return Err(OxError::RemoteImport(import.uri.clone()));
+            return Err(MleafError::RemoteImport(import.uri.clone()));
         }
         visit(
             &dir.join(&import.uri),

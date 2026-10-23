@@ -22,7 +22,6 @@ pub const MLEAF_VERSION: &str = "mleaf_alpha";
 pub struct Header {
     /// Identifier of this layer, e.g. `milleleaf/examples/hello-table/base`.
     pub id: String,
-    #[serde(alias = "oxVersion")]
     pub mleaf_version: String,
     pub data_version: String,
     pub author: String,
@@ -100,11 +99,11 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub inherits: BTreeMap<String, Option<String>>,
     /// Namespaced attributes (`ns::name`); `null` removes the attribute.
-    #[serde(default, skip_serializing_if = "Map::is_empty", deserialize_with = "legacy_keys")]
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub attributes: Map<String, Value>,
     /// *Checkpoints only:* attribute → id of the layer that originally set it, so provenance
     /// survives flattening many layers into one.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty", deserialize_with = "legacy_keys")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub provenance: BTreeMap<String, String>,
 }
 
@@ -169,26 +168,10 @@ pub struct Layer {
     pub header: Header,
     #[serde(default)]
     pub imports: Vec<Import>,
-    #[serde(default, deserialize_with = "legacy_keys")]
+    #[serde(default)]
     pub schemas: BTreeMap<String, Schema>,
     #[serde(default)]
     pub data: Vec<Node>,
-}
-
-/// Layers written before the rename to Milleleaf (23 Oct 2026) say `ox::name` and `oxVersion`; they are
-/// read as `mleaf::name` and `mleafVersion`. Only reading changes: a layer is always written in the new form.
-fn legacy_keys<'de, D, M, V>(d: D) -> Result<M, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    M: Deserialize<'de> + IntoIterator<Item = (String, V)> + FromIterator<(String, V)>,
-{
-    Ok(M::deserialize(d)?
-        .into_iter()
-        .map(|(k, v)| match k.strip_prefix("ox::") {
-            Some(name) => (format!("mleaf::{name}"), v),
-            None => (k, v),
-        })
-        .collect())
 }
 
 impl Layer {

@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::OxError;
+use crate::MleafError;
 use crate::model::{Layer, Schema};
 use crate::stack::LoadedLayer;
 
@@ -281,7 +281,7 @@ impl<'a> Composer<'a> {
 
     /// The node at `path` with its inherits expanded. Own values override inherited ones; among
     /// several inherits, later names (sorted) override earlier ones.
-    pub fn effective(&mut self, path: &str) -> Result<Effective, OxError> {
+    pub fn effective(&mut self, path: &str) -> Result<Effective, MleafError> {
         let mut visiting = Vec::new();
         self.effective_inner(path, &mut visiting)
     }
@@ -290,14 +290,14 @@ impl<'a> Composer<'a> {
         &mut self,
         path: &str,
         visiting: &mut Vec<String>,
-    ) -> Result<Effective, OxError> {
+    ) -> Result<Effective, MleafError> {
         if let Some(e) = self.memo.get(path) {
             return Ok(e.clone());
         }
         if visiting.iter().any(|p| p == path) {
             let mut chain = visiting.clone();
             chain.push(path.to_string());
-            return Err(OxError::InheritCycle(chain.join(" → ")));
+            return Err(MleafError::InheritCycle(chain.join(" → ")));
         }
         let Some(node) = self.flat.nodes.get(path) else {
             self.warnings.push(Warning {
@@ -405,10 +405,10 @@ impl<'a> Composer<'a> {
     }
 
     /// Composes the whole stack: one tree per root.
-    pub fn compose_all(&mut self) -> Result<Vec<Composed>, OxError> {
+    pub fn compose_all(&mut self) -> Result<Vec<Composed>, MleafError> {
         let roots = self.roots();
         if roots.is_empty() && !self.flat.nodes.is_empty() {
-            return Err(OxError::NoRoots);
+            return Err(MleafError::NoRoots);
         }
         let mut out = Vec::new();
         for root in roots {
@@ -422,11 +422,11 @@ impl<'a> Composer<'a> {
         path: &str,
         name: Option<String>,
         ancestors: &mut Vec<String>,
-    ) -> Result<Composed, OxError> {
+    ) -> Result<Composed, MleafError> {
         if ancestors.iter().any(|p| p == path) {
             let mut chain = ancestors.clone();
             chain.push(path.to_string());
-            return Err(OxError::ChildCycle(chain.join(" → ")));
+            return Err(MleafError::ChildCycle(chain.join(" → ")));
         }
         let eff = self.effective(path)?;
         let names = ordered_child_names(&eff, &mut self.warnings);

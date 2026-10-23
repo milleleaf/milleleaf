@@ -757,7 +757,7 @@ fn xlsx(sheets: &[Vec<u8>], styles: &[u8], wb: &[u8], comments: &[Vec<u8>], name
     walk(wb, |ev| match ev {
         // Not Milleleaf's (`mleaf_…`), nor Excel's own record of a sheet's filter (`_xlnm._FilterDatabase`,
         // which Excel writes for every autoFilter and rebuilds from it; counted as "autofilters").
-        Ev::Open(S, b"definedName", e) if !attr(e, b"name").is_some_and(|n| n.starts_with("mleaf_") || n.starts_with("ox_") || n == "_xlnm._FilterDatabase") => {
+        Ev::Open(S, b"definedName", e) if !attr(e, b"name").is_some_and(|n| n.starts_with("mleaf_") || n == "_xlnm._FilterDatabase") => {
             own_names += 1;
             in_name = true;
         }
@@ -874,7 +874,7 @@ fn pptx(slides: &[Vec<u8>], notes: &[Vec<u8>], names: &[String]) -> Counts {
                     }
                     (P, b"cNvPr") => {
                         if let Some(top) = sps.last_mut() {
-                            top.1 = attr(e, b"name").is_some_and(|n| n.starts_with("mleaf:") || n.starts_with("ox:"));
+                            top.1 = attr(e, b"name").is_some_and(|n| n.starts_with("mleaf:"));
                         }
                         return;
                     }

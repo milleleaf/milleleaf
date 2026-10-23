@@ -61,7 +61,7 @@ pub fn to_pptx(p: &deckcraft_model::Presentation) -> Result<Vec<u8>, DeckError> 
 
 /// Reads PPTX bytes into a DeckCraft presentation.
 pub fn from_pptx(bytes: &[u8]) -> Result<deckcraft_model::Presentation, DeckError> {
-    deckcraft_pptx::import(&milleleaf_core::legacy::upgrade(bytes)).map_err(|e| DeckError::Pptx(e.to_string()))
+    deckcraft_pptx::import(bytes).map_err(|e| DeckError::Pptx(e.to_string()))
 }
 
 pub(crate) fn px(pt: f64) -> f64 {

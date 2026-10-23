@@ -378,8 +378,8 @@ fn which(name: &str) -> Option<PathBuf> {
 
 /// `tools/html2mleaf/html2mleaf.mjs`: `MLEAF_HTML2MLEAF`, else found above the `mleaf` executable or the
 /// current folder (a checkout of Milleleaf).
-fn html2ox_script() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("MLEAF_HTML2MLEAF").or_else(|_| std::env::var("OX_HTML2OX")) {
+fn html2mleaf_script() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("MLEAF_HTML2MLEAF") {
         return Some(PathBuf::from(p)).filter(|p| p.is_file());
     }
     let starts = [std::env::current_exe().ok(), std::env::current_dir().ok()];
@@ -398,7 +398,7 @@ fn html2ox_script() -> Option<PathBuf> {
 pub fn html2mleaf() -> Result<String, String> {
     let node = which("node").ok_or("Node.js isn't on the PATH")?;
     let script =
-        html2ox_script().ok_or("tools/html2mleaf not found (set MLEAF_HTML2MLEAF to html2mleaf.mjs)")?;
+        html2mleaf_script().ok_or("tools/html2mleaf not found (set MLEAF_HTML2MLEAF to html2mleaf.mjs)")?;
     // Resolve Playwright the way html2mleaf will (its own node_modules, or anywhere Node looks).
     let dir = script.parent().unwrap_or(Path::new("."));
     let found = std::process::Command::new(&node)

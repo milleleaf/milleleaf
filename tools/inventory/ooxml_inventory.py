@@ -275,8 +275,8 @@ def xlsx(z):
         "workbook structure locked": sum(1 for w in wbx for e in w.iter(S + "workbookProtection") if e.get("lockStructure") in ("1", "true")),
         "sheets with gridlines off": sum(1 for sh in sheets for v in sh.iter(S + "sheetView") if v.get("showGridLines") in ("0", "false")),
         # Nor Excel's own record of a sheet's filter (written for every autoFilter, rebuilt from it).
-        "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith(("mleaf_", "ox_")) and d.get("name") != "_xlnm._FilterDatabase"),
-        "defined names into other workbooks": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith(("mleaf_", "ox_")) and re.search(r"\[\d+\]", d.text or "")),
+        "defined names (not Milleleaf's)": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("mleaf_") and d.get("name") != "_xlnm._FilterDatabase"),
+        "defined names into other workbooks": sum(1 for w in wbx for d in w.iter(S + "definedName") if not (d.get("name") or "").startswith("mleaf_") and re.search(r"\[\d+\]", d.text or "")),
         "charts": len(parts(z, r"xl/charts/chart\d*\.xml")),
         # Charts GridCraft has no kind for: it reads them as nothing.
         "surface charts": sum(1 for n in parts(z, r"xl/charts/chart\d*\.xml") if any(e.tag.split("}")[-1] in ("surfaceChart", "surface3DChart") for e in xml(z, n).iter())),

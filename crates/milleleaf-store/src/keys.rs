@@ -21,8 +21,6 @@ use crate::pq::{self, ED25519, MLDSA65, SLH};
 use crate::{Result, Store, StoreError, hash_of, io, ots, time, tsp};
 
 const CONTEXT: &[u8] = b"milleleaf layer signature v1\n";
-/// Signatures made before the rename to Milleleaf (23 Oct 2026) used this context; they still verify.
-const OLD_CONTEXT: &[u8] = b"Milleleaf layer signature v1\n";
 
 /// Roles a key can have in a project: owner, approver, editor, viewer.
 pub const ROLES: [&str; 4] = ["owner", "approver", "editor", "viewer"];
@@ -155,16 +153,13 @@ impl KeyPair {
         key_id(&self.key.verifying_key())
     }
 
-    /// Default folder for private keys: `$MLEAF_KEYS` (or the older `$OX_KEYS`), else `~/.config/milleleaf/keys`
-    /// (or `~/.config/ox/keys` when only that one exists).
+    /// Default folder for private keys: `$MLEAF_KEYS`, else `~/.config/milleleaf/keys`.
     pub fn dir() -> PathBuf {
         if let Some(d) = milleleaf_core::env("KEYS") {
             return PathBuf::from(d);
         }
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()));
-        let (new, old) = (home.join(".config/milleleaf/keys"), home.join(".config/ox/keys"));
-        // Keys made before the rename to Milleleaf (23 Oct 2026) stay where they are.
-        if !new.exists() && old.is_dir() { old } else { new }
+        home.join(".config/milleleaf/keys")
     }
 
     pub fn save(&self, dir: &Path) -> Result<PathBuf> {
@@ -321,11 +316,7 @@ pub fn strength(algs: &[&str]) -> String {
 }
 
 fn message(layer_hash: &str) -> Vec<u8> {
-    message_with(CONTEXT, layer_hash)
-}
-
-fn message_with(context: &[u8], layer_hash: &str) -> Vec<u8> {
-    let mut m = context.to_vec();
+    let mut m = CONTEXT.to_vec();
     m.extend_from_slice(format!("sha256-{layer_hash}").as_bytes());
     m
 }
@@ -418,11 +409,7 @@ pub fn check_signature(s: &Signature, layer_hash: &str, known: &[(String, String
         known_as: None, claimed: s.signer.clone(), key_id: String::new(), alg: alg.clone(),
         valid: false, timestamp: None, ots: None, problem: None,
     };
-    let checked = match check(&alg, &s.key, &s.signature, &message(layer_hash)) {
-        Some((false, _)) => check(&alg, &s.key, &s.signature, &message_with(OLD_CONTEXT, layer_hash)),
-        c => c,
-    };
-    match checked {
+    match check(&alg, &s.key, &s.signature, &message(layer_hash)) {
         None => info.problem = Some(format!("unknown algorithm `{alg}`; not accepted")),
         Some((ok, id)) => {
             info.valid = ok && s.layer == format!("sha256-{layer_hash}");
@@ -668,30 +655,4 @@ pub fn ots_of(sigfile: &Path) -> PathBuf {
     let mut s = sigfile.as_os_str().to_owned();
     s.push(".ots");
     PathBuf::from(s)
-}
-
-#[cfg(test)]
-mod legacy_tests {
-    use super::*;
-
-    fn sig(sk: &SigningKey, context: &[u8], h: &str) -> Signature {
-        Signature {
-            alg: None,
-            layer: format!("sha256-{h}"),
-            key: public_string(&sk.verifying_key()),
-            signer: "sample".into(),
-            signature: B64.encode(sk.sign(&message_with(context, h)).to_bytes()),
-            at: "2026-10-23T00:00:00Z".into(),
-        }
-    }
-
-    #[test]
-    fn signatures_made_before_the_rename_still_verify() {
-        let sk = SigningKey::from_bytes(&[7; 32]);
-        let h = "ab".repeat(32);
-        assert!(check_signature(&sig(&sk, CONTEXT, &h), &h, &[]).valid);
-        assert!(check_signature(&sig(&sk, OLD_CONTEXT, &h), &h, &[]).valid);
-        assert!(!check_signature(&sig(&sk, b"something else\n", &h), &h, &[]).valid);
-        assert!(!check_signature(&sig(&sk, OLD_CONTEXT, &h), &"cd".repeat(32), &[]).valid);
-    }
 }

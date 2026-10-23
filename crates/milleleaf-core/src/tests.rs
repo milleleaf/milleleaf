@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::compose::{Composer, flatten};
 use crate::render::group_thousands;
 use crate::stack::integrity_of;
-use crate::{Level, OxError, load_stack, validate};
+use crate::{Level, MleafError, load_stack, validate};
 
 struct TempDir(PathBuf);
 
@@ -108,7 +108,7 @@ fn cycles_are_errors() {
     let flat = flatten(&load_stack(&f).unwrap());
     assert!(matches!(
         Composer::new(&flat).effective("a"),
-        Err(OxError::InheritCycle(_))
+        Err(MleafError::InheritCycle(_))
     ));
 
     t.write(
@@ -119,7 +119,7 @@ fn cycles_are_errors() {
         "q.json",
         json!({"header": header("q"), "imports": [{"uri": "p.json"}]}),
     );
-    assert!(matches!(load_stack(&q), Err(OxError::ImportCycle(_))));
+    assert!(matches!(load_stack(&q), Err(MleafError::ImportCycle(_))));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn integrity_is_checked() {
         "bad.json",
         json!({"header": header("bad"), "imports": [{"uri": "a.json", "integrity": "sha256-00"}]}),
     );
-    assert!(matches!(load_stack(&bad), Err(OxError::Integrity { .. })));
+    assert!(matches!(load_stack(&bad), Err(MleafError::Integrity { .. })));
 }
 
 #[test]

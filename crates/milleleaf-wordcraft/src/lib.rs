@@ -58,7 +58,7 @@ pub fn to_docx(doc: &wordcraft_doc::Document) -> Result<Vec<u8>, WordError> {
 
 /// Reads DOCX bytes into a WordCraft document.
 pub fn from_docx(bytes: &[u8]) -> Result<wordcraft_doc::Document, WordError> {
-    wordcraft_docx::read(&milleleaf_core::legacy::upgrade(bytes)).map_err(|e| WordError::Docx(e.to_string()))
+    wordcraft_docx::read(bytes).map_err(|e| WordError::Docx(e.to_string()))
 }
 
 /// Writes a document in one of WordCraft's other formats: `odt`, `md`, `html`, `rtf`, `tex`,

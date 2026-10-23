@@ -123,6 +123,14 @@ Editor re-saves **of Milleleaf's export** of each real file (`tools/inventory/ro
 adopts the file and exports it again), and real edits made in the editors. The tests import them
 against the adopted file: a re-save must be no change, an edit exactly that edit.
 
+**Converted, not as saved (23 Oct 2026):** these files, `milleleaf-deck.deckcraft.pptx` and the
+`examples/hello-table/fixtures` files made before the rename to Milleleaf had their Milleleaf
+markers rewritten from the pre-release `ox` names (`ox:` tags, `ox_` names, `oxrevision=`, layer
+ids `milleleaf/…`) and their recorded revisions recomputed. Nothing else in them changed, apart from the folder path Excel records
+(`x15ac:absPath`), trimmed to `~/` in the two `lca-model.msoffice-*` files and `milleleaf-charts.excel.xlsx`. They
+are to be replaced by fresh saves of new exports; until then the hashes below are of the converted
+files.
+
 | File | Made by | How |
 |---|---|---|
 | `paper.libreoffice-resaved.docx` | LibreOffice 24.2.7.2 (Linux, the CI image on the box, `--network none`) | `soffice --headless --convert-to docx:"MS Word 2007 XML"` of `paper.reexport.docx` |
@@ -141,18 +149,18 @@ step 18 shows those lines). All six are there since 22 Oct.
 **The Microsoft Office files (22 Oct 2026):** the maintainer made them on the Mac from the packet the box
 prepared (`<box-data>/real-swap/packet/README.txt` has the steps and the inputs' SHA-256:
 `paper.reexport.docx` `45a4eddf…bbb34`, `lca-model.reexport.xlsx` `ecbde260…5ff0a`,
-`milleleaf-deck.reexport.pptx` `8d21922e…53843`, the last being `milleleaf-deck.deckcraft.pptx`),
+`milleleaf-deck.reexport.pptx` `924035f8…299d1`, the last being `milleleaf-deck.deckcraft.pptx`),
 changing nothing but what each step says. Application and version are from each file's
 `docProps/app.xml`.
 
 | File | SHA-256 | Size | Application |
 |---|---|---|---|
-| `paper.msoffice-resaved.docx` | `80cf38e6c52638b6c2ef2673307a27bc351a8dd16e625ec42de2bfafd726694d` | 117,362 | Microsoft Office Word 16.0000 |
-| `paper.msoffice-blank-line.docx` | `a295665a84477b16163e09ffa5d08d5eecfc435b873e0972bbfb7a6bbd4e2a77` | 117,353 | Microsoft Office Word 16.0000 |
-| `lca-model.msoffice-resaved.xlsx` | `aa909e23e43474fcb6d822e98ca007ea274dcace3936cd8387b4d729df3964be` | 2,119,293 | Microsoft Macintosh Excel 16.0300 |
-| `lca-model.msoffice-margins.xlsx` | `169df07354f0538a3c362e314b89e27045c26a6e334adf4aa04e256050f620ce` | 2,119,351 | Microsoft Macintosh Excel 16.0300 |
-| `milleleaf-deck.msoffice-resaved.pptx` | `b3259123efc8f835cf6b8d594daf79fab81d4fe6534cabed5d2ebdf4943cf1f8` | 101,591 | Microsoft Macintosh PowerPoint 16.0000 |
-| `milleleaf-deck.msoffice-edited.pptx` | `72750f1da4084568c85563b47b7573f0e185def51eea2c98855dcf5a77e974bb` | 101,676 | Microsoft Macintosh PowerPoint 16.0000 |
+| `paper.msoffice-resaved.docx` | `924dbbb9f55e3e02bed0336e36113267a1da89faceb7ccbf43b4d0227b79216b` | 117,369 | Microsoft Office Word 16.0000 |
+| `paper.msoffice-blank-line.docx` | `c27aab93dcf6f8a0c062a7619befa6ed3eca8038b1867279c5ffebbb13cbeec1` | 117,360 | Microsoft Office Word 16.0000 |
+| `lca-model.msoffice-resaved.xlsx` | `71cd9d2ab27125bdbf546e2fc7b4dce371b29d3faeac86027ea96b063528bf7b` | 2,124,474 | Microsoft Macintosh Excel 16.0300 |
+| `lca-model.msoffice-margins.xlsx` | `3a20ffa87468e4b5634f1bdcf48eb5d83ea5b91848b09e47651182af77a057ae` | 2,124,529 | Microsoft Macintosh Excel 16.0300 |
+| `milleleaf-deck.msoffice-resaved.pptx` | `bc21ef560315fb35185c34e06369f59cabb8cde2299485e66d1659812b2c20c4` | 99,199 | Microsoft Macintosh PowerPoint 16.0000 |
+| `milleleaf-deck.msoffice-edited.pptx` | `b22fb01042c756867b46c1c3b5b5de134b933a35f3c6dfba75ae17f061555ef1` | 99,288 | Microsoft Macintosh PowerPoint 16.0000 |
 
 **Licence:** each is a modified copy of its original and keeps the original's terms: the paper's and
 the model's under CC BY 4.0 with the attributions above (modified: exported by Milleleaf, then
@@ -206,7 +214,7 @@ it is used as supplied, rendered from `brand/milleleaf-mark.svg` without croppin
 |---|---|---|---|
 | `milleleaf-deck.impress.pptx` | `7ea91ae5bceb6d76460a5671721cdf6b5d401eb6b00b7b8f95c3a6d6d517b4b1` | 130,606 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-deck.impress.odp` | `3350611b064759bf165c4fff3e1de5fe99c5e724169a32637247cae8f3923f6a` | 105,776 | LibreOffice/24.2.7.2 Linux |
-| `milleleaf-deck.deckcraft.pptx` | `8d21922e09a6f9a5f06f6eeed1686bad2c98c70c62fd6cbe6be3788636953843` | 98,298 | DeckCraft |
+| `milleleaf-deck.deckcraft.pptx` | `924035f8cf358bdcd605569098f691562dd6b8853f2b2959fd4abffce67299d1` | 98,059 | DeckCraft |
 | `milleleaf-impress-native.pptx` | `d64cafb7635ad86c2437e54c9fa725e361f52a94458125adfd0f350bc557c489` | 23,166 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-impress-native.odp` | `168100519d222f52bb430b0264f4c7593efcebbdd446359998825a1745f133c6` | 16,808 | LibreOffice/24.2.7.2 Linux |
 | `milleleaf-deck.powerpoint.pptx` | `03032fb5c82070224ac311aac1da0b1adb605ea45937fcf619a7ed42db987042` | 136,741 | Microsoft Macintosh PowerPoint 16.0000 |

@@ -20,11 +20,6 @@ TMP=$(mktemp -d)
 $HTML2MLEAF deck.html --out "$TMP/deck.proposal.mleaf.json" --assets "$TMP/assets" --onto base.mleaf.json \
   --attach "$PROJECT_ROOT:board-deck" --author agent --allow-js
 node ../../tools/html2mleaf/compare.mjs deck.proposal.mleaf.json "$TMP/deck.proposal.mleaf.json" --warn-geometry
-#    A deck written before the rename (data-ox-* markers) measures the same.
-mkdir "$TMP/old" && sed 's/data-mleaf-/data-ox-/g' deck.html > "$TMP/old/deck.html"
-$HTML2MLEAF "$TMP/old/deck.html" --out "$TMP/old.mleaf.json" --assets "$TMP/old-assets" --onto base.mleaf.json \
-  --attach "$PROJECT_ROOT:board-deck" --author agent --allow-js
-node ../../tools/html2mleaf/compare.mjs deck.proposal.mleaf.json "$TMP/old.mleaf.json" --warn-geometry
 rm -rf "$TMP"
 
 DECK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("deck.proposal.mleaf.json")).data[1].path)')

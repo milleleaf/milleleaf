@@ -152,11 +152,6 @@ fn index_aad(key_id: &str, layer_id: &str) -> Vec<u8> {
     format!("milleleaf search index v1\n{key_id}\n{layer_id}").into_bytes()
 }
 
-/// Indexes sealed before the rename to Milleleaf (23 Oct 2026) used this label; they still open.
-fn old_index_aad(key_id: &str, layer_id: &str) -> Vec<u8> {
-    format!("Milleleaf search index v1\n{key_id}\n{layer_id}").into_bytes()
-}
-
 impl Store {
     /// Finds `query` in the head, composed: what the project says now.
     pub fn search_head(&self, query: &str) -> Result<Found> {
@@ -262,7 +257,6 @@ impl Store {
                         {
                             let id = self.index(hash).ok()?.header.id;
                             milleleaf_seal::decrypt(&k, &index_aad(&s.key, &id), &ct)
-                                .or_else(|_| milleleaf_seal::decrypt(&k, &old_index_aad(&s.key, &id), &ct))
                                 .ok()
                         }
                     })

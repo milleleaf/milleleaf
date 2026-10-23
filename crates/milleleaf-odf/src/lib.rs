@@ -58,7 +58,7 @@ pub fn is_odf(path: &Path) -> bool {
 /// turn LibreOffice off), then `soffice` / `libreoffice` on the PATH, then the macOS and Windows
 /// default install locations.
 pub fn soffice_status() -> Result<PathBuf, String> {
-    if let Ok(p) = std::env::var("MLEAF_SOFFICE").or_else(|_| std::env::var("OX_SOFFICE")) {
+    if let Ok(p) = std::env::var("MLEAF_SOFFICE") {
         if p.is_empty() || p.eq_ignore_ascii_case("none") {
             return Err("turned off (MLEAF_SOFFICE=none)".into());
         }

@@ -10,5 +10,3 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-# Reads files written before the rename (legacy.rs); same pin as the other crates use.
-zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }

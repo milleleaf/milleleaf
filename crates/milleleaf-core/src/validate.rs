@@ -3,7 +3,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::OxError;
+use crate::MleafError;
 use crate::compose::{Composer, Flat};
 use crate::model::{DataType, ValueDescription, is_namespaced};
 
@@ -25,7 +25,7 @@ pub struct Issue {
 
 /// Validates every node's own attributes (inherited ones are checked on the node that owns
 /// them), the children/inherits targets, and composition itself (cycles, dangling order names).
-pub fn validate(flat: &Flat) -> Result<Vec<Issue>, OxError> {
+pub fn validate(flat: &Flat) -> Result<Vec<Issue>, MleafError> {
     let mut issues = Vec::new();
     for node in flat.nodes.values() {
         for target in node.children.values().chain(node.inherits.values()) {

@@ -75,12 +75,6 @@ fn content_aad(key_id: &str, layer_id: &str) -> Vec<u8> {
     format!("milleleaf sealed layer v1\n{key_id}\n{layer_id}").into_bytes()
 }
 
-/// Layers and keys sealed before the rename to Milleleaf (23 Oct 2026) used these labels; they still open.
-const OLD_WRAP_INFO: &[u8] = b"Milleleaf content key v1";
-fn old_content_aad(key_id: &str, layer_id: &str) -> Vec<u8> {
-    format!("Milleleaf sealed layer v1\n{key_id}\n{layer_id}").into_bytes()
-}
-
 fn has_blob(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::Object(m) => m.contains_key("blob") || m.values().any(has_blob),
@@ -164,7 +158,6 @@ impl Store {
                 .xwing_seed()
                 .and_then(|s| {
                     milleleaf_seal::unwrap(s, &enc, WRAP_INFO, key_id.as_bytes(), &wrapped)
-                        .or_else(|_| milleleaf_seal::unwrap(s, &enc, OLD_WRAP_INFO, key_id.as_bytes(), &wrapped))
                         .ok()
                 })
                 .and_then(|k| <[u8; 32]>::try_from(k).ok())
@@ -194,7 +187,6 @@ impl Store {
             Err(e) => return locked(format!("its ciphertext is unusable: {e}")),
         };
         let Ok(pt) = milleleaf_seal::decrypt(&k, &content_aad(&s.key, &l.header.id), &ct)
-            .or_else(|_| milleleaf_seal::decrypt(&k, &old_content_aad(&s.key, &l.header.id), &ct))
         else {
             return locked("its ciphertext doesn't decrypt (damaged, or the header was changed)".into());
         };

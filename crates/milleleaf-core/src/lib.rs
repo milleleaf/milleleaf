@@ -5,7 +5,6 @@
 //! GridCraft, DeckCraft and PdfCraft adapters read from and write layers back to. See
 //! the project notes.
 
-pub mod legacy;
 pub mod compose;
 pub mod doclang;
 pub mod matching;
@@ -23,7 +22,7 @@ pub use stack::{BLOB_DIR, LoadedLayer, PictureSource, STAND_IN, blob_of, ext_for
 pub use validate::{Issue, Level, validate};
 
 #[derive(Debug, thiserror::Error)]
-pub enum OxError {
+pub enum MleafError {
     #[error("{0}: {1}")]
     Io(PathBuf, #[source] std::io::Error),
     #[error("{0}: not a valid Milleleaf layer: {1}")]
@@ -47,35 +46,30 @@ pub enum OxError {
 }
 
 /// Loads and flattens the stack rooted at `file`.
-pub fn open(file: &Path) -> Result<Flat, OxError> {
+pub fn open(file: &Path) -> Result<Flat, MleafError> {
     Ok(compose::flatten(&load_stack(file)?))
 }
 
 #[cfg(test)]
 mod tests;
 
-/// The folder a project keeps its store and blobs in: `.mleaf`. Projects made before the rename to
-/// Milleleaf (23 Oct 2026) have `.ox`; that one is used, as it is, while there is no `.mleaf`.
+/// The folder a project keeps its store and blobs in: `.mleaf`.
 pub fn project_dir(root: &std::path::Path) -> std::path::PathBuf {
-    let new = root.join(".mleaf");
-    let old = root.join(".ox");
-    if !new.exists() && old.is_dir() { old } else { new }
+    root.join(".mleaf")
 }
 
-/// The environment variable `MLEAF_<name>`, else its name before the rename, `OX_<name>`.
+/// The environment variable `MLEAF_<name>`.
 pub fn env(name: &str) -> Option<String> {
-    std::env::var(format!("MLEAF_{name}")).or_else(|_| std::env::var(format!("OX_{name}"))).ok()
+    std::env::var(format!("MLEAF_{name}")).ok()
 }
 
 /// The short revision hash of exported content (one or more composed nodes), recorded in exported files
-/// and checked when an edited file comes back. It is taken over the spelling before the rename to
-/// Milleleaf (`ox::` attribute names), so a file exported before 23 Oct 2026 still matches its content.
+/// and checked when an edited file comes back.
 pub fn revision_of<T: serde::Serialize>(parts: &[&T]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     for p in parts {
-        let json = serde_json::to_string(p).unwrap_or_default();
-        h.update(json.replace("\"mleaf::", "\"ox::"));
+        h.update(serde_json::to_string(p).unwrap_or_default());
     }
     h.finalize().iter().take(12).map(|b| format!("{b:02x}")).collect()
 }

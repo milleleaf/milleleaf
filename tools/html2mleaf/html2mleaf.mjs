@@ -65,13 +65,6 @@ async function main() {
   const context = await browser.newContext({ javaScriptEnabled: args.flags.has('allow-js'), viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
   const page = await context.newPage();
   await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
-  // HTML written before the rename to Milleleaf (23 Oct 2026) marks things with data-ox-*: read it as data-mleaf-*.
-  await page.evaluate(() => {
-    for (const el of document.querySelectorAll('*')) for (const a of [...el.attributes]) {
-      const name = a.name.startsWith('data-ox-') && 'data-mleaf-' + a.name.slice(8);
-      if (name && !el.hasAttribute(name)) el.setAttribute(name, a.value);
-    }
-  });
 
   const animations = args.flags.has('allow-js') ? await page.evaluate(() => document.getAnimations().length) : 0;
   const scripts = await page.evaluate(() => document.querySelectorAll('script').length);

@@ -79,14 +79,14 @@ pub fn to_xlsx(wb: &gridcraft_model::Workbook) -> Result<Vec<u8>, GridError> {
 
 /// Reads XLSX bytes into a GridCraft workbook.
 pub fn from_xlsx(bytes: &[u8]) -> Result<gridcraft_model::Workbook, GridError> {
-    gridcraft_xlsx::read_xlsx(&milleleaf_core::legacy::upgrade(bytes))
+    gridcraft_xlsx::read_xlsx(bytes)
         .map(|(wb, _)| wb)
         .map_err(|e| GridError::Xlsx(e.to_string()))
 }
 
 /// Direct, data-only ODS reading. Formulas are cached values and unsupported features are warned.
 pub fn from_ods(bytes: &[u8]) -> Result<(gridcraft_model::Workbook, Vec<String>), GridError> {
-    gridcraft_xlsx::read_ods(&milleleaf_core::legacy::upgrade(bytes))
+    gridcraft_xlsx::read_ods(bytes)
         .map(|(wb, report)| (wb, report.warnings))
         .map_err(|e| GridError::Xlsx(e.to_string()))
 }
