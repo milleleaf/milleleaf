@@ -48,7 +48,7 @@ The layered model follows the composition ideas of Pixar's Universal Scene Descr
 
 ## Try it
 
-The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install. There is no packaged release yet; to run the CLI, build it from source. It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub) and Node 20+. Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files.
+The demos on [milleleaf.com](https://milleleaf.com) run in your browser with nothing to install. There is no packaged release yet; to run the CLI, build it from source. It needs Rust 1.95+ (the first build fetches the ArtCraft crates from GitHub), Node 20+, and cmake, a C/C++ compiler and libclang, which build BoringSSL for the sealing crate (on Debian or Ubuntu: `apt install build-essential cmake clang libclang-dev`; on macOS: Xcode command-line tools and `brew install cmake`). Optional: `pdftotext` (poppler), which `run.sh` uses to check the pack, and LibreOffice, for OpenDocument files.
 
 ```sh
 cargo test
