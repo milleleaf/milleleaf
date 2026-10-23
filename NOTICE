@@ -15,7 +15,6 @@ Compact ICC profiles (krilla, through craft-libs) — CC0 1.0.
 
 In the website (site/):
 Commissioner font (site/public/fonts/commissioner-variable.ttf) — SIL Open Font License 1.1. See site/public/fonts/OFL-Commissioner.txt.
-IBM Plex Sans fonts (site/public/fonts/ibm-plex-sans-*.ttf) — SIL Open Font License 1.1. See site/public/fonts/OFL.txt.
 
 Test files and examples:
 Real-world Office files in examples/real/ (paper.docx, lca-model.xlsx, lcoh-calculator.xlsx and the re-saves derived from them) — Creative Commons Attribution 4.0, by their authors. See examples/real/SOURCES.md for each file's attribution and examples/real/LICENSE-CC-BY-4.0.txt.
