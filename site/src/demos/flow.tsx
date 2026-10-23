@@ -191,6 +191,8 @@ export function FlowDemo() {
     setSnapshot(next); setImported(wasImported); setSignature('')
     setStatus(wasImported ? 'Saved as a new layer. The current report and deck are ready to download.' : 'Ready. Your report and deck share one source, each in its own style.')
   }
+  // Opening another workbook discards the project, which lives only in this tab: ask first.
+  const replaceOk = () => !snapshot || confirm('Open another workbook? This discards the current project: its report, deck and layers. Download them first to keep them.')
   const picked = (event: ChangeEvent<HTMLInputElement>, task: (file: File) => Promise<void>, message: string) => {
     const input = event.target, file = input.files?.[0]
     if (!file) return
@@ -244,8 +246,8 @@ export function FlowDemo() {
         <div className="section-label"><span>1. The source</span><span className="file-tag">.xlsx</span></div>
         <h2>Start with a workbook</h2><p>Made in Excel, Calc or GridCraft. Every app is a place to work.</p>
         <div className="actions">
-          <button id="sample" className="button" disabled={!ready || busy} onClick={() => operation('Opening the bundled workbook…', async () => opened(await call('sample', [who(), now()]), 'Hello Table · finance.xlsx'))}>Try the finance workbook</button>
-          <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => picked(e, openWorkbook, 'Reading your workbook locally:')} /></label>
+          <button id="sample" className="button" disabled={!ready || busy} onClick={() => replaceOk() && operation('Opening the bundled workbook…', async () => opened(await call('sample', [who(), now()]), 'Hello Table · finance.xlsx'))}>Try the finance workbook</button>
+          <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => { if (replaceOk()) picked(e, openWorkbook, 'Reading your workbook locally:'); else e.target.value = '' }} /></label>
         </div>
         <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model. Up to 64 MiB per file.</p>
         <p id="workbook-name" className="caption">{name}</p>

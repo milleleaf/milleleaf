@@ -14,6 +14,8 @@ page.setDefaultTimeout(180000);
 const errors = [], requests = [];
 page.on('pageerror', (error) => errors.push(error.message));
 page.on('request', (request) => requests.push({ method: request.method(), url: request.url() }));
+const asked = []; let replace = true;
+page.on('dialog', (dialog) => { asked.push(dialog.message()); replace ? dialog.accept() : dialog.dismiss(); });
 async function settled() {
   await page.waitForFunction(() => !document.getElementById('sample').disabled);
   assert.equal(await page.locator('#error').isVisible(), false, await page.locator('#error').textContent());
@@ -84,8 +86,19 @@ try {
   await download('#download-report', '.docx'); await download('#download-deck', '.pptx');
   await download('#sign', '.json');
   assert((await page.locator('#signature').textContent()).includes('demo key'));
+  // Opening another workbook over a project asks first; cancelling keeps the project.
+  assert.equal(asked.length, 0, 'No question before a project exists');
+  replace = false; await page.locator('#sample').click();
+  await page.locator('#workbook-file').setInputFiles('../_out/flow/finance.xlsx');
+  assert.equal(asked.length, 2, 'Both ways of opening a workbook ask first');
+  assert(asked.every((message) => message.includes('discards the current project')));
+  assert.equal(await page.locator('#project').isVisible(), true, 'Cancelling keeps the project');
+  assert.equal(await page.locator('#download-report').isDisabled(), false);
+  assert.equal(await page.locator('#workbook-file').inputValue(), '', 'The picker resets after cancelling');
+  replace = true;
   // Opening another source starts a fresh project and must not offer stale exports.
   await page.locator('#sample').click(); await settled();
+  assert.equal(asked.length, 3);
   assert.equal(await page.locator('#project').isVisible(), false);
   assert.equal(await page.locator('#download-report').isDisabled(), true);
   assert.equal(await page.locator('#download-deck').isDisabled(), true);
@@ -153,5 +166,5 @@ try {
   // A project exists, so leaving must ask first (it lives only in this tab).
   // A real beforeunload dialog needs a user gesture headless Chrome may not count; check the handler cancels instead.
   assert.equal(await page.evaluate(() => { const leave = new Event('beforeunload', { cancelable: true }); dispatchEvent(leave); return leave.defaultPrevented; }), true, 'Leaving with a project asks first');
-  console.log('PASS browser flow: bundled workbook, sheet/range/chart, real Office downloads, both linked outputs updated, readable cell changes, linked-value conflict, independent report edit, claimed app history, demo proof, local-only operations, mobile layout, leave warning');
+  console.log('PASS browser flow: bundled workbook, sheet/range/chart, real Office downloads, both linked outputs updated, readable cell changes, linked-value conflict, independent report edit, claimed app history, demo proof, local-only operations, mobile layout, replace and leave warnings');
 } finally { await browser.close(); await new Promise((done) => server.close(done)); }
