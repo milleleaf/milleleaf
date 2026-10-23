@@ -51,6 +51,10 @@ try {
   await page.locator('#app').fill('GridCraft');
   await page.locator('#edited-file').setInputFiles('../_out/flow/finance-edited.xlsx'); state = await snapshot();
   assert(state.changes.length > 0, 'A changed workbook must report exact changed places');
+  const changeLines = (await page.locator('#changes .change-item > p, #changes .cell-changes li').allTextContents()).join('\n');
+  assert(!/[{}"]/.test(changeLines), 'Change review shows readable text, not raw JSON');
+  assert(changeLines.includes('541,500 → 550,000'), 'A workbook edit lists the changed cell with its old and new value');
+  assert(!changeLines.includes('541500'), 'Changed values use digit grouping and appear once');
   assert.equal(state.report.table.rows[1][1], 550000); assert.equal(state.deck.table.rows[1][1], 550000);
   assert.equal(state.deck.chart.series[0].values[1], 550000);
   assert.equal(state.history.at(-1).claimed_app, 'GridCraft');
@@ -146,5 +150,8 @@ try {
   assert.equal(requests.length, loaded, 'File operations must not make network requests');
   assert(requests.every((request) => request.method === 'GET' && request.url.startsWith(site)));
   assert.deepEqual(errors, []);
-  console.log('PASS browser flow: bundled workbook, sheet/range/chart, real Office downloads, both linked outputs updated, linked-value conflict, independent report edit, claimed app history, demo proof, local-only operations, mobile layout');
+  // A project exists, so leaving must ask first (it lives only in this tab).
+  // A real beforeunload dialog needs a user gesture headless Chrome may not count; check the handler cancels instead.
+  assert.equal(await page.evaluate(() => { const leave = new Event('beforeunload', { cancelable: true }); dispatchEvent(leave); return leave.defaultPrevented; }), true, 'Leaving with a project asks first');
+  console.log('PASS browser flow: bundled workbook, sheet/range/chart, real Office downloads, both linked outputs updated, readable cell changes, linked-value conflict, independent report edit, claimed app history, demo proof, local-only operations, mobile layout, leave warning');
 } finally { await browser.close(); await new Promise((done) => server.close(done)); }

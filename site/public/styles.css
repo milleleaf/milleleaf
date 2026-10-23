@@ -322,6 +322,7 @@ ml-revisions{display:block;min-height:55px}
 .demo-flow .change-item{padding:12px 0;border-bottom:1px solid var(--line);font-size:15px}
 .demo-flow .change-item h4{font-size:14px;color:var(--muted);margin:0 0 5px}
 .demo-flow .change-item p{margin:3px 0}
+.demo-flow .cell-changes{margin:4px 0;padding-left:18px}.demo-flow .cell-changes li{margin:2px 0;font-variant-numeric:tabular-nums}
 .demo-flow .conflict{border-left:3px solid var(--ink);padding-left:15px;margin:15px 0;background:var(--back-paper)}
 .demo-flow #warnings{font-size:14px;color:var(--muted)}
 .demo-flow #sign{margin-top:20px}

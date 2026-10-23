@@ -75,19 +75,41 @@ function Preview({ kind, value }: { kind: 'report' | 'deck'; value?: any }) {
   </div>
 }
 
+// A returned workbook edit carries whole tables before and after; show the cells that differ.
+const rowsOf = (t: any): any[][] => (Array.isArray(t?.rows) ? t.rows : []).map((r: any) => Array.isArray(r) ? r : Object.values(r ?? {}))
+function cellDiff(before: any, after: any): string[] {
+  const a = rowsOf(before), b = rowsOf(after), columns: any[] = after?.columns || before?.columns || [], out: string[] = []
+  for (let r = 0; r < Math.max(a.length, b.length); r++) for (let c = 0; c < Math.max(a[r]?.length || 0, b[r]?.length || 0); c++) {
+    const was = a[r]?.[c], now = b[r]?.[c]
+    if (was === now) continue
+    const row = c === 0 ? `Row ${r + 1}` : text(b[r]?.[0] ?? a[r]?.[0]) || `Row ${r + 1}`
+    out.push(`${[row, text(columns[c]?.name ?? columns[c]) || `Column ${c + 1}`].join(' · ')}: ${was == null ? '(empty)' : show(was)} → ${now == null ? '(empty)' : show(now)}`)
+  }
+  return out
+}
+const scalar = (v: any) => v == null || typeof v !== 'object'
+
 function ChangeCard({ change, conflict = false }: { change: any; conflict?: boolean }) {
   if (typeof change === 'string') return <article className={`change-item${conflict ? ' conflict' : ''}`}><p>{change}</p></article>
   return <article className={`change-item${conflict ? ' conflict' : ''}`}>
     <h4>{[change.file, change.place || change.path].filter(Boolean).join(' · ') || (conflict ? 'Linked-value conflict' : 'Project content')}</h4>
-    <p>{change.description || change.message || change.summary || change.kind || 'Content changed'}</p>
+    {/* A cell edit's description is often just the raw values; the formatted pair below replaces it. */}
+    {(change.description || change.message || '') !== `${text(change.before)} → ${text(change.after)}` && <p>{change.description || change.message || change.summary || change.kind || 'Content changed'}</p>}
     {conflict && Array.isArray(change.cell_changes) && change.cell_changes.map((cell: any, i: number) => {
       const label = [cell.row_label || (cell.row != null ? `Row ${cell.row}` : ''), cell.column_name || (cell.column != null ? `Column ${cell.column}` : '')].filter(Boolean).join(' · ')
       return <div key={i}>{label && <strong>{label}</strong>}<p>{`Sent value ${show(cell.before)} → proposed value ${show(cell.proposed)}. Current source: ${show(cell.source_current)}.`}</p></div>
     })}
-    {('before' in change || 'after' in change) && <p>{`${text(change.before)} → ${text(change.after)}`}</p>}
+    {('before' in change || 'after' in change) && (scalar(change.before) && scalar(change.after)
+      ? <p>{`${show(change.before)} → ${show(change.after)}`}</p>
+      : <CellList cells={cellDiff(change.before, change.after)} />)}
     {conflict && <p>The source value stays current. The typed-over value is recorded for review.</p>}
     <details><summary>Technical evidence</summary><pre>{json(change)}</pre></details>
   </article>
+}
+
+function CellList({ cells }: { cells: string[] }) {
+  if (!cells.length) return null
+  return <ul className="cell-changes">{cells.slice(0, 12).map((c, i) => <li key={i}>{c}</li>)}{cells.length > 12 && <li>{`and ${cells.length - 12} more cells`}</li>}</ul>
 }
 
 function Layer({ layer }: { layer: any }) {
@@ -126,6 +148,14 @@ export function FlowDemo() {
   const [signature, setSignature] = useState('')
   const [dragging, setDragging] = useState(false)
   const ready = engine.status === 'ready'
+
+  // The project lives only in this tab: ask before a reload, a link or closing the tab discards it.
+  useEffect(() => {
+    if (!snapshot) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    addEventListener('beforeunload', warn)
+    return () => removeEventListener('beforeunload', warn)
+  }, [snapshot])
 
   useEffect(() => {
     if (engine.status === 'ready') setStatus('Ready. Choose your workbook or try the finance example.')
@@ -247,6 +277,7 @@ export function FlowDemo() {
     <p className="mix-note">Any app in, any app out. A Calc workbook can feed a Word report and a DeckCraft deck. These Office-format files open in Microsoft Office, LibreOffice and the ArtCraft apps. <a href="#checked">See the evidence and limits.</a></p>
     <section id="project" hidden={!snapshot}>
       <div className="section-heading"><div><h2>Change it anywhere. Bring it back.</h2></div>
+        <p id="keep-note" className="caption">This project lives only in this browser tab. Leaving or reloading the page discards it; download the project layers to keep them.</p>
         <button id="download-project" className="button secondary" disabled={noProject} onClick={project}>Download project layers</button>
         <button id="download-workbook" className="button secondary" disabled={noProject} onClick={() => download('workbook')}>Download current workbook</button></div>
       <div className="review-layout">
