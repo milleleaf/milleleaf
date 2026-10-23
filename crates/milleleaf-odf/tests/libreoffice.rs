@@ -1,5 +1,7 @@
 //! The same edits made in LibreOffice and saved as ODT, ODS and ODP come back as exactly the
-//! edit layers the OOXML versions give. Skipped (with a note) when LibreOffice isn't installed.
+//! edit layers the OOXML versions give. They need LibreOffice, so they are ignored by default and
+//! counted as ignored, not passed: run them with `cargo test -p milleleaf-odf --test libreoffice -- --ignored`.
+//! Run that way, a missing LibreOffice fails them.
 
 use std::path::PathBuf;
 
@@ -40,21 +42,27 @@ fn committed(file: &str) -> Layer {
     serde_json::from_slice(&std::fs::read(example(file)).expect("layer")).expect("parses")
 }
 
-fn odf(name: &str) -> Option<Vec<u8>> {
-    if milleleaf_odf::soffice().is_none() {
-        eprintln!("skipped: LibreOffice isn't installed");
-        return None;
-    }
+/// One LibreOffice at a time: two starting together can still fail a conversion now and then,
+/// even with separate profiles and a retry, and these tests check results, not concurrency.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn need_soffice() -> std::sync::MutexGuard<'static, ()> {
+    let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(milleleaf_odf::soffice().is_some(), "these tests need LibreOffice (soffice on PATH, or MLEAF_SOFFICE)");
+    turn
+}
+
+fn odf(name: &str) -> Vec<u8> {
+    let _turn = need_soffice();
     let bytes = std::fs::read(example("fixtures").join(name)).expect("fixture");
     let ext = name.rsplit('.').next().unwrap_or("");
-    Some(milleleaf_odf::from_odf(&bytes, ext).expect("converts"))
+    milleleaf_odf::from_odf(&bytes, ext).expect("converts")
 }
 
 #[test]
+#[ignore = "needs LibreOffice"]
 fn odt_edits_match_the_docx_edits() {
-    let Some(docx) = odf("report.libreoffice-edited.odt") else {
-        return;
-    };
+    let docx = odf("report.libreoffice-edited.odt");
     let t = trees();
     let node = find(&t, "3f1c2a90-0000-4c1e-9a00-000000000020").expect("report");
     let doc = milleleaf_wordcraft::from_docx(&docx).expect("reads");
@@ -64,10 +72,9 @@ fn odt_edits_match_the_docx_edits() {
 }
 
 #[test]
+#[ignore = "needs LibreOffice"]
 fn ods_edits_match_the_xlsx_edits() {
-    let Some(xlsx) = odf("finance.libreoffice-edited.ods") else {
-        return;
-    };
+    let xlsx = odf("finance.libreoffice-edited.ods");
     let t = trees();
     let node = find(&t, "3f1c2a90-0000-4c1e-9a00-000000000010").expect("workbook");
     let mut wb = milleleaf_gridcraft::from_xlsx(&xlsx).expect("reads");
@@ -78,10 +85,9 @@ fn ods_edits_match_the_xlsx_edits() {
 }
 
 #[test]
+#[ignore = "needs LibreOffice"]
 fn odp_edits_match_the_pptx_edits() {
-    let Some(pptx) = odf("deck.libreoffice-edited.odp") else {
-        return;
-    };
+    let pptx = odf("deck.libreoffice-edited.odp");
     let t = trees();
     let node = find(&t, "2af44a75-c514-5c87-b208-689fa8b15950").expect("deck");
     let p = milleleaf_deckcraft::from_pptx(&pptx).expect("reads");
@@ -91,11 +97,9 @@ fn odp_edits_match_the_pptx_edits() {
 }
 
 #[test]
+#[ignore = "needs LibreOffice"]
 fn exports_convert_and_come_back_unchanged() {
-    if milleleaf_odf::soffice().is_none() {
-        eprintln!("skipped: LibreOffice isn't installed");
-        return;
-    }
+    let _turn = need_soffice();
     let t = trees();
     let node = find(&t, "3f1c2a90-0000-4c1e-9a00-000000000010").expect("workbook");
     let (wb, _) = milleleaf_gridcraft::export(node, std::path::Path::new("")).expect("exports");
