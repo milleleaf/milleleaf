@@ -112,6 +112,7 @@ ml-revisions{display:block;min-height:55px}
 .page-leaf{display:grid;grid-template-columns:.85fr 1.15fr;gap:70px;padding:40px 0;border-top:1px solid var(--line)}
 .page-leaf h2{font-size:var(--t3);max-width:460px}
 .page-leaf p{font-size:17px;color:var(--muted)}
+.page-figure{display:block;margin:4px 0 24px}.page-figure img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px}
 .article-links{display:flex;flex-wrap:wrap;gap:12px 28px}
 .article-links a{font-size:16px;font-weight:550}
 .page-how-it-works .page-leaves{margin-top:65px}

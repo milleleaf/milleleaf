@@ -89,7 +89,7 @@ function Content({ path }: { path: string }) {
       {path === '/how-it-works' && <><ContentFlow /><AppChecks /></>}
       {(path === '/data/round-trip') && <Comparison />}
       {(path === '/docs' || path === '/docs/getting-started') && <div className="command-sheet"><span>Inspect the available routes</span><code>mleaf formats</code><p>CLI command. Public installation instructions are coming with the release.</p></div>}
-      <div className="page-leaves">{page.sections.map(section => <section id={slug(section.title)} key={section.title} className="page-leaf"><h2>{section.title}</h2><div>{section.body.map(p => <p key={p}><Mail text={p} /></p>)}{section.links && <div className="article-links">{section.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</div></section>)}</div>
+      <div className="page-leaves">{page.sections.map(section => <section id={slug(section.title)} key={section.title} className="page-leaf"><h2>{section.title}</h2><div>{section.body.map(p => <p key={p}><Mail text={p} /></p>)}{section.figure && <a className="page-figure" href={section.figure.href}><picture><source media="(prefers-reduced-motion: reduce)" srcSet={section.figure.still} /><img src={section.figure.gif} alt={section.figure.alt} width={960} height={540} loading="lazy" /></picture></a>}{section.links && <div className="article-links">{section.links.map(l => <a href={l.href} key={l.href}>{l.label} <span aria-hidden="true">{l.href.startsWith('https:') ? '↗' : '→'}</span></a>)}</div>}</div></section>)}</div>
     </>}
   </main>
 }
