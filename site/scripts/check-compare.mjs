@@ -154,6 +154,19 @@ try {
         assert(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 800, `${selector}: answer and complete context fit the first screen`);
       }
       await page.screenshot({ path: `${root}/demo-blank-line.png` });
+      // Highlighted lines and cells stay readable in both themes (dark mode once had light text on mint).
+      for (const scheme of ['light', 'dark']) {
+        await page.emulateMedia({ colorScheme: scheme });
+        const worst = await page.locator('#changes .highlight').evaluateAll((elements) => {
+          const ctx = new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
+          const rgb = (css) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+          const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+          return Math.min(...elements.map((e) => { const s = getComputedStyle(e); const [a, b] = [lum(rgb(s.color)), lum(rgb(s.backgroundColor))]; return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }));
+        });
+        assert(worst >= 4.5, `${scheme} mode: highlighted context contrast ${worst.toFixed(2)} is below 4.5:1`);
+        if (scheme === 'dark') await page.screenshot({ path: `${root}/demo-blank-line-dark.png` });
+      }
+      await page.emulateMedia({ colorScheme: 'light' });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.locator('#comparison-summary').scrollIntoViewIfNeeded();
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Mobile layout must not overflow');
