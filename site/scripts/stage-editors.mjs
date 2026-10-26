@@ -15,10 +15,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const APPS = ['gridcraft', 'pdfcraft', 'wordcraft', 'cadcraft']
 const MAX_BYTES = 25 * 1024 * 1024
 
 const lock = JSON.parse(await readFile(path.join(root, 'editors.lock.json'), 'utf8'))
+// Every app pinned in the lock is staged.
+const APPS = Object.keys(lock)
 const sourceDir = process.env.EDITORS_SRC
 if (!sourceDir) {
   console.error('Set EDITORS_SRC to the directory of staged editor folders (one folder per app).')
@@ -34,8 +35,9 @@ for (const app of APPS) {
     process.exit(1)
   }
 
-  const glue = entries.find(name => new RegExp(`^${app}-web-[0-9a-f]+\\.js$`).test(name))
-  const wasm = entries.find(name => new RegExp(`^${app}-web-[0-9a-f]+_bg\\.wasm$`).test(name))
+  // trunk builds name the glue APP-web-<hash>.js; plain wasm-bindgen builds (FilmCraft) APP_web.js.
+  const glue = entries.find(name => new RegExp(`^${app}(-web-[0-9a-f]+|_web)\\.js$`).test(name))
+  const wasm = entries.find(name => new RegExp(`^${app}(-web-[0-9a-f]+|_web)_bg\\.wasm$`).test(name))
   if (!glue || !wasm) {
     console.error(`FAIL ${app}: missing ${app}-web-<hash>.js glue or ${app}-web-<hash>_bg.wasm in ${staged}`)
     process.exit(1)
@@ -89,6 +91,8 @@ for (const app of APPS) {
     glue,
     wasm: `${wasm}.gz`,
     canvasId,
+    // A glue that exports start(canvasId) needs it called after init (the app doesn't start itself).
+    start: /export function start\(/.test(await readFile(path.join(staged, glue), 'utf8')),
   }
 }
 

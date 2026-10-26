@@ -1,4 +1,4 @@
-export type Tool = 'wordcraft' | 'gridcraft' | 'deckcraft' | 'pdfcraft' | 'cadcraft'
+export type Tool = 'wordcraft' | 'gridcraft' | 'deckcraft' | 'pdfcraft' | 'cadcraft' | 'designcraft' | 'effectcraft' | 'figcraft' | 'filmcraft' | 'lightcraft' | 'photocraft' | 'soundcraft' | 'vectorcraft'
 export type SavedFile = { id: string; name: string; tool: Tool; bytes: ArrayBuffer; modified: number }
 
 export function savedEntry(tool: Tool, message: { name: string; bytes: ArrayBuffer; saveAs?: boolean }, current?: SavedFile) {

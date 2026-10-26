@@ -14,6 +14,8 @@ export type EditorManifest = {
   glue: string
   wasm: string
   canvasId: string
+  /** The glue exports start(canvasId), called after init. */
+  start?: boolean
 }
 
 export type EditorsManifest = { [app: string]: EditorManifest }
@@ -66,7 +68,8 @@ async function loadApp(app: string): Promise<'ready' | 'failed'> {
         // Import the glue as a script module, then hand init a Response that streams the
         // gzipped wasm through DecompressionStream as application/wasm.
         // The glue's default export is wasm-bindgen's init function.
-        const init = (await import(/* webpackIgnore: true */ `/apps/${app}/${manifest.glue}`)).default
+        const glue = await import(/* webpackIgnore: true */ `/apps/${app}/${manifest.glue}`)
+        const init = glue.default
         const wasmUrl = `/apps/${app}/${manifest.wasm}`
         await init({
           module_or_path: fetch(wasmUrl).then(response => {
@@ -74,6 +77,7 @@ async function loadApp(app: string): Promise<'ready' | 'failed'> {
             return new Response(response.body!.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } })
           }),
         })
+        if (manifest.start) await glue.start(canvas.id)
       } catch (error) { return startFailed(app, error) }
     }
     return await listenForReady(app, canvas)

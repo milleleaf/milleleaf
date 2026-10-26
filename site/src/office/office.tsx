@@ -3,29 +3,38 @@ import { download, files, saveFile, savedEntry, type SavedFile, type Tool } from
 import { CraftEditor, openInEditor, startEditor, type EditorsManifest } from '../editors/editor'
 import { fileSize } from '../demos/status'
 
-// The /office desk: four real Craft editors hosted in this page (no iframes), one shared file
-// list in the visitor's own browser storage. Element ids are what web checks select by.
-const editors: { id: Tool; label: string; format: string }[] = [
-  { id: 'wordcraft', label: 'WordCraft', format: 'DOCX' },
-  { id: 'gridcraft', label: 'GridCraft', format: 'XLSX' },
-  { id: 'pdfcraft', label: 'PdfCraft', format: 'PDF' },
-  { id: 'cadcraft', label: 'CADCraft', format: 'DXF' },
+// The /office desk: the Craft editors hosted in this page (no iframes), one shared file list in
+// the visitor's own browser storage. Element ids are what web checks select by. An editor shows
+// only when its build is staged (public/apps/editors.json), so the list can name all thirteen.
+const allEditors: { id: Tool; label: string; format: string; extensions: string[] }[] = [
+  { id: 'wordcraft', label: 'WordCraft', format: 'DOCX', extensions: ['docx', 'odt', 'rtf', 'txt', 'md'] },
+  { id: 'gridcraft', label: 'GridCraft', format: 'XLSX', extensions: ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'] },
+  { id: 'deckcraft', label: 'DeckCraft', format: 'PPTX', extensions: ['pptx', 'odp'] },
+  { id: 'pdfcraft', label: 'PdfCraft', format: 'PDF', extensions: ['pdf'] },
+  { id: 'cadcraft', label: 'CADCraft', format: 'DXF', extensions: ['dxf', 'dwg'] },
+  { id: 'photocraft', label: 'PhotoCraft', format: 'PSD', extensions: ['psd', 'pcraft', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff', 'kra', 'ora'] },
+  { id: 'lightcraft', label: 'LightCraft', format: 'RAW', extensions: ['dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2'] },
+  { id: 'vectorcraft', label: 'VectorCraft', format: 'SVG', extensions: ['svg', 'vectorcraft', 'ai', 'eps'] },
+  { id: 'designcraft', label: 'DesignCraft', format: 'IDML', extensions: ['designcraft', 'idml'] },
+  { id: 'figcraft', label: 'FigCraft', format: 'FIG', extensions: ['figcraft', 'fig'] },
+  { id: 'filmcraft', label: 'FilmCraft', format: 'VIDEO', extensions: ['fcproj', 'mp4', 'mov', 'webm', 'mkv'] },
+  { id: 'effectcraft', label: 'EffectCraft', format: 'MOTION', extensions: ['ecproj', 'lottie'] },
+  { id: 'soundcraft', label: 'SoundCraft', format: 'AUDIO', extensions: ['wav', 'mp3', 'flac', 'ogg', 'aiff'] },
 ]
-const getEditor = (id: Tool) => editors.find(editor => editor.id === id)!
+const getEditor = (id: Tool) => allEditors.find(editor => editor.id === id)!
 
 const extensionTool = (name: string): Tool => {
-  const extension = name.split('.').pop()?.toLowerCase()
-  if (extension === 'pdf') return 'pdfcraft'
-  if (extension && ['dxf', 'dwg'].includes(extension)) return 'cadcraft'
-  if (extension && ['xlsx', 'xlsm', 'csv', 'tsv', 'ods'].includes(extension)) return 'gridcraft'
-  return 'wordcraft'
+  const extension = name.split('.').pop()?.toLowerCase() ?? ''
+  return allEditors.find(editor => editor.extensions.includes(extension))?.id ?? 'wordcraft'
 }
-// WordCraft and CADCraft report a saveAs flag; GridCraft cannot, PdfCraft can.
-const hasSaveAs = (tool: Tool) => tool === 'wordcraft' || tool === 'pdfcraft'
+// GridCraft's and CADCraft's bridges send no saveAs flag; every other editor's does.
+const hasSaveAs = (tool: Tool) => tool !== 'gridcraft' && tool !== 'cadcraft'
 
 export function OfficeDesk() {
   const [manifest, setManifest] = useState<EditorsManifest>()
   const [manifestError, setManifestError] = useState('')
+  // Only the editors whose builds are staged get a tab.
+  const editors = useMemo(() => allEditors.filter(editor => manifest?.[editor.id]), [manifest])
   const [active, setActive] = useState<Tool>('gridcraft')
   // An editor starts the first time its tab is opened (each is tens of megabytes) and then stays alive.
   const [opened, setOpened] = useState<Set<Tool>>(() => new Set(['gridcraft']))
@@ -104,6 +113,7 @@ export function OfficeDesk() {
 
   const importFile = useCallback(async (file: File) => {
     const tool = extensionTool(file.name)
+    if (!manifest?.[tool]) { setError(`${getEditor(tool).label}, the editor for ${file.name}, isn't on this page yet.`); return }
     try {
       const saved: SavedFile = { id: crypto.randomUUID(), name: file.name, tool, bytes: await file.arrayBuffer(), modified: Date.now() }
       await saveFile(saved)
@@ -111,7 +121,7 @@ export function OfficeDesk() {
       setActive(tool)
       sendFile(tool, saved)
     } catch (e) { setError(`This file could not be stored: ${String((e as Error).message || e)}`) }
-  }, [refreshLibrary, sendFile])
+  }, [manifest, refreshLibrary, sendFile])
 
   const deskSize = useMemo(() => library.reduce((total, file) => total + file.bytes.byteLength, 0), [library])
   const activeManifest = manifest?.[active]
@@ -131,7 +141,7 @@ export function OfficeDesk() {
       ))}
       <button className="button secondary small" id="office-open-file" onClick={() => fileInput.current?.click()}>Open a file from disk</button>
       <input ref={fileInput} type="file" hidden id="office-file-input"
-        accept=".docx,.odt,.rtf,.txt,.md,.xlsx,.xlsm,.ods,.csv,.tsv,.pptx,.odp,.pdf,.dxf,.dwg"
+        accept={allEditors.flatMap(editor => editor.extensions.map(extension => `.${extension}`)).join(',')}
         onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
     </div>
     <p id="office-notice" role="status">{notice}</p>
