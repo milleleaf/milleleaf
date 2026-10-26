@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
+    inputs:
+      check:
+        description: Build and check the apps even when no release is new (commits nothing then)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,13 +38,13 @@ jobs:
           node site/frames/releases.mjs latest
           if git diff --quiet -- site/frames/versions.json; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
       - name: Install the checks
-        if: steps.latest.outputs.changed == 'true'
+        if: steps.latest.outputs.changed == 'true' || inputs.check
         working-directory: site
         run: |
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
       - name: Build and check the apps
-        if: steps.latest.outputs.changed == 'true'
+        if: steps.latest.outputs.changed == 'true' || inputs.check
         run: |
           node site/frames/build.mjs
           node site/frames/check.mjs
