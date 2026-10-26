@@ -350,6 +350,18 @@ const CHART_FONT_FAMILY: &str = "Commissioner";
 
 /// The chart SVG as a PNG at twice its pixel size, drawn with the bundled site font alone.
 pub(super) fn chart_png(svg: &str) -> Result<Vec<u8>, String> {
+    draw_png(svg, 400)
+}
+
+/// Draws the chart with every label at `weight` on the site font's weight axis. The font is
+/// variable and its default instance is its thinnest (100), which usvg 0.47 uses unless the text
+/// names a weight through `font-variation-settings`; the weight goes on this drawing copy only, so
+/// the SVG part in the file stays as the chart generator wrote it.
+fn draw_png(svg: &str, weight: u16) -> Result<Vec<u8>, String> {
+    let svg = svg.replace(
+        "<text ",
+        &format!("<text font-variation-settings=\"'wght' {weight}\" "),
+    );
     let mut fonts = usvg::fontdb::Database::new();
     fonts.load_font_data(CHART_FONT.to_vec());
     // The chart's labels name Arial. fontdb matches family names and has no aliases, and
@@ -367,7 +379,7 @@ pub(super) fn chart_png(svg: &str) -> Result<Vec<u8>, String> {
         fontdb: Arc::new(fonts),
         ..Default::default()
     };
-    let tree = usvg::Tree::from_str(svg, &options)
+    let tree = usvg::Tree::from_str(&svg, &options)
         .map_err(|e| format!("The chart picture can't be drawn: {e}"))?;
     let size = tree.size();
     let mut pixmap = resvg::tiny_skia::Pixmap::new(
@@ -455,6 +467,26 @@ mod tests {
         let width = u32::from_be_bytes(png[16..20].try_into().unwrap());
         let height = u32::from_be_bytes(png[20..24].try_into().unwrap());
         assert_eq!((width, height), (240, 160));
+    }
+    #[test]
+    fn labels_are_drawn_at_regular_weight_not_the_fonts_thin_default() {
+        // Dark pixels drawn for one label: a regular-weight stroke lays down far more ink than
+        // the variable font's default thin instance, so a weight that is not applied shows here.
+        let ink = |weight| {
+            let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60"><rect width="400" height="60" fill="white"/><text x="10" y="40" font-family="Arial" font-size="17">Workbook figures</text></svg>"#;
+            let png = draw_png(svg, weight).unwrap();
+            let pixmap = resvg::tiny_skia::Pixmap::decode_png(&png).unwrap();
+            pixmap.pixels().iter().filter(|p| p.red() < 128).count()
+        };
+        let (thin, regular) = (ink(100), ink(400));
+        assert!(thin > 0, "the label is drawn at all");
+        assert!(
+            regular * 2 > thin * 3,
+            "regular {regular} vs thin {thin} dark pixels"
+        );
+        // chart_png itself draws at the regular weight.
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60"><rect width="400" height="60" fill="white"/><text x="10" y="40" font-family="Arial" font-size="17">Workbook figures</text></svg>"#;
+        assert_eq!(chart_png(svg).unwrap(), draw_png(svg, 400).unwrap());
     }
     #[test]
     fn every_chart_kind_draws_as_a_png() {
