@@ -1,7 +1,9 @@
-//! SVG views of the linked chart data, without canvas or a codec dependency.
+//! SVG views of the linked chart data, without canvas or a codec dependency, and the PNG
+//! picture of that SVG (the raster a `a:blip` picture must name) drawn with the site's own font.
 use milleleaf_core::render::esc;
 use serde_json::Value;
 use std::fmt::Write;
+use std::sync::Arc;
 
 const COLORS: [&str; 8] = [
     "#277c88", "#d2713b", "#7961a5", "#588650", "#be5379", "#4979b1", "#9c7b2f", "#626a75",
@@ -341,6 +343,46 @@ pub(super) fn svg(table: &Value, spec: &Value) -> Result<Vec<u8>, String> {
     Ok(stable_coordinates(out).into_bytes())
 }
 
+// The site's own font, bundled so the drawn chart never depends on the reader's installed
+// fonts: the only font the rasteriser loads.
+const CHART_FONT: &[u8] = include_bytes!("../../../site/public/fonts/commissioner-variable.ttf");
+const CHART_FONT_FAMILY: &str = "Commissioner";
+
+/// The chart SVG as a PNG at twice its pixel size, drawn with the bundled site font alone.
+pub(super) fn chart_png(svg: &str) -> Result<Vec<u8>, String> {
+    let mut fonts = usvg::fontdb::Database::new();
+    fonts.load_font_data(CHART_FONT.to_vec());
+    // The chart's labels name Arial. fontdb matches family names and has no aliases, and
+    // usvg's default font selector tries the generic serif family after the named ones, so
+    // every generic family maps to the site font and every label finds it.
+    fonts.set_serif_family(CHART_FONT_FAMILY);
+    fonts.set_sans_serif_family(CHART_FONT_FAMILY);
+    fonts.set_monospace_family(CHART_FONT_FAMILY);
+    fonts.set_cursive_family(CHART_FONT_FAMILY);
+    fonts.set_fantasy_family(CHART_FONT_FAMILY);
+    let mut options = usvg::Options::default();
+    // Text without a font-family of its own takes the site font too. The resources dir stays
+    // unset: the chart references nothing outside itself, so no file or network is touched.
+    options.font_family = CHART_FONT_FAMILY.into();
+    options.fontdb = Arc::new(fonts);
+    let tree = usvg::Tree::from_str(svg, &options)
+        .map_err(|e| format!("The chart picture can't be drawn: {e}"))?;
+    let size = tree.size();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(
+        (size.width() * 2.0).round() as u32,
+        (size.height() * 2.0).round() as u32,
+    )
+    .ok_or_else(|| "The chart picture has no drawable size.".to_string())?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(2.0, 2.0),
+        &mut pixmap.as_mut(),
+    );
+    pixmap
+        .encode_png()
+        .map_err(|e| format!("The chart picture can't be saved: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,6 +440,29 @@ mod tests {
         );
         assert!(result.contains("cx=\"1.235\" cy=\"-9.877\""));
         assert!(result.contains("<desc>1.23456789</desc>"));
+    }
+    #[test]
+    fn the_png_signature_and_size_follow_the_svg_at_twice_the_pixels() {
+        let png = chart_png(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"80\"><rect width=\"120\" height=\"80\" fill=\"#123456\"/></svg>",
+        )
+        .unwrap();
+        assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+        let width = u32::from_be_bytes(png[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(png[20..24].try_into().unwrap());
+        assert_eq!((width, height), (240, 160));
+    }
+    #[test]
+    fn every_chart_kind_draws_as_a_png() {
+        for kind in ["column", "bar", "line", "pie"] {
+            let spec =
+                json!({"kind":kind,"title":"Figures","category":"Day","values":["First","Second"]});
+            let svg = String::from_utf8(svg(&table(), &spec).unwrap()).unwrap();
+            let png = chart_png(&svg).unwrap();
+            assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+            let width = u32::from_be_bytes(png[16..20].try_into().unwrap());
+            assert_eq!(width, 1600, "{kind}");
+        }
     }
     #[test]
     fn pie_arc_flags_are_single_integer_tokens() {
