@@ -172,20 +172,29 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [expanded, setExpanded] = useState(false)
 
+  const [slow, setSlow] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+
+  // Ready once the frame's page has loaded (the app shows its own start screen from then on) or
+  // has drawn a canvas, whichever comes first. After 20 s the overlay offers a reload.
   useEffect(() => {
+    setState('loading'); setSlow(false)
+    const element = frame.current
+    if (!element) return
+    const ready = () => setState('ready')
+    element.addEventListener('load', ready)
     let stopped = false
-    const started = Date.now()
     const poll = () => {
       if (stopped) return
       let drawn = false
-      try { drawn = !!frame.current?.contentDocument?.querySelector('canvas') } catch { /* Not reachable yet. */ }
-      if (drawn) { setState('ready'); return }
-      if (Date.now() - started > 180_000) { setState('failed'); return }
+      try { const doc = element.contentDocument; drawn = !!doc && doc.URL !== 'about:blank' && (doc.readyState === 'complete' || !!doc.querySelector('canvas')) } catch { /* Not reachable yet. */ }
+      if (drawn) { ready(); return }
       setTimeout(poll, 250)
     }
     poll()
-    return () => { stopped = true }
-  }, [src])
+    const timer = setTimeout(() => setSlow(true), 20_000)
+    return () => { stopped = true; clearTimeout(timer); element.removeEventListener('load', ready) }
+  }, [src, attempt])
 
   useEffect(() => {
     if (!expanded) return
@@ -203,8 +212,9 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
       </button>
     </div>
     <div className="craft-editor" style={expanded ? undefined : { height: typeof height === 'number' ? `${height}px` : height }} aria-label={`${label} editor`}>
-      <iframe ref={frame} src={src} title={`${label} editor`} data-app={app} />
-      {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label.toLowerCase()}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p></div>}
+      <iframe key={attempt} ref={frame} src={src} title={`${label} editor`} data-app={app} />
+      {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p>
+        {slow && <button type="button" className="button secondary small craft-editor-retry" onClick={() => setAttempt(n => n + 1)}>Reload {label}</button>}</div>}
       {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not load.</strong></p><p className="caption">The editor is unavailable in this browser.</p></div>}
     </div>
   </div>

@@ -162,12 +162,6 @@ export function OfficeDesk() {
           </div>
         ))}
       </div>
-      <div className="office-group">
-        <span className="office-group-label">Your files</span>
-        <button className="office-tab office-open" id="office-open-file" onClick={() => fileInput.current?.click()}>
-          <span className="office-tab-name">Open a file</span> <span className="office-tab-kind">from this device</span>
-        </button>
-      </div>
       <input ref={fileInput} type="file" hidden id="office-file-input"
         accept={allEditors.flatMap(editor => editor.extensions.map(extension => `.${extension}`)).join(',')}
         onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
@@ -192,6 +186,8 @@ export function OfficeDesk() {
       </div>
       <aside className="office-desk-list" aria-label="Your desk">
         <div className="section-label"><span>Your desk</span><span>{library.length} {library.length === 1 ? 'file' : 'files'}</span></div>
+        <button className="button secondary small office-add" id="office-open-file" onClick={() => fileInput.current?.click()}>Add a file to the desk</button>
+        <p className="caption">It opens in the editor for its type: {allEditors.filter(editor => manifest?.[editor.id]).map(editor => editor.label).join(', ')}.</p>
         {library.length === 0
           ? <p className="caption">Nothing on the desk yet. Open a file from disk, or save from any editor. Everything stays in this browser.</p>
           : <ul id="office-files" className="office-files">{library.map(file => (
