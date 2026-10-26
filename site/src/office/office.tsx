@@ -6,20 +6,20 @@ import { fileSize } from '../demos/status'
 // The /office desk: the Craft editors hosted in this page (no iframes), one shared file list in
 // the visitor's own browser storage. Element ids are what web checks select by. An editor shows
 // only when its build is staged (public/apps/editors.json), so the list can name all thirteen.
-const allEditors: { id: Tool; label: string; format: string; extensions: string[] }[] = [
-  { id: 'wordcraft', label: 'WordCraft', format: 'DOCX', extensions: ['docx', 'odt', 'rtf', 'txt', 'md'] },
-  { id: 'gridcraft', label: 'GridCraft', format: 'XLSX', extensions: ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'] },
-  { id: 'deckcraft', label: 'DeckCraft', format: 'PPTX', extensions: ['pptx', 'odp'] },
-  { id: 'pdfcraft', label: 'PdfCraft', format: 'PDF', extensions: ['pdf'] },
-  { id: 'cadcraft', label: 'CADCraft', format: 'DXF', extensions: ['dxf', 'dwg'] },
-  { id: 'photocraft', label: 'PhotoCraft', format: 'PSD', extensions: ['psd', 'pcraft', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff', 'kra', 'ora'] },
-  { id: 'lightcraft', label: 'LightCraft', format: 'RAW', extensions: ['dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2'] },
-  { id: 'vectorcraft', label: 'VectorCraft', format: 'SVG', extensions: ['svg', 'vectorcraft', 'ai', 'eps'] },
-  { id: 'designcraft', label: 'DesignCraft', format: 'IDML', extensions: ['designcraft', 'idml'] },
-  { id: 'figcraft', label: 'FigCraft', format: 'FIG', extensions: ['figcraft', 'fig'] },
-  { id: 'filmcraft', label: 'FilmCraft', format: 'VIDEO', extensions: ['fcproj', 'mp4', 'mov', 'webm', 'mkv'] },
-  { id: 'effectcraft', label: 'EffectCraft', format: 'MOTION', extensions: ['ecproj', 'lottie'] },
-  { id: 'soundcraft', label: 'SoundCraft', format: 'AUDIO', extensions: ['wav', 'mp3', 'flac', 'ogg', 'aiff'] },
+const allEditors: { id: Tool; label: string; kind: string; extensions: string[] }[] = [
+  { id: 'wordcraft', label: 'WordCraft', kind: 'Documents', extensions: ['docx', 'odt', 'rtf', 'txt', 'md'] },
+  { id: 'gridcraft', label: 'GridCraft', kind: 'Spreadsheets', extensions: ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'] },
+  { id: 'deckcraft', label: 'DeckCraft', kind: 'Presentations', extensions: ['pptx', 'odp'] },
+  { id: 'pdfcraft', label: 'PdfCraft', kind: 'PDFs', extensions: ['pdf'] },
+  { id: 'cadcraft', label: 'CADCraft', kind: 'CAD drawings', extensions: ['dxf', 'dwg'] },
+  { id: 'photocraft', label: 'PhotoCraft', kind: 'Photo editing', extensions: ['psd', 'pcraft', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff', 'kra', 'ora'] },
+  { id: 'lightcraft', label: 'LightCraft', kind: 'Photo develop', extensions: ['dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2'] },
+  { id: 'vectorcraft', label: 'VectorCraft', kind: 'Vector art', extensions: ['svg', 'vectorcraft', 'ai', 'eps'] },
+  { id: 'designcraft', label: 'DesignCraft', kind: 'Page layout', extensions: ['designcraft', 'idml'] },
+  { id: 'figcraft', label: 'FigCraft', kind: 'Interface design', extensions: ['figcraft', 'fig'] },
+  { id: 'filmcraft', label: 'FilmCraft', kind: 'Video editing', extensions: ['fcproj', 'mp4', 'mov', 'webm', 'mkv'] },
+  { id: 'effectcraft', label: 'EffectCraft', kind: 'Motion graphics', extensions: ['ecproj', 'lottie'] },
+  { id: 'soundcraft', label: 'SoundCraft', kind: 'Audio', extensions: ['wav', 'mp3', 'flac', 'ogg', 'aiff'] },
 ]
 const getEditor = (id: Tool) => allEditors.find(editor => editor.id === id)!
 
@@ -135,7 +135,7 @@ export function OfficeDesk() {
         <button key={editor.id} role="tab" aria-selected={active === editor.id} id={`tab-${editor.id}`}
           className={`office-tab${active === editor.id ? ' active' : ''}`}
           onClick={() => { setError(''); setActive(editor.id) }}>
-          {editor.label} <span className="file-tag">{editor.format}</span>
+          {editor.label} <span className="file-tag">{editor.kind}</span>
           {dirty[editor.id] && <span className="caption"> · unsaved</span>}
         </button>
       ))}
@@ -147,7 +147,7 @@ export function OfficeDesk() {
     <p id="office-notice" role="status">{notice}</p>
     <section className="office-layout">
       <div className="office-editor-stage">
-        <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).format}` : getEditor(active).label}</p>
+        <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
         {editors.map(editor => (
           <div key={editor.id} hidden={active !== editor.id}>
             {opened.has(editor.id) && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={720}
