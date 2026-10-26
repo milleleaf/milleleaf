@@ -72,9 +72,14 @@ async function loadApp(app: string): Promise<'ready' | 'failed'> {
         const init = glue.default
         const wasmUrl = `/apps/${app}/${manifest.wasm}`
         await init({
-          module_or_path: fetch(wasmUrl).then(response => {
+          module_or_path: fetch(wasmUrl).then(async response => {
             if (!response.ok) throw new Error(`The ${app} app files are unavailable (${response.status}).`)
-            return new Response(response.body!.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } })
+            // A server that labels the file Content-Encoding: gzip (a dev server does) has the
+            // browser unzip it already; decompress only what still starts with the gzip signature.
+            const file = await response.blob()
+            const head = new Uint8Array(await file.slice(0, 2).arrayBuffer())
+            const body = head[0] === 0x1f && head[1] === 0x8b ? file.stream().pipeThrough(new DecompressionStream('gzip')) : file.stream()
+            return new Response(body, { headers: { 'Content-Type': 'application/wasm' } })
           }),
         })
         if (manifest.start) await glue.start(canvas.id)
