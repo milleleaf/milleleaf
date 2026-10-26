@@ -8,6 +8,9 @@
 // staged. A small script, run first in each app's page, answers the app's own fetch of that wasm
 // from the gzip (its parts joined) through DecompressionStream, so the release's loader is
 // untouched. The wasm's preload link goes, since the file it names is no longer there.
+//
+// Every app's page also loads scripts/craft-touch-keyboard.js first, so phones and tablets open their
+// on-screen keyboard when the app wants text (see that file).
 
 import { gzipSync } from 'node:zlib'
 import { mkdir, readdir, readFile, rm, stat, writeFile, cp } from 'node:fs/promises'
@@ -99,6 +102,12 @@ for (const app of (await readdir(src)).sort()) {
   if (Object.keys(map).length) {
     await writeFile(path.join(destination, 'craft-wasm-gz.js'), shim.replace('MAP', JSON.stringify(map)))
     html = html.replace(/<head>/i, '<head><script src="./craft-wasm-gz.js"></script>')
+  }
+  await cp(path.join(site, 'scripts', 'craft-touch-keyboard.js'), path.join(destination, 'craft-touch-keyboard.js'))
+  html = html.replace(/<head>/i, '<head><script src="./craft-touch-keyboard.js"></script>')
+  if (!html.includes('<script src="./craft-touch-keyboard.js"></script>')) {
+    console.error(`FAIL ${app}: could not add the touch keyboard script to index.html`)
+    failed = true
   }
   await writeFile(page, html)
 

@@ -201,6 +201,30 @@ try {
     assert.equal(await page.locator('iframe').count(), 0, `No iframe on ${path}`)
     console.log(`PASS demo page ${path}: engine ready under the strict policy, switcher, site layout`)
   }
+  // Phones and tablets open their on-screen keyboard only for focus given during a tap. Each framed
+  // editor's page loads craft-touch-keyboard.js for that: a double-tap on a GridCraft cell must focus
+  // the hidden text field during the tap itself, and a tap that wants no text hands focus back.
+  {
+    const touch = await browser.newContext({ viewport: { width: 1024, height: 768 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true })
+    await touch.addInitScript(() => {
+      window.__focusInTap = []
+      document.addEventListener('touchend', () => window.__focusInTap.push(document.activeElement.tagName.toLowerCase()), { capture: true, passive: true })
+    })
+    const grid = await touch.newPage()
+    await grid.goto(origin + '/apps/frame/gridcraft/')
+    await grid.locator('canvas').first().waitFor({ timeout: 120_000 })
+    await grid.waitForFunction(() => !!document.querySelector('input[type=text]'), null, { timeout: 120_000 })
+    await grid.waitForTimeout(5000)
+    const active = () => grid.evaluate(() => document.activeElement.tagName.toLowerCase())
+    await grid.touchscreen.tap(330, 502); await grid.waitForTimeout(120); await grid.touchscreen.tap(330, 502); await grid.waitForTimeout(800)
+    const inTap = await grid.evaluate(() => window.__focusInTap.at(-1))
+    assert.equal(inTap, 'input', 'a double-tap on a cell focuses the text field during the tap')
+    assert.equal(await active(), 'input', 'the cell keeps the text field focused for typing')
+    await grid.keyboard.press('Escape'); await grid.touchscreen.tap(200, 107); await grid.waitForTimeout(800)
+    assert.equal(await active(), 'canvas', 'a tap on the ribbon hands focus back to the app')
+    console.log('PASS touch keyboard: GridCraft focuses its text field during the tap that starts editing')
+    await touch.close()
+  }
   // The office desk must appear in the main navigation alongside the demos.
   await page.goto(origin + '/')
   assert.equal(await page.locator('.site-header .desktop-nav a[href="/office"]').count(), 1, 'The desktop menu links the office desk')
