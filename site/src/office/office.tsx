@@ -42,15 +42,20 @@ export function OfficeDesk() {
   const [error, setError] = useState('')
   const [dirty, setDirty] = useState<Partial<Record<Tool, boolean>>>({})
 
+  // Both lists arrive before any editor mounts, so an editor never starts as one kind and is then
+  // replaced by the other.
+  const [routed, setRouted] = useState(false)
   useEffect(() => {
-    fetch('/apps/editors.json')
-      .then(response => { if (!response.ok) throw new Error(`The editor files are missing (${response.status}).`); return response.json() })
-      .then(setManifest)
-      .catch(e => setManifestError(String(e.message || e)))
-    fetch('/apps/frame/index.json')
-      .then(response => response.ok ? response.json() : [])
-      .then((list: { app: Tool; version: string; path: string }[]) => setFramed(Object.fromEntries(list.map(({ app, version, path }) => [app, { version, path }]))))
-      .catch(() => setFramed({}))
+    Promise.allSettled([
+      fetch('/apps/editors.json')
+        .then(response => { if (!response.ok) throw new Error(`The editor files are missing (${response.status}).`); return response.json() })
+        .then(setManifest)
+        .catch(e => setManifestError(String(e.message || e))),
+      fetch('/apps/frame/index.json')
+        .then(response => response.ok ? response.json() : [])
+        .then((list: { app: Tool; version: string; path: string }[]) => setFramed(Object.fromEntries(list.map(({ app, version, path }) => [app, { version, path }]))))
+        .catch(() => setFramed({})),
+    ]).then(() => setRouted(true))
   }, [])
 
   // Unsaved-changes guard for the editors that report it.
@@ -96,7 +101,7 @@ export function OfficeDesk() {
     <section className="office-layout">
       <div className="office-editor-stage">
         <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
-        {editors.map(editor => (
+        {routed && editors.map(editor => (
           <div key={editor.id} hidden={active !== editor.id}>
             {opened.has(editor.id) && framed[editor.id] &&
               <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} />}

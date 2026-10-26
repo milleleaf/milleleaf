@@ -175,26 +175,37 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
   const [slow, setSlow] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
-  // Ready once the frame's page has loaded (the app shows its own start screen from then on) or
-  // has drawn a canvas, whichever comes first. After 20 s the overlay offers a reload.
+  // Ready once the app has started: its canvas has a size and its own loading notice is gone. An
+  // HTML load alone is not a start (the WebAssembly can still fail). An uncaught error or rejected
+  // promise in the frame before that, or no start within a minute, is a failure with a Reload.
+  // After 20 s the loading overlay already offers a reload.
+  const [failure, setFailure] = useState('')
   useEffect(() => {
-    setState('loading'); setSlow(false)
+    setState('loading'); setSlow(false); setFailure('')
     const element = frame.current
     if (!element) return
-    const ready = () => setState('ready')
-    element.addEventListener('load', ready)
-    let stopped = false
+    let stopped = false, watched: Window | null = null
+    const fail = (message: string) => { if (stopped) return; stopped = true; setFailure(message); setState('failed') }
+    const onError = (event: ErrorEvent) => fail(event.message || 'The editor stopped while starting.')
+    const onRejection = (event: PromiseRejectionEvent) => fail(String(event.reason?.message || event.reason || 'The editor stopped while starting.'))
     const poll = () => {
       if (stopped) return
-      let drawn = false
-      try { const doc = element.contentDocument; drawn = !!doc && doc.URL !== 'about:blank' && (doc.readyState === 'complete' || !!doc.querySelector('canvas')) } catch { /* Not reachable yet. */ }
-      if (drawn) { ready(); return }
+      try {
+        const win = element.contentWindow, doc = element.contentDocument
+        if (win && doc && doc.URL !== 'about:blank' && win !== watched) {
+          watched?.removeEventListener('error', onError); watched?.removeEventListener('unhandledrejection', onRejection)
+          watched = win; win.addEventListener('error', onError); win.addEventListener('unhandledrejection', onRejection)
+        }
+        const canvas = doc?.querySelector('canvas'), notice = doc?.querySelector(`#${app}_loading`)
+        if (canvas && canvas.width > 0 && canvas.height > 0 && !(notice && (notice as HTMLElement).offsetParent)) { stopped = true; setState('ready'); return }
+      } catch { /* Not reachable yet. */ }
       setTimeout(poll, 250)
     }
     poll()
-    const timer = setTimeout(() => setSlow(true), 20_000)
-    return () => { stopped = true; clearTimeout(timer); element.removeEventListener('load', ready) }
-  }, [src, attempt])
+    const slowTimer = setTimeout(() => setSlow(true), 20_000)
+    const failTimer = setTimeout(() => fail(`${label} did not start within a minute.`), 60_000)
+    return () => { stopped = true; clearTimeout(slowTimer); clearTimeout(failTimer); watched?.removeEventListener('error', onError); watched?.removeEventListener('unhandledrejection', onRejection) }
+  }, [src, attempt, app, label])
 
   useEffect(() => {
     if (!expanded) return
@@ -215,7 +226,8 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
       <iframe key={attempt} ref={frame} src={src} title={`${label} editor`} data-app={app} />
       {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p>
         {slow && <button type="button" className="button secondary small craft-editor-retry" onClick={() => setAttempt(n => n + 1)}>Reload {label}</button>}</div>}
-      {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not load.</strong></p><p className="caption">The editor is unavailable in this browser.</p></div>}
+      {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not start.</strong></p><p className="caption">{failure || 'The editor is unavailable in this browser.'}</p>
+        <button type="button" className="button secondary small craft-editor-retry" onClick={() => setAttempt(n => n + 1)}>Reload {label}</button></div>}
     </div>
   </div>
 }
