@@ -1,0 +1,26 @@
+{
+  "gridcraft": {
+    "version": "0.12.1",
+    "repo": "storytold/gridcraft",
+    "commit": "99f5a2cd3f59c1cd26b929f3e6ad9424818f2f61",
+    "pull": "https://github.com/storytold/gridcraft/pull/2593"
+  },
+  "pdfcraft": {
+    "version": "0.14.0",
+    "repo": "storytold/pdfcraft",
+    "commit": "3ff9fad0ba1e22c1dbdbcc4b867c377ebfcb882f",
+    "pull": "https://github.com/storytold/pdfcraft/pull/4732"
+  },
+  "wordcraft": {
+    "version": "0.11.0",
+    "repo": "storytold/wordcraft",
+    "commit": "223bffe864892148f63b7aeb5f85329fcb628043",
+    "pull": "https://github.com/storytold/wordcraft/pull/4367"
+  },
+  "cadcraft": {
+    "version": "0.13.0",
+    "repo": "storytold/cadcraft",
+    "commit": "e5922020755daf069b06d9a0f0192880fdde1717",
+    "pull": "https://github.com/storytold/cadcraft/pull/2180"
+  }
+}

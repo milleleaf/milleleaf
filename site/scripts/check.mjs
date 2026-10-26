@@ -3,8 +3,8 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
-const paths = ['/', '/flow', '/demo', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/keystone', '/standards']
-const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
+const paths = ['/', '/flow', '/demo', '/office', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/keystone', '/standards']
+const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'Four editors.One desk.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -175,18 +175,33 @@ try {
   await page.locator('ml-verify').getByRole('button').click()
   await page.locator('ml-verify').getByRole('status').filter({ hasText: 'Layer hash does not match' }).waitFor()
   // The demos are site pages: the React layout plus one demo component each, under a strict policy.
+  // /office hosts the real editors in the page (same-origin connections only, no iframes).
   const headers = await readFile('dist/client/_headers', 'utf8')
-  for (const path of ['/flow', '/demo']) {
+  for (const path of ['/flow', '/demo', '/office']) {
     const response = await page.goto(origin + path)
     const csp = response.headers()['content-security-policy']
-    assert(csp && csp.includes("connect-src 'none'") && headers.includes(`${path}\n  Content-Security-Policy: ${csp}`), `${path}: strict policy from _headers`)
+    assert(csp && headers.includes(`${path}\n  Content-Security-Policy: ${csp}`), `${path}: strict policy from _headers`)
+    if (path === '/demo') assert(csp.includes("connect-src 'none'"), '/demo stays offline')
+    else assert(csp.includes("connect-src 'self'") && !csp.includes("connect-src 'none'"), `${path} allows same-origin connections only`)
+    if (path === '/office') {
+      await page.locator('.office-toolbar').waitFor({ timeout: 60_000 })
+      assert.equal(await page.locator('iframe').count(), 0, `No iframe on ${path}`)
+      console.log(`PASS page ${path}: office desk under the strict policy, site layout`)
+      continue
+    }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
-    assert.equal(await page.locator('.demo-switch a').count(), 2, `Demo switcher on ${path}`)
-    assert.equal(await page.locator('.demo-switch a[aria-current=page]').getAttribute('href'), path, `Switcher marks ${path}`)
-    assert.equal(await page.locator('.site-header nav a[aria-current=page]').first().textContent(), 'Demo', `Menu marks Demo on ${path}`)
+    if (path === '/flow') {
+      assert.equal(await page.locator('.demo-switch a').count(), 2, `Demo switcher on ${path}`)
+      assert.equal(await page.locator('.demo-switch a[aria-current=page]').getAttribute('href'), path, `Switcher marks ${path}`)
+      assert.equal(await page.locator('.site-header nav a[aria-current=page]').first().textContent(), 'Demo', `Menu marks Demo on ${path}`)
+    }
     assert.equal(await page.locator('iframe').count(), 0, `No iframe on ${path}`)
     console.log(`PASS demo page ${path}: engine ready under the strict policy, switcher, site layout`)
   }
+  // The office desk must appear in the main navigation alongside the demos.
+  await page.goto(origin + '/')
+  assert.equal(await page.locator('.site-header .desktop-nav a[href="/office"]').count(), 1, 'The desktop menu links the office desk')
+  assert.equal(await page.locator('.site-header .mobile-menu a[href="/office"]').count(), 1, 'The mobile menu links the office desk')
   await context.close()
   assert.deepEqual(failures, [], 'Browser console, page and asset errors')
   const pkg = JSON.parse(await readFile('package.json', 'utf8'))

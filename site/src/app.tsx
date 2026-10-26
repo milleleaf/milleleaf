@@ -6,8 +6,9 @@ import { DatasetTables } from './dataset-tables'
 import { Comparison, ContentFlow } from './hero'
 import { CompareDemo } from './demos/compare'
 import { FlowDemo } from './demos/flow'
+import { OfficeDesk } from './office/office'
 
-const nav = [['Demo', '/flow'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['Keystone', '/keystone'], ['GitHub', 'https://github.com/milleleaf']]
+const nav = [['Office', '/office'], ['Demo', '/flow'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['Keystone', '/keystone'], ['GitHub', 'https://github.com/milleleaf']]
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 function Logo() {
@@ -41,7 +42,7 @@ function DemoPage({ path }: { path: DemoPath }) {
 
 function Home() {
   return <main id="main">
-    <section className="product-hero wrap"><div className="hero-heading"><h1>Make it once.<br />Use it in every app.</h1><div><p>One table or chart, in the workbook, report, deck and PDF. Each keeps its own style. When the numbers change, every use follows. Edits come back for review.</p><a href="/flow" className="button">Try it in your browser <span aria-hidden="true">↗</span></a></div></div><ContentFlow /></section>
+    <section className="product-hero wrap"><div className="hero-heading"><h1>Make it once.<br />Use it in every app.</h1><div><p>One table or chart, in the workbook, report, deck and PDF. Each keeps its own style. When the numbers change, every use follows. Edits come back for review.</p><a href="/flow" className="button">Try it in your browser <span aria-hidden="true">↗</span></a><a href="/office" className="button secondary" style={{ marginLeft: 12 }}>Open the office desk <span aria-hidden="true">↗</span></a></div></div><ContentFlow /></section>
     <section className="story-band alternatives-band"><div className="wrap"><div className="story-layout"><h2>Why not just open it in another app?</h2><div><p>Or copy/paste, import/export, or a plugin? Each does a useful job. Here is where each stops.</p><p>“Reported” means vendor or community statements in our research, not a test by Milleleaf. Paste and conversion behaviour describe a copy, not a linked workflow.</p></div></div><AlternativesTable /><p className="alternatives-limit">Milleleaf needs no app add-in. Refresh uses CLI export today; one-click refresh inside apps, review approvals and shared stores are still missing or planned. Signing is optional today.</p><a href="/how-it-works#why-not-just-open-it-in-another-app">Read each answer and its evidence →</a></div></section>
     <AppFamilies />
     <section className="wrap open-work"><h2>Open the work.</h2><div className="open-tool"><span>The office tool</span><h3>Built to be inspected.</h3><p>The CLI and libraries work locally, and the demos run in your browser. The source is public.</p><a href="https://github.com/milleleaf/milleleaf">Source on GitHub ↗</a></div><div className="open-data sheet-surface"><span>The data</span><h3>Real places.<br />Individual terms.</h3><a href="https://worldviews-libre.pages.dev">WorldViews Libre ↗</a><a href="https://worldviews.pages.dev">WorldViews ↗</a><a href="/data/datasets">Dataset register →</a></div><div className="open-method"><span>The method</span><p>One standard for human and AI work. Make the claim the evidence supports.</p><a href="/method">AI Output to Value →</a></div><div className="open-method"><span>The proof</span><p>Keystone, an openBIM ecosystem, won 1st place in That Open’s #TOP Founding Members Hackathon.</p><a href="/keystone">Keystone →</a></div></section>
@@ -94,7 +95,14 @@ function Content({ path }: { path: string }) {
   </main>
 }
 
+function OfficePage() {
+  return <main id="main" className="wrap content-page page-office">
+    <header className="page-heading"><span className="page-topic">Office</span><h1>Four editors.<br />One desk.</h1><p className="lead">Real spreadsheets, documents, PDFs and drawings, running in this page on your device. Everything you open or save stays in this browser's own storage.</p></header>
+    <OfficeDesk />
+  </main>
+}
+
 export function App({ path }: { path: string }) {
   useEffect(() => { void import('./elements').then(m => m.registerElements()) }, [])
-  return <><a className="skip-link" href="#main">Skip to content</a><Header path={path} />{path === '/' ? <Home /> : path in demos ? <DemoPage path={path as DemoPath} /> : <Content path={path} />}<Footer /></>
+  return <><a className="skip-link" href="#main">Skip to content</a><Header path={path} />{path === '/' ? <Home /> : path === '/office' ? <OfficePage /> : path in demos ? <DemoPage path={path as DemoPath} /> : <Content path={path} />}<Footer /></>
 }

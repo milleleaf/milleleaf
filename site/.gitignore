@@ -6,3 +6,4 @@ _out/
 src/routeTree.gen.ts
 .cloudflare/
 public/engine/pkg/
+public/apps/

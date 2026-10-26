@@ -350,3 +350,27 @@ ml-revisions{display:block;min-height:55px}
 @media(prefers-reduced-motion:reduce){.page-demo .working-bar::after{animation:none;width:100%;opacity:.6}}
 .page-demo [aria-busy=true]~*{cursor:progress}
 .page-demo .file-size{color:var(--muted)}
+
+/* Page-host editors (/flow, /office): one registry canvas per app, moved into a sized box. */
+.craft-editor{position:relative;background:var(--back-paper);border:1px solid var(--line);min-height:120px;overflow:hidden}
+.craft-editor canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.craft-editor canvas:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
+.craft-editor-state{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:20px;pointer-events:none}
+.craft-editor-state p{margin:4px 0}
+.office-desk .office-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:18px 0}
+.office-desk .office-tab{font:inherit;font-size:15px;font-weight:600;padding:11px 16px;background:var(--paper);color:var(--ink);border:1px solid var(--ink);cursor:pointer}
+.office-desk .office-tab.active{background:var(--ink);color:var(--bg)}
+.office-desk .office-tab .file-tag{font-size:11px;margin-left:4px}
+.office-desk .office-tab.active .file-tag{border-color:var(--bg)}
+.office-desk .office-layout{display:grid;grid-template-columns:minmax(280px,.9fr) 1.6fr;gap:20px;align-items:start}
+.office-desk .office-desk-list{background:var(--paper);border:1px solid var(--line);padding:22px}
+.office-desk .office-files{list-style:none;margin:0;padding:0}
+.office-desk .office-files li{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:12px 0}
+.office-desk .office-file-open{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:none;border:0;padding:0;font:inherit;color:var(--ink);cursor:pointer;text-align:left}
+.office-desk .office-file-open:hover strong{text-decoration:underline}
+.office-desk .office-editor-stage{min-width:0}
+.office-desk .privacy{font-size:14px;color:var(--muted);margin:0 0 6px}
+.office-desk [role=alert]{padding:14px 18px;border-left:3px solid var(--ink);background:var(--removed);overflow-wrap:anywhere;margin:10px 0}
+.office-desk [role=status]{font-size:14px;color:var(--muted);min-height:22px;margin:6px 0}
+@media(max-width:900px){.office-desk .office-layout{grid-template-columns:1fr}}
+.office-desk-list .section-label{display:flex;justify-content:space-between;gap:12px}
