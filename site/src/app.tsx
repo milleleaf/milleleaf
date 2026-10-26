@@ -8,7 +8,7 @@ import { CompareDemo } from './demos/compare'
 import { FlowDemo } from './demos/flow'
 import { OfficeDesk } from './office/office'
 
-const nav = [['Office', '/office'], ['Demo', '/flow'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['Keystone', '/keystone'], ['GitHub', 'https://github.com/milleleaf']]
+const nav = [['Demo', '/flow'], ['Office', '/office'], ['How it works', '/how-it-works'], ['Data', '/data'], ['Docs', '/docs'], ['Keystone', '/keystone'], ['GitHub', 'https://github.com/milleleaf']]
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 function Logo() {
