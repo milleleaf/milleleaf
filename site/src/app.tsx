@@ -97,7 +97,7 @@ function Content({ path }: { path: string }) {
 
 function OfficePage() {
   return <main id="main" className="wrap content-page page-office">
-    <header className="page-heading"><span className="page-topic">Office</span><h1>Four editors.<br />One desk.</h1><p className="lead">Real spreadsheets, documents, PDFs and drawings, running in this page on your device. Everything you open or save stays in this browser's own storage.</p></header>
+    <header className="page-heading"><span className="page-topic">Office</span><h1>Thirteen editors.<br />One desk.</h1><p className="lead">Real documents, spreadsheets, slides, PDFs, drawings, photos, vector art, layouts, interface designs, video, motion graphics and audio, running in your browser on your device. Nothing is uploaded: the page may only talk to this site.</p></header>
     <OfficeDesk />
   </main>
 }

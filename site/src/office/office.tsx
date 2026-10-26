@@ -33,8 +33,10 @@ const hasSaveAs = (tool: Tool) => tool !== 'gridcraft' && tool !== 'cadcraft'
 export function OfficeDesk() {
   const [manifest, setManifest] = useState<EditorsManifest>()
   const [manifestError, setManifestError] = useState('')
-  // Only the editors whose builds are staged get a tab.
-  const editors = useMemo(() => allEditors.filter(editor => manifest?.[editor.id]), [manifest])
+  // Editors that run from their own official release page, in a frame (public/apps/frame/).
+  const [framed, setFramed] = useState<Partial<Record<Tool, { version: string; path: string }>>>({})
+  // Only the editors whose builds are staged get a tab; a page-host build wins over a framed one.
+  const editors = useMemo(() => allEditors.filter(editor => manifest?.[editor.id] || framed[editor.id]), [manifest, framed])
   const [active, setActive] = useState<Tool>('gridcraft')
   // An editor starts the first time its tab is opened (each is tens of megabytes) and then stays alive.
   const [opened, setOpened] = useState<Set<Tool>>(() => new Set(['gridcraft']))
@@ -55,6 +57,10 @@ export function OfficeDesk() {
       .then(response => { if (!response.ok) throw new Error(`The editor files are missing (${response.status}).`); return response.json() })
       .then(setManifest)
       .catch(e => setManifestError(String(e.message || e)))
+    fetch('/apps/frame/index.json')
+      .then(response => response.ok ? response.json() : [])
+      .then((list: { app: Tool; version: string; path: string }[]) => setFramed(Object.fromEntries(list.map(({ app, version, path }) => [app, { version, path }]))))
+      .catch(() => setFramed({}))
   }, [])
 
   const refreshLibrary = useCallback(async () => {
@@ -113,7 +119,13 @@ export function OfficeDesk() {
 
   const importFile = useCallback(async (file: File) => {
     const tool = extensionTool(file.name)
-    if (!manifest?.[tool]) { setError(`${getEditor(tool).label}, the editor for ${file.name}, isn't on this page yet.`); return }
+    if (!manifest?.[tool]) {
+      setError(framed[tool]
+        ? `Open ${file.name} from ${getEditor(tool).label}'s own File menu; it doesn't take files from the desk yet.`
+        : `${getEditor(tool).label}, the editor for ${file.name}, isn't on this page yet.`)
+      if (framed[tool]) setActive(tool)
+      return
+    }
     try {
       const saved: SavedFile = { id: crypto.randomUUID(), name: file.name, tool, bytes: await file.arrayBuffer(), modified: Date.now() }
       await saveFile(saved)
@@ -121,10 +133,10 @@ export function OfficeDesk() {
       setActive(tool)
       sendFile(tool, saved)
     } catch (e) { setError(`This file could not be stored: ${String((e as Error).message || e)}`) }
-  }, [manifest, refreshLibrary, sendFile])
+  }, [manifest, framed, refreshLibrary, sendFile])
 
   const deskSize = useMemo(() => library.reduce((total, file) => total + file.bytes.byteLength, 0), [library])
-  const activeManifest = manifest?.[active]
+  const activeManifest = manifest?.[active] ?? framed[active]
 
   return <div className="office-desk">
     <p className="privacy">Files stay in this browser, in its own storage on this device. No upload. No account.</p>
@@ -150,7 +162,9 @@ export function OfficeDesk() {
         <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
         {editors.map(editor => (
           <div key={editor.id} hidden={active !== editor.id}>
-            {opened.has(editor.id) && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={720}
+            {opened.has(editor.id) && !manifest?.[editor.id] && framed[editor.id] &&
+              <iframe className="office-frame" src={framed[editor.id]!.path} title={getEditor(editor.id).label} style={{ width: '100%', height: 720, border: 0, display: 'block' }} />}
+            {opened.has(editor.id) && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={720}
               onSave={detail => { if (detail.bytes instanceof ArrayBuffer) void handleSave(editor.id, detail) }}
               onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
               onReady={onReady(editor.id)}
