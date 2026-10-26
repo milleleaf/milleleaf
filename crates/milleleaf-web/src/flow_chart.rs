@@ -360,11 +360,13 @@ pub(super) fn chart_png(svg: &str) -> Result<Vec<u8>, String> {
     fonts.set_monospace_family(CHART_FONT_FAMILY);
     fonts.set_cursive_family(CHART_FONT_FAMILY);
     fonts.set_fantasy_family(CHART_FONT_FAMILY);
-    let mut options = usvg::Options::default();
     // Text without a font-family of its own takes the site font too. The resources dir stays
     // unset: the chart references nothing outside itself, so no file or network is touched.
-    options.font_family = CHART_FONT_FAMILY.into();
-    options.fontdb = Arc::new(fonts);
+    let options = usvg::Options {
+        font_family: CHART_FONT_FAMILY.into(),
+        fontdb: Arc::new(fonts),
+        ..Default::default()
+    };
     let tree = usvg::Tree::from_str(svg, &options)
         .map_err(|e| format!("The chart picture can't be drawn: {e}"))?;
     let size = tree.size();
@@ -426,12 +428,14 @@ mod tests {
             assert!(text.contains("Mon / First: -12"));
             assert!(!text.contains("NaN"));
         }
-        assert!(svg(
-            &table,
-            &json!({"kind":"pie","category":"Day","values":["First","Second"]})
-        )
-        .unwrap_err()
-        .contains("negative"));
+        assert!(
+            svg(
+                &table,
+                &json!({"kind":"pie","category":"Day","values":["First","Second"]})
+            )
+            .unwrap_err()
+            .contains("negative")
+        );
     }
     #[test]
     fn coordinate_precision_keeps_exact_source_labels() {
@@ -482,10 +486,12 @@ mod tests {
                 if *t == "A" {
                     assert!(["0", "1"].contains(&tokens[i + 4]));
                     assert!(["0", "1"].contains(&tokens[i + 5]));
-                    assert!(tokens[i + 1]
-                        .split('.')
-                        .nth(1)
-                        .is_some_and(|v| v.len() == 3));
+                    assert!(
+                        tokens[i + 1]
+                            .split('.')
+                            .nth(1)
+                            .is_some_and(|v| v.len() == 3)
+                    );
                     arcs += 1;
                 }
             }

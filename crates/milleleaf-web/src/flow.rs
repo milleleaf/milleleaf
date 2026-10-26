@@ -740,7 +740,9 @@ impl FlowSession {
     fn push(&mut self, mut l: Layer, app: &str, changes: Vec<Value>, conflicts: Vec<Value>) {
         l.header.id = format!("milleleaf/flow/{}", self.layers.len() + 1);
         if let Some(last) = self.layers.last() {
-            l.header.base = Some(milleleaf_store::hash_of(&milleleaf_store::layer_bytes(last)));
+            l.header.base = Some(milleleaf_store::hash_of(&milleleaf_store::layer_bytes(
+                last,
+            )));
         }
         self.history.push(json!({"id":l.header.id,"author":l.header.author,"at":l.header.timestamp,"app":app,"changes":changes,"conflicts":conflicts,"layer":l}));
         self.changes = changes;
@@ -790,8 +792,9 @@ impl FlowSession {
         let ods = archive.contains_key("mimetype") && !archive.contains_key("xl/workbook.xml");
         let (mut l, pictures, warnings) = if ods {
             let (wb, warnings) = milleleaf_gridcraft::from_ods(bytes).map_err(|e| e.to_string())?;
-            let (l, r) = milleleaf_gridcraft::adopt(&wb, WB, "Workbook", header("base", author, at))
-                .map_err(|e| e.to_string())?;
+            let (l, r) =
+                milleleaf_gridcraft::adopt(&wb, WB, "Workbook", header("base", author, at))
+                    .map_err(|e| e.to_string())?;
             let mut ws = warnings;
             ws.extend(r.warnings);
             ws.push(ODS_NOTE.into());
@@ -1170,7 +1173,8 @@ impl FlowSession {
         let assets = PictureSource::Memory(&self.pictures);
         let (bytes, rev, warnings) = match kind {
             "xlsx" => {
-                let (w, r) = milleleaf_gridcraft::export_with(&n, assets).map_err(|e| e.to_string())?;
+                let (w, r) =
+                    milleleaf_gridcraft::export_with(&n, assets).map_err(|e| e.to_string())?;
                 (
                     milleleaf_gridcraft::to_xlsx(&w).map_err(|e| e.to_string())?,
                     milleleaf_gridcraft::revision_of(&n),
@@ -1187,7 +1191,8 @@ impl FlowSession {
                 )
             }
             _ => {
-                let (w, r) = milleleaf_deckcraft::export_with(&n, assets).map_err(|e| e.to_string())?;
+                let (w, r) =
+                    milleleaf_deckcraft::export_with(&n, assets).map_err(|e| e.to_string())?;
                 (
                     milleleaf_deckcraft::to_pptx(&w).map_err(|e| e.to_string())?,
                     milleleaf_deckcraft::revision_of(&n),
@@ -1746,7 +1751,10 @@ mod tests {
         let vector_target = target(vector);
         assert!(raster_target.ends_with(".png"));
         assert!(vector_target.ends_with(".svg"));
-        assert_eq!(format!("word/{vector_target}"), svg_chart(&docx));
+        assert_eq!(
+            xml_part(&docx, &format!("word/{vector_target}")),
+            svg_chart(&docx)
+        );
         let mut archive = zip::ZipArchive::new(Cursor::new(&docx)).unwrap();
         let mut png = Vec::new();
         archive
@@ -1755,8 +1763,10 @@ mod tests {
             .read_to_end(&mut png)
             .unwrap();
         assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
-        assert!(xml_part(&docx, "[Content_Types].xml")
-            .contains("<Default Extension=\"png\" ContentType=\"image/png\"/>"));
+        assert!(
+            xml_part(&docx, "[Content_Types].xml")
+                .contains("<Default Extension=\"png\" ContentType=\"image/png\"/>")
+        );
         // A second pass leaves the same structure: blips with the extension are left as they are.
         assert_eq!(png_fallback::add_png_fallbacks(&docx).unwrap(), docx);
         // WordCraft's own import reads the file back, the SVG part still authoritative.
@@ -1806,8 +1816,10 @@ mod tests {
         assert!(xml_part(&patched, "ppt/slides/_rels/slide1.xml.rels").contains(
             "Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/pic.png\""
         ));
-        assert!(xml_part(&patched, "[Content_Types].xml")
-            .contains("<Default Extension=\"png\" ContentType=\"image/png\"/>"));
+        assert!(
+            xml_part(&patched, "[Content_Types].xml")
+                .contains("<Default Extension=\"png\" ContentType=\"image/png\"/>")
+        );
         let mut archive = zip::ZipArchive::new(Cursor::new(&patched)).unwrap();
         let mut png = Vec::new();
         archive
@@ -2106,8 +2118,8 @@ mod tests {
     fn source_history_retains_detected_app_and_original_file_evidence() {
         let bytes =
             include_bytes!("../../../examples/hello-table/fixtures/finance.msoffice-resaved.xlsx");
-        let expected_app =
-            milleleaf_formats::saved_by(bytes).expect("real Excel fixture has its application metadata");
+        let expected_app = milleleaf_formats::saved_by(bytes)
+            .expect("real Excel fixture has its application metadata");
         let mut s = FlowSession::default();
         let inspection = s.open_native(bytes, "Sam", AT).unwrap();
         let hash = milleleaf_core::integrity_of(bytes);
@@ -2225,7 +2237,8 @@ mod tests {
         assert_eq!(r["report"]["table"]["rows"][1][1], 600000);
         let report = s.export_native("docx").unwrap();
         let library_saved =
-            milleleaf_wordcraft::to_docx(&milleleaf_wordcraft::from_docx(&report).unwrap()).unwrap();
+            milleleaf_wordcraft::to_docx(&milleleaf_wordcraft::from_docx(&report).unwrap())
+                .unwrap();
         let r = s
             .import_native(
                 &library_saved,
@@ -2320,7 +2333,8 @@ mod tests {
                 .unwrap();
         }
         let report = s.export_native("docx").unwrap();
-        let saved = milleleaf_wordcraft::to_docx(&milleleaf_wordcraft::from_docx(&report).unwrap()).unwrap();
+        let saved = milleleaf_wordcraft::to_docx(&milleleaf_wordcraft::from_docx(&report).unwrap())
+            .unwrap();
         s.import_native(&saved, "wordcraft-resaved.docx", "WordCraft library", AT)
             .unwrap();
         s.import_native(
@@ -2412,8 +2426,10 @@ mod tests {
         s.sample_native("Sam", AT).unwrap();
         let original = s.export_native("xlsx").unwrap();
         // Simulate an arbitrary initial workbook with its revision stamp removed.
-        let rev =
-            milleleaf_gridcraft::exported_revision(&milleleaf_gridcraft::from_xlsx(&original).unwrap()).unwrap();
+        let rev = milleleaf_gridcraft::exported_revision(
+            &milleleaf_gridcraft::from_xlsx(&original).unwrap(),
+        )
+        .unwrap();
         let original = rewrite(
             &original,
             "xl/workbook.xml",
@@ -2790,7 +2806,8 @@ mod tests {
         let bytes = std::fs::read(out().join("checked/writer-resaved.docx")).unwrap();
         let document = milleleaf_wordcraft::from_docx(&bytes).unwrap();
         let (edit, native) =
-            milleleaf_wordcraft::import(&before, &document, header("diagnostic", "Reader", AT)).unwrap();
+            milleleaf_wordcraft::import(&before, &document, header("diagnostic", "Reader", AT))
+                .unwrap();
         let adopted = super::super::read(&bytes, header("diagnostic", "Reader", AT)).unwrap();
         let returned = super::super::tree(&adopted.layer).unwrap();
         let picture_info = |pictures: &Pictures| {
@@ -3024,7 +3041,8 @@ impl FlowSession {
     fn sign_native(&mut self) -> Result<Value> {
         if self.key.is_none() {
             self.key = Some(
-                milleleaf_store::KeyPair::generate_demo("Session demo key").map_err(|e| e.to_string())?,
+                milleleaf_store::KeyPair::generate_demo("Session demo key")
+                    .map_err(|e| e.to_string())?,
             );
         }
         let layer = self.layers.last().ok_or("Open a workbook first.")?;
