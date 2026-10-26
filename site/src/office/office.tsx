@@ -136,6 +136,18 @@ export function OfficeDesk() {
     </div>
     <p id="office-notice" role="status">{notice}</p>
     <section className="office-layout">
+      <div className="office-editor-stage">
+        <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).format}` : getEditor(active).label}</p>
+        {editors.map(editor => (
+          <div key={editor.id} hidden={active !== editor.id}>
+            {opened.has(editor.id) && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={720}
+              onSave={detail => { if (detail.bytes instanceof ArrayBuffer) void handleSave(editor.id, detail) }}
+              onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
+              onReady={onReady(editor.id)}
+              onFailed={onFailed(editor.id)} />}
+          </div>
+        ))}
+      </div>
       <aside className="office-desk-list" aria-label="Your desk">
         <div className="section-label"><span>Your desk</span><span>{library.length} {library.length === 1 ? 'file' : 'files'}</span></div>
         {library.length === 0
@@ -149,21 +161,8 @@ export function OfficeDesk() {
                 <button className="button secondary small" aria-label={`Download ${file.name}`} onClick={() => download(file)}>Download</button>
               </li>
             ))}</ul>}
-        <p className="caption">On this device: {fileSize(deskSize)}. Clearing the browser's site data clears the desk.</p>
+        <p className="caption">On this device: {fileSize(deskSize)}. Clearing the browser's site data clears the desk. Saves from the editors land here; a workbook's Export to PDF becomes its own PDF entry. Download anything you want to keep outside the browser.</p>
       </aside>
-      <div className="office-editor-stage">
-        <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).format}` : getEditor(active).label}</p>
-        {editors.map(editor => (
-          <div key={editor.id} hidden={active !== editor.id}>
-            {opened.has(editor.id) && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={640}
-              onSave={detail => { if (detail.bytes instanceof ArrayBuffer) void handleSave(editor.id, detail) }}
-              onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
-              onReady={onReady(editor.id)}
-              onFailed={onFailed(editor.id)} />}
-          </div>
-        ))}
-      </div>
     </section>
-    <p className="caption">Saves from the editors land on the desk above. A workbook's Export to PDF becomes its own PDF entry. Download anything you want to keep outside the browser.</p>
   </div>
 }

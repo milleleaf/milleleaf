@@ -158,6 +158,7 @@ export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFa
   const box = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [error, setError] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const callbacks = useRef({ onSave, onDirty, onReady, onFailed })
   callbacks.current = { onSave, onDirty, onReady, onFailed }
 
@@ -201,8 +202,25 @@ export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFa
     }
   }, [app, label])
 
-  return <div className="craft-editor" style={{ height: typeof height === 'number' ? `${height}px` : height }} ref={box} aria-label={`${label} editor`}>
-    {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label.toLowerCase()}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p></div>}
-    {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not load.</strong></p><p className="caption">{error || 'The editor is unavailable in this browser.'}</p><p className="caption">The {label.toLowerCase()} preview below stays available.</p></div>}
+  // Expanded, the editor fills the browser window. Only the button collapses it: the apps use Escape themselves.
+  useEffect(() => {
+    if (!expanded) return
+    const root = document.documentElement
+    root.classList.add('craft-editor-open')
+    box.current?.querySelector('canvas')?.focus()
+    return () => root.classList.remove('craft-editor-open')
+  }, [expanded])
+
+  return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
+    <div className="craft-editor-bar">
+      <span>{expanded ? label : ''}</span>
+      <button type="button" className="button secondary small" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>
+        {expanded ? 'Collapse' : 'Expand'}
+      </button>
+    </div>
+    <div className="craft-editor" style={expanded ? undefined : { height: typeof height === 'number' ? `${height}px` : height }} ref={box} aria-label={`${label} editor`}>
+      {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label.toLowerCase()}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p></div>}
+      {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not load.</strong></p><p className="caption">{error || 'The editor is unavailable in this browser.'}</p><p className="caption">The {label.toLowerCase()} preview below stays available.</p></div>}
+    </div>
   </div>
 }
