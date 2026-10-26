@@ -12,6 +12,8 @@
 :root[data-theme=dark]{color-scheme:dark;--bg:oklch(.185 .025 182);--paper:oklch(.25 .029 181);--back-paper:oklch(.22 .03 175);--ink:oklch(.94 .019 165);--muted:oklch(.78 .03 172);--line:oklch(.44 .038 175);--link:oklch(.86 .095 163);--focus:#09c8ba;--removed:oklch(.38 .07 30)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:oklch(.185 .025 182);--paper:oklch(.25 .029 181);--back-paper:oklch(.22 .03 175);--ink:oklch(.94 .019 165);--muted:oklch(.78 .03 172);--line:oklch(.44 .038 175);--link:oklch(.86 .095 163);--focus:#09c8ba;--removed:oklch(.38 .07 30)}}
 *{box-sizing:border-box}
+/* A Craft editor types through a hidden 1px text field it places itself; border-box with the field's default padding leaves it no content box, and the next key then lands before text it just committed. Keep the browser default there. */
+.craft-editor input{box-sizing:content-box}
 html{scroll-behavior:smooth;scroll-padding-top:24px}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 var(--t1)/1.6 Commissioner,sans-serif;font-variation-settings:'FLAR' 0,'VOLM' 0; -webkit-font-smoothing:antialiased}
 h1,h2,h3,p{margin-top:0}

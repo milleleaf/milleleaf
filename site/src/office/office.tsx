@@ -7,8 +7,8 @@ import { CraftEditor, FramedEditor, type EditorsManifest } from '../editors/edit
 const editorHeight = 'min(720px, calc(100vh - 160px))'
 
 // /office: the thirteen Craft editors, each used on its own. Each runs from its official release page
-// in a same-origin frame; a page-host build is used only for an editor with no staged release (our
-// page-host builds lost input fixes the releases have, such as the caret moving after typed-in text).
+// in a same-origin frame, so the site's styles never reach the app; a page-host build is used only for
+// an editor with no staged release.
 // Element ids are what web checks select by. An editor shows only when its build is staged.
 const allEditors: { id: Tool; label: string; kind: string; group: string }[] = [
   { id: 'wordcraft', group: 'Office', label: 'WordCraft', kind: 'Documents' },

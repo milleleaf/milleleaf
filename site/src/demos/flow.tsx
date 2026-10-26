@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { json, saveFile, useEngine } from './engine'
 import { fileSize, Status, tooBig } from './status'
 import { CraftEditor, openWhenReady } from '../editors/editor'
@@ -152,8 +152,6 @@ export function FlowDemo() {
   // The table/document previews stay as the fallback while an editor loads or if it fails.
   const [gridcraftWanted, setGridcraftWanted] = useState(false)
   const [wordcraftWanted, setWordcraftWanted] = useState(false)
-  const sourceBytes = useRef<ArrayBuffer | undefined>(undefined)
-  const reportBytes = useRef<ArrayBuffer | undefined>(undefined)
   const ready = engine.status === 'ready'
 
   // The project lives only in this tab: ask before a reload, a link or closing the tab discards it.
@@ -208,9 +206,7 @@ export function FlowDemo() {
   async function openWorkbook(file: File) {
     if (!/\.(xlsx|ods)$/i.test(file.name)) throw new Error('Choose an XLSX or ODS workbook.')
     tooBig(file)
-    const bytes = await file.arrayBuffer()
-    sourceBytes.current = bytes
-    opened(await call('open', [bytes, who(), now()]), `${file.name} · ${fileSize(file.size)}`)
+    opened(await call('open', [await file.arrayBuffer(), who(), now()]), `${file.name} · ${fileSize(file.size)}`)
   }
   async function importRevised(file?: File) {
     if (!file) return
@@ -226,10 +222,7 @@ export function FlowDemo() {
   })
   const download = (kind: 'report' | 'deck' | 'workbook') => operation('Preparing your local download…', async () => {
     const ext = { report: 'docx', deck: 'pptx', workbook: 'xlsx' }[kind]
-    const bytes = await call('export_file', [ext])
-    if (kind === 'report') reportBytes.current = bytes
-    if (kind === 'workbook') sourceBytes.current = bytes
-    saveFile(bytes, `milleleaf-${kind}.${ext}`)
+    saveFile(await call('export_file', [ext]), `milleleaf-${kind}.${ext}`)
     setStatus(`Ready. The ${kind} download was prepared in this browser.`)
   })
   const sign = () => operation('Signing the current layer locally…', async () => {
@@ -243,34 +236,42 @@ export function FlowDemo() {
   })
   const drop = (event: DragEvent) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; operation(file ? `Reading the dropped file locally: ${file.name} (${fileSize(file.size)})…` : 'Reading the dropped file locally…', () => importRevised(file)) }
 
-  // Real editors in page host mode. A save comes back exactly like an uploaded file: a workbook
-  // save re-opens the project (the engine sees an ordinary uploaded workbook), a report save
-  // arrives as a review layer. Both keep the claimed app label the demo records today.
+  // Real editors in page host mode. Each opens what the engine holds at that moment (the current
+  // workbook, the current report), never a copy left from an earlier download or project.
+  const workbookName = () => (name.startsWith('Hello Table') ? 'finance' : name.split(' · ')[0].replace(/\.[^.]+$/, '')) + '.xlsx'
   const showInGridcraft = () => operation('Opening the workbook in GridCraft…', async () => {
-    if (!sourceBytes.current) throw new Error('Open a workbook first.')
+    if (!sheets.length) throw new Error('Open a workbook first.')
+    const bytes = await call('export_file', ['xlsx'])
     setGridcraftWanted(true)
-    await openWhenReady('gridcraft', name.startsWith('Hello Table') ? 'finance.xlsx' : name.split(' · ')[0], sourceBytes.current)
-    setStatus('Ready. The workbook is open in GridCraft below. Its Save comes back here and rebuilds the report and deck.')
+    await openWhenReady('gridcraft', workbookName(), bytes)
+    setStatus(snapshot ? 'Ready. The workbook is open in GridCraft below. Its Save comes back here as a new layer and updates the report and deck.' : 'Ready. The workbook is open in GridCraft below. Its Save comes back here as the workbook.')
   })
   const showInWordcraft = () => operation('Opening the report in WordCraft…', async () => {
     if (!snapshot) throw new Error('Create the linked report first.')
+    const bytes = await call('export_file', ['docx'])
     setWordcraftWanted(true)
-    await openWhenReady('wordcraft', 'milleleaf-report.docx', reportBytes.current!)
+    await openWhenReady('wordcraft', 'milleleaf-report.docx', bytes)
     setStatus('Ready. The report is open in WordCraft below. Its Save comes back here as a reviewed edit.')
   })
-  // A workbook saved back from GridCraft re-enters the demo like an uploaded workbook.
-  const gridcraftSave = async (detail: { name: string; bytes: ArrayBuffer }) => {
-    if (!/\.(xlsx|ods)$/i.test(detail.name)) { setError(`${detail.name} is not a workbook; the demo keeps the current source.`); return }
-    sourceBytes.current = detail.bytes
-    opened(await call('open', [detail.bytes, who(), now()]), `${detail.name} · ${fileSize(detail.bytes.byteLength)} · saved in GridCraft`)
+  // What an editor saves: a file the demo takes in updates the project; anything else (a PDF, an
+  // image, another format) is the visitor's own export and goes to their Downloads. A failed
+  // import shows the error and leaves the project as it was.
+  const keep = (detail: { name: string; bytes: ArrayBuffer }, why: string) => { saveFile(detail.bytes, detail.name); setStatus(`${detail.name} went to your Downloads: ${why}`) }
+  const editorSaved = (task: () => Promise<void>) => { task().catch((e: any) => { setError(e?.message || String(e)); setStatus('The saved file could not be brought in; the project is unchanged.') }) }
+  // A workbook saved in GridCraft becomes a new layer of the project, keeping its history, report
+  // and deck; before any project exists it simply replaces the open workbook.
+  const gridcraftSave = (detail: { name: string; bytes: ArrayBuffer }) => editorSaved(async () => {
+    if (!/\.xlsx$/i.test(detail.name)) return keep(detail, 'the demo takes in XLSX workbooks.')
+    if (snapshot) received(await call('import_file', [detail.bytes, detail.name, who(), now(), 'GridCraft']), true)
+    else opened(await call('open', [detail.bytes, who(), now()]), `${detail.name} · ${fileSize(detail.bytes.byteLength)} · saved in GridCraft`)
     setApp('GridCraft')
-  }
-  // A report saved back from WordCraft arrives as a review layer, like a dropped report today.
-  const wordcraftSave = async (detail: { name: string; bytes: ArrayBuffer }) => {
-    if (!snapshot) { setError('Create the linked report before bringing an edit back from WordCraft.'); return }
-    if (!/\.(docx|odt)$/i.test(detail.name)) { setError(`${detail.name} is not a report; the demo keeps the current layer.`); return }
+  })
+  // A report saved in WordCraft arrives as a review layer, like a dropped report.
+  const wordcraftSave = (detail: { name: string; bytes: ArrayBuffer }) => editorSaved(async () => {
+    if (!/\.docx$/i.test(detail.name)) return keep(detail, 'the demo takes in DOCX reports.')
+    if (!snapshot) return keep(detail, 'create the linked report first to bring an edit back.')
     received(await call('import_file', [detail.bytes, detail.name, who(), now(), 'WordCraft']), true)
-  }
+  })
 
   const noWorkbook = busy || !sheets.length, noProject = busy || !snapshot
   const changes: any[] = snapshot?.changes || [], conflicts: any[] = snapshot?.conflicts || []
@@ -287,7 +288,7 @@ export function FlowDemo() {
         <div className="section-label"><span>1. The source</span><span className="file-tag">.xlsx</span></div>
         <h2>Start with a workbook</h2><p>Made in Excel, Calc or GridCraft. Every app is a place to work.</p>
         <div className="actions">
-          <button id="sample" className="button" disabled={!ready || busy} onClick={() => replaceOk() && operation('Opening the bundled workbook…', async () => { const next = await call('sample', [who(), now()]); sourceBytes.current = await call('export_file', ['xlsx']); opened(next, 'Hello Table · finance.xlsx') })}>Try the finance workbook</button>
+          <button id="sample" className="button" disabled={!ready || busy} onClick={() => replaceOk() && operation('Opening the bundled workbook…', async () => { opened(await call('sample', [who(), now()]), 'Hello Table · finance.xlsx') })}>Try the finance workbook</button>
           <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => { if (replaceOk()) picked(e, openWorkbook, 'Reading your workbook locally:'); else e.target.value = '' }} /></label>
         </div>
         <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model. Up to 64 MiB per file.</p>
@@ -307,7 +308,7 @@ export function FlowDemo() {
           <div className="actions"><button id="create" className="button primary" disabled={noWorkbook} onClick={create}>Use it in a report and a deck</button>
           <button id="open-gridcraft" className="button secondary" disabled={noWorkbook} onClick={showInGridcraft}>Open in real GridCraft</button></div>
           {gridcraftWanted && <div id="gridcraft-editor"><CraftEditor app="gridcraft" label="GridCraft" height={560}
-            onSave={detail => { if (detail.bytes instanceof ArrayBuffer) void gridcraftSave(detail) }}
+            onSave={detail => { if (detail.bytes instanceof ArrayBuffer) gridcraftSave(detail) }}
             onDirty={() => {}}
             onFailed={message => setError(`GridCraft: ${message}`)} /></div>}
           {!gridcraftWanted && <p id="gridcraft-invite" className="caption">Edits here show in the table above. To work in the real app, open the workbook in GridCraft below the table; its Save comes back here and rebuilds the report and deck.</p>}
@@ -320,7 +321,7 @@ export function FlowDemo() {
           <Preview kind="report" value={snapshot?.report} />
           {snapshot && <div className="actions"><button id="open-wordcraft" className="button secondary small" disabled={noProject} onClick={showInWordcraft}>Open in real WordCraft</button></div>}
           {wordcraftWanted && <div id="wordcraft-editor"><CraftEditor app="wordcraft" label="WordCraft" height={560}
-            onSave={detail => { if (detail.bytes instanceof ArrayBuffer) void wordcraftSave(detail) }}
+            onSave={detail => { if (detail.bytes instanceof ArrayBuffer) wordcraftSave(detail) }}
             onDirty={() => {}}
             onFailed={message => setError(`WordCraft: ${message}`)} /></div>}</article>
         <article className="deck panel"><div className="section-label"><span>3. The deck</span><span className="file-tag">.pptx</span></div>

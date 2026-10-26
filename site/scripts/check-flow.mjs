@@ -166,5 +166,55 @@ try {
   // A project exists, so leaving must ask first (it lives only in this tab).
   // A real beforeunload dialog needs a user gesture headless Chrome may not count; check the handler cancels instead.
   assert.equal(await page.evaluate(() => { const leave = new Event('beforeunload', { cancelable: true }); dispatchEvent(leave); return leave.defaultPrevented; }), true, 'Leaving with a project asks first');
+  // The real page-host editors, used as a visitor would (no injected save events).
+  {
+    const editors = await browser.newContext({ viewport: { width: 1400, height: 1000 }, acceptDownloads: true });
+    await editors.addInitScript(() => { window.confirm = () => true; });
+    const flow = await editors.newPage();
+    const flowErrors = [];
+    flow.on('pageerror', (error) => flowErrors.push(error.message));
+    flow.setDefaultTimeout(180_000);
+    await flow.goto(origin);
+    await flow.locator('#status').filter({ hasText: /^Ready\./ }).waitFor();
+    await flow.locator('#sample').click();
+    await flow.waitForFunction(() => !document.querySelector('#create').disabled);
+    await flow.locator('#create').click();
+    await flow.locator('#project:not([hidden])').waitFor();
+    const history = () => flow.locator('#history > li').count();
+    // The report opens in WordCraft straight after it is created, without a download first.
+    await flow.locator('#open-wordcraft').click();
+    await flow.locator('#wordcraft-editor canvas').first().waitFor();
+    await flow.locator('#status').filter({ hasText: /open in WordCraft/ }).waitFor();
+    assert.equal(await flow.locator('#error').isVisible(), false, 'WordCraft opens the current report without a prior download');
+    // Text committed in one piece (as an input method does), then a key: the key follows it. The site's
+    // global border-box rule must not reach the editor's hidden text field.
+    await flow.waitForTimeout(4000);
+    const word = await flow.locator('#wordcraft-editor canvas').first().boundingBox();
+    await flow.mouse.click(word.x + word.width / 2, word.y + word.height * 0.6);
+    await flow.waitForTimeout(500);
+    const cdp = await editors.newCDPSession(flow);
+    await cdp.send('Input.insertText', { text: 'ABC' });
+    await flow.waitForTimeout(300);
+    await flow.keyboard.press('y');
+    await flow.waitForTimeout(500);
+    assert.equal(await flow.evaluate(() => document.querySelector('#wordcraft-editor input[type=text]').value), 'ABCy', 'a key typed after committed text lands after it');
+    // A real Save in GridCraft becomes a new layer of the project: history, report and deck stay.
+    await flow.locator('#open-gridcraft').click();
+    await flow.locator('#gridcraft-editor canvas').first().waitFor();
+    await flow.waitForTimeout(6000);
+    const grid = await flow.locator('#gridcraft-editor canvas').first().boundingBox();
+    const before = await history();
+    await flow.mouse.click(grid.x + 400, grid.y + 300);
+    await flow.keyboard.type('77', { delay: 100 });
+    await flow.keyboard.press('Enter');
+    await flow.waitForTimeout(500);
+    await flow.mouse.click(grid.x + 154, grid.y + 18); // GridCraft's own Save button
+    await flow.waitForFunction((n) => document.querySelectorAll('#history > li').length > n, before, { timeout: 60_000 });
+    assert.equal(await flow.locator('#project').isVisible(), true, 'a GridCraft save keeps the linked project');
+    assert.equal(await flow.locator('#error').isVisible(), false, 'a GridCraft save brings no error');
+    assert.deepEqual(flowErrors, [], 'no uncaught page errors while using the real editors');
+    console.log(`PASS real editors: WordCraft opens the current report, typed text keeps its order, a GridCraft save adds layer ${await history()} and keeps the project`);
+    await editors.close();
+  }
   console.log('PASS browser flow: bundled workbook, sheet/range/chart, real Office downloads, both linked outputs updated, readable cell changes, linked-value conflict, independent report edit, claimed app history, demo proof, local-only operations, mobile layout, replace and leave warnings');
 } finally { await browser.close(); await new Promise((done) => server.close(done)); }
