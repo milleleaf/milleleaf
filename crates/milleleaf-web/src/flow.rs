@@ -8,6 +8,8 @@ use wasm_bindgen::prelude::*;
 type Result<T> = std::result::Result<T, String>;
 #[path = "flow_chart.rs"]
 mod chart_svg;
+#[path = "flow_png.rs"]
+mod png_fallback;
 const WB: &str = "3f1c2a90-0000-4c1e-9a00-000000000010";
 const REPORT: &str = "flow-report";
 const DECK: &str = "flow-deck";
@@ -1193,6 +1195,12 @@ impl FlowSession {
                 )
             }
         };
+        // Word's own structure for a vector picture: the raster in `a:blip`, the SVG as Word's
+        // extension on that same blip. The workbook has no pictures.
+        let bytes = match kind {
+            "xlsx" => bytes,
+            _ => png_fallback::add_png_fallbacks(&bytes)?,
+        };
         self.warnings.extend(warnings);
         self.revisions.insert(rev, n);
         Ok(bytes)
@@ -1550,8 +1558,17 @@ mod tests {
         dst.write_all(data).unwrap();
         dst.finish().unwrap().into_inner()
     }
-    fn svg_with_png_fallback(bytes: &[u8], reference_svg: bool) -> Vec<u8> {
-        let xml = xml_part(bytes, "word/document.xml");
+    fn first_embed(element: &str) -> String {
+        element
+            .split("r:embed=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+    fn svg_element(xml: &str) -> String {
         let start = xml.find("<a:blip ").unwrap();
         let opening_end = start + xml[start..].find('>').unwrap() + 1;
         let end = if xml[start..opening_end].ends_with("/>") {
@@ -1559,26 +1576,22 @@ mod tests {
         } else {
             opening_end + xml[opening_end..].find("</a:blip>").unwrap() + "</a:blip>".len()
         };
-        let svg_id = xml[start..opening_end]
-            .split("r:embed=\"")
-            .nth(1)
-            .unwrap()
-            .split('"')
-            .next()
-            .unwrap();
-        let extension = if reference_svg {
-            format!(
-                "<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"{svg_id}\"/></a:ext></a:extLst>"
+        xml[start..end].to_string()
+    }
+    fn svg_with_png_fallback(bytes: &[u8], reference_svg: bool) -> Vec<u8> {
+        let element = svg_element(&xml_part(bytes, "word/document.xml"));
+        // A resave may rewrite the raster part; with the extension kept the SVG stays the
+        // authoritative image. Without it the changed raster is an ordinary picture edit.
+        let resaved = if reference_svg {
+            element.replacen(
+                &format!("r:embed=\"{}\"", first_embed(&element)),
+                "r:embed=\"flowPng\"",
+                1,
             )
         } else {
-            String::new()
+            "<a:blip r:embed=\"flowPng\"></a:blip>".to_string()
         };
-        let mut bytes = rewrite(
-            bytes,
-            "word/document.xml",
-            &xml[start..end],
-            &format!("<a:blip r:embed=\"flowPng\">{extension}</a:blip>"),
-        );
+        let mut bytes = rewrite(bytes, "word/document.xml", &element, &resaved);
         bytes = rewrite(
             &bytes,
             "word/_rels/document.xml.rels",
@@ -1686,6 +1699,130 @@ mod tests {
             .read_to_string(&mut text)
             .unwrap();
         text
+    }
+    fn package(parts: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut z = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, data) in parts {
+            z.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            z.write_all(data).unwrap();
+        }
+        z.finish().unwrap().into_inner()
+    }
+    #[test]
+    fn the_report_chart_is_a_png_with_the_svg_as_words_extension() {
+        let mut s = ready();
+        let docx = s.export_native("docx").unwrap();
+        let blip = svg_element(&xml_part(&docx, "word/document.xml"));
+        assert!(blip.contains(
+            "<asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\""
+        ));
+        let raster = first_embed(&blip);
+        let vector = blip
+            .split("<asvg:svgBlip")
+            .nth(1)
+            .unwrap()
+            .split("r:embed=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        assert_ne!(raster, vector);
+        let rels = xml_part(&docx, "word/_rels/document.xml.rels");
+        let target = |id: &str| {
+            rels.split(&format!("Id=\"{id}\""))
+                .nth(1)
+                .unwrap()
+                .split("Target=\"")
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        let raster_target = target(&raster);
+        let vector_target = target(vector);
+        assert!(raster_target.ends_with(".png"));
+        assert!(vector_target.ends_with(".svg"));
+        assert_eq!(format!("word/{vector_target}"), svg_chart(&docx));
+        let mut archive = zip::ZipArchive::new(Cursor::new(&docx)).unwrap();
+        let mut png = Vec::new();
+        archive
+            .by_name(&format!("word/{raster_target}"))
+            .unwrap()
+            .read_to_end(&mut png)
+            .unwrap();
+        assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+        assert!(xml_part(&docx, "[Content_Types].xml")
+            .contains("<Default Extension=\"png\" ContentType=\"image/png\"/>"));
+        // A second pass leaves the same structure: blips with the extension are left as they are.
+        assert_eq!(png_fallback::add_png_fallbacks(&docx).unwrap(), docx);
+        // WordCraft's own import reads the file back, the SVG part still authoritative.
+        let r = s.import_native(&docx, "report.docx", "Sam", AT).unwrap();
+        assert_eq!(r["changes"], json!([]));
+        assert_eq!(r["conflicts"], json!([]));
+        // The deck's own chart is native and carries no picture; it round trips unchanged.
+        let pptx = s.export_native("pptx").unwrap();
+        assert_eq!(png_fallback::add_png_fallbacks(&pptx).unwrap(), pptx);
+        assert!(xml_part(&pptx, "ppt/charts/chart1.xml").contains("<c:chartSpace"));
+        let r = s.import_native(&pptx, "deck.pptx", "Sam", AT).unwrap();
+        assert_eq!(r["changes"], json!([]));
+        assert_eq!(r["conflicts"], json!([]));
+    }
+    #[test]
+    fn a_deck_svg_picture_carries_its_png_the_same_way() {
+        // An adopted deck's vector pictures are written through the same structure.
+        let svg = String::from_utf8(
+            chart_svg::svg(
+                &json!({"columns":[{"name":"Day"},{"name":"First"}],"rows":[["Mon",12]]}),
+                &json!({"kind":"column","title":"Figures","category":"Day","values":["First"]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let patched = png_fallback::add_png_fallbacks(&package(&[
+            (
+                "[Content_Types].xml",
+                br#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="svg" ContentType="image/svg+xml"/></Types>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                br#"<p:sld><p:cSld><p:spTree><p:pic><p:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></p:blipFill></p:pic></p:spTree></p:cSld></p:sld>"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pic.svg"/></Relationships>"#,
+            ),
+            ("ppt/media/pic.svg", svg.as_bytes()),
+        ]))
+        .unwrap();
+        let xml = xml_part(&patched, "ppt/slides/slide1.xml");
+        assert!(xml.contains("r:embed=\"rId2\""));
+        assert!(xml.contains(
+            "<asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"rId1\"/>"
+        ));
+        assert!(xml_part(&patched, "ppt/slides/_rels/slide1.xml.rels").contains(
+            "Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/pic.png\""
+        ));
+        assert!(xml_part(&patched, "[Content_Types].xml")
+            .contains("<Default Extension=\"png\" ContentType=\"image/png\"/>"));
+        let mut archive = zip::ZipArchive::new(Cursor::new(&patched)).unwrap();
+        let mut png = Vec::new();
+        archive
+            .by_name("ppt/media/pic.png")
+            .unwrap()
+            .read_to_end(&mut png)
+            .unwrap();
+        assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+        let mut svg_part = Vec::new();
+        archive
+            .by_name("ppt/media/pic.svg")
+            .unwrap()
+            .read_to_end(&mut svg_part)
+            .unwrap();
+        assert_eq!(svg_part, svg.as_bytes());
     }
     #[test]
     fn failed_selection_keeps_the_previous_project() {
