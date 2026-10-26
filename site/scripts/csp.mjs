@@ -9,6 +9,7 @@
 // Cloudflare reads _headers; scripts/serve.mjs applies it locally for the checks.
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
+import { frameRule } from './frame-csp.mjs'
 
 const out = 'dist/client'
 const rules = []
@@ -47,16 +48,10 @@ const pageHost = JSON.parse(await readFile(`${out}/apps/editors.json`, 'utf8'))
 for (const app of Object.keys(pageHost)) {
   rules.push(`/apps/${app}/*\n  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'\n  X-Content-Type-Options: nosniff\n`)
 }
-// Framed editors run from their own release page, which starts the app with an inline module
-// script (allowed by hash), may run workers, play media from blob: URLs and read blob: files.
+// Framed editors run from their own release page (see frame-csp.mjs).
 let framed = []
 try { framed = JSON.parse(await readFile(`${out}/apps/frame/index.json`, 'utf8')) } catch { /* No framed editors staged. */ }
-for (const { app } of framed) {
-  const html = await readFile(`${out}/apps/frame/${app}/index.html`, 'utf8')
-  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1])
-  const hashes = inline.map(code => `'sha256-${createHash('sha256').update(code).digest('base64')}'`).join(' ')
-  rules.push(`/apps/frame/${app}/*\n  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval' ${hashes}; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data:; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'\n  X-Content-Type-Options: nosniff\n`)
-}
+for (const { app } of framed) rules.push(frameRule(app, await readFile(`${out}/apps/frame/${app}/index.html`, 'utf8')))
 console.log(`CSP for /apps: ${Object.keys(pageHost).length} page-host editors, ${framed.length} framed editors`)
 // Workers take their policy from their own response, not the page's: the engine scripts get the same limits.
 rules.push(`/engine/*\n  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'none'; worker-src 'none'\n  X-Content-Type-Options: nosniff\n`)

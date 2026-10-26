@@ -1,0 +1,12 @@
+// The Craft apps that /office frames, served on their own so a daily release update deploys only
+// these files. A route is more specific than the main site's custom domain, so it takes these paths.
+{
+  "name": "milleleaf-apps",
+  "compatibility_date": "2026-10-26",
+  "assets": { "directory": "./dist" },
+  "routes": [
+    { "pattern": "milleleaf.com/apps/frame/*", "zone_name": "milleleaf.com" },
+    { "pattern": "www.milleleaf.com/apps/frame/*", "zone_name": "milleleaf.com" }
+  ],
+  "workers_dev": false
+}

@@ -2,6 +2,8 @@
 // index.html: site/public/apps/frame/APP/.
 //
 // Usage: RELEASES_SRC=<folder holding APP/APP-web-VERSION/> node scripts/stage-releases.mjs
+// RELEASES_OUT stages into another folder (frames/ uses it); RELEASES_HEADERS also writes the apps'
+// _headers rules to that file.
 //
 // The host rejects any file over 25 MiB, and most apps' wasm is larger. So every wasm over 1 MiB
 // is gzipped at level 9 and, if still too large, cut into 20 MiB parts; the plain wasm is not
@@ -15,6 +17,7 @@
 import { gzipSync } from 'node:zlib'
 import { mkdir, readdir, readFile, rm, stat, writeFile, cp } from 'node:fs/promises'
 import path from 'node:path'
+import { frameRule } from './frame-csp.mjs'
 
 const MAX_BYTES = 25 * 1024 * 1024
 const PART_BYTES = 20 * 1024 * 1024
@@ -26,7 +29,7 @@ if (!src) {
   process.exit(2)
 }
 const site = path.resolve(import.meta.dirname, '..')
-const out = path.join(site, 'public', 'apps', 'frame')
+const out = process.env.RELEASES_OUT ? path.resolve(process.env.RELEASES_OUT) : path.join(site, 'public', 'apps', 'frame')
 
 // Runs before the app's modules; MAP is filled in per app.
 const shim = `// Answers this app's fetch of its wasm from the gzipped copy (or its parts) staged beside it.
@@ -123,4 +126,9 @@ for (const app of (await readdir(src)).sort()) {
   console.log(`PASS ${app} ${version}: ${Object.entries(map).map(([name, parts]) => `${name} → ${parts.length} gzip file(s)`).join(', ') || 'no wasm over 1 MiB'}`)
 }
 await writeFile(path.join(out, 'index.json'), JSON.stringify(index, null, 2) + '\n')
+if (process.env.RELEASES_HEADERS) {
+  const rules = []
+  for (const { app } of index) rules.push(frameRule(app, await readFile(path.join(out, app, 'index.html'), 'utf8')))
+  await writeFile(process.env.RELEASES_HEADERS, rules.join(''))
+}
 if (failed) process.exit(1)

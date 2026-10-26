@@ -1,0 +1,52 @@
+name: Craft apps update
+
+# Once a day: look for new official web releases of the Craft apps that /office frames. When one
+# appears, fetch and check every release against its SHA256SUMS, stage them, run the apps' checks
+# and commit the new site/frames/versions.json. Cloudflare builds and deploys the apps Worker from
+# that commit (site/frames/); the rest of the site is not rebuilt.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: craft-apps-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+      - name: Newest releases
+        id: latest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node site/frames/releases.mjs latest
+          if git diff --quiet -- site/frames/versions.json; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Install the checks
+        if: steps.latest.outputs.changed == 'true'
+        working-directory: site
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Build and check the apps
+        if: steps.latest.outputs.changed == 'true'
+        run: |
+          node site/frames/build.mjs
+          node site/frames/check.mjs
+      - name: Commit the new versions
+        if: steps.latest.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Craft apps: $(git diff --unified=0 -- site/frames/versions.json | grep '^+ ' | tr -d ' ",+' | paste -sd ' ' -)" -- site/frames/versions.json
+          git push
