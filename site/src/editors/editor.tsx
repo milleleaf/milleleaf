@@ -158,6 +158,53 @@ export function openInEditor(app: string, name: string, bytes: ArrayBuffer) {
   return true
 }
 
+// An editor that runs from its own official release page in a same-origin frame. It looks and
+// behaves like CraftEditor (Expand, loading and failure states); it is ready once the app has
+// drawn its canvas. It does not take files from the page or report saves: its own File menu
+// opens files and downloads what it saves.
+export function FramedEditor({ app, label, src, height }: { app: string; label: string; src: string; height: number | string }) {
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    let stopped = false
+    const started = Date.now()
+    const poll = () => {
+      if (stopped) return
+      let drawn = false
+      try { drawn = !!frame.current?.contentDocument?.querySelector('canvas') } catch { /* Not reachable yet. */ }
+      if (drawn) { setState('ready'); return }
+      if (Date.now() - started > 180_000) { setState('failed'); return }
+      setTimeout(poll, 250)
+    }
+    poll()
+    return () => { stopped = true }
+  }, [src])
+
+  useEffect(() => {
+    if (!expanded) return
+    const root = document.documentElement
+    root.classList.add('craft-editor-open')
+    frame.current?.focus()
+    return () => root.classList.remove('craft-editor-open')
+  }, [expanded])
+
+  return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
+    <div className="craft-editor-bar">
+      <span>{expanded ? label : ''}</span>
+      <button type="button" className="button secondary small" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>
+        {expanded ? 'Collapse' : 'Expand'}
+      </button>
+    </div>
+    <div className="craft-editor" style={expanded ? undefined : { height: typeof height === 'number' ? `${height}px` : height }} aria-label={`${label} editor`}>
+      <iframe ref={frame} src={src} title={`${label} editor`} data-app={app} />
+      {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label.toLowerCase()}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p></div>}
+      {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not load.</strong></p><p className="caption">The editor is unavailable in this browser.</p></div>}
+    </div>
+  </div>
+}
+
 export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFailed }: CraftEditorProps) {
   const box = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')

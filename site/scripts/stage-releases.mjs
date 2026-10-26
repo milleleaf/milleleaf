@@ -38,20 +38,12 @@ const shim = `// Answers this app's fetch of its wasm from the gzipped copy (or 
       const responses = await Promise.all(parts.map((part) => original(new URL(part, url))))
       const failed = responses.find((r) => !r.ok)
       if (failed) throw new Error(failed.url + ': ' + failed.status)
-      const joined = new ReadableStream({
-        async start(controller) {
-          for (const response of responses) {
-            const reader = response.body.getReader()
-            for (;;) {
-              const { done, value } = await reader.read()
-              if (done) break
-              controller.enqueue(value)
-            }
-          }
-          controller.close()
-        },
-      })
-      return new Response(joined.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } })
+      const joined = new Blob(await Promise.all(responses.map((r) => r.arrayBuffer())))
+      // A server that labels the file Content-Encoding: gzip has the browser unzip it already;
+      // decompress only what still starts with the gzip signature.
+      const head = new Uint8Array(await joined.slice(0, 2).arrayBuffer())
+      const body = head[0] === 0x1f && head[1] === 0x8b ? joined.stream().pipeThrough(new DecompressionStream('gzip')) : joined.stream()
+      return new Response(body, { headers: { 'Content-Type': 'application/wasm' } })
     })()
   }
 })()

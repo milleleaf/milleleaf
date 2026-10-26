@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { download, files, saveFile, savedEntry, type SavedFile, type Tool } from './library'
-import { CraftEditor, openInEditor, startEditor, type EditorsManifest } from '../editors/editor'
+import { CraftEditor, FramedEditor, openInEditor, startEditor, type EditorsManifest } from '../editors/editor'
+
+// Tall enough to work in, short enough that the page around the editor stays reachable with the
+// wheel (an editor takes the wheel while the pointer is over it). Expand fills the window.
+const editorHeight = 'min(720px, calc(100vh - 160px))'
 import { fileSize } from '../demos/status'
 
 // The /office desk: the Craft editors hosted in this page (no iframes), one shared file list in
 // the visitor's own browser storage. Element ids are what web checks select by. An editor shows
 // only when its build is staged (public/apps/editors.json), so the list can name all thirteen.
-const allEditors: { id: Tool; label: string; kind: string; extensions: string[] }[] = [
-  { id: 'wordcraft', label: 'WordCraft', kind: 'Documents', extensions: ['docx', 'odt', 'rtf', 'txt', 'md'] },
-  { id: 'gridcraft', label: 'GridCraft', kind: 'Spreadsheets', extensions: ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'] },
-  { id: 'deckcraft', label: 'DeckCraft', kind: 'Presentations', extensions: ['pptx', 'odp'] },
-  { id: 'pdfcraft', label: 'PdfCraft', kind: 'PDFs', extensions: ['pdf'] },
-  { id: 'cadcraft', label: 'CADCraft', kind: 'CAD drawings', extensions: ['dxf', 'dwg'] },
-  { id: 'photocraft', label: 'PhotoCraft', kind: 'Photo editing', extensions: ['psd', 'pcraft', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff', 'kra', 'ora'] },
-  { id: 'lightcraft', label: 'LightCraft', kind: 'Photo develop', extensions: ['dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2'] },
-  { id: 'vectorcraft', label: 'VectorCraft', kind: 'Vector art', extensions: ['svg', 'vectorcraft', 'ai', 'eps'] },
-  { id: 'designcraft', label: 'DesignCraft', kind: 'Page layout', extensions: ['designcraft', 'idml'] },
-  { id: 'figcraft', label: 'FigCraft', kind: 'Interface design', extensions: ['figcraft', 'fig'] },
-  { id: 'filmcraft', label: 'FilmCraft', kind: 'Video editing', extensions: ['fcproj', 'mp4', 'mov', 'webm', 'mkv'] },
-  { id: 'effectcraft', label: 'EffectCraft', kind: 'Motion graphics', extensions: ['ecproj', 'lottie'] },
-  { id: 'soundcraft', label: 'SoundCraft', kind: 'Audio', extensions: ['wav', 'mp3', 'flac', 'ogg', 'aiff'] },
+const allEditors: { id: Tool; label: string; kind: string; group: string; extensions: string[] }[] = [
+  { id: 'wordcraft', group: 'Office', label: 'WordCraft', kind: 'Documents', extensions: ['docx', 'odt', 'rtf', 'txt', 'md'] },
+  { id: 'gridcraft', group: 'Office', label: 'GridCraft', kind: 'Spreadsheets', extensions: ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'] },
+  { id: 'deckcraft', group: 'Office', label: 'DeckCraft', kind: 'Presentations', extensions: ['pptx', 'odp'] },
+  { id: 'pdfcraft', group: 'Office', label: 'PdfCraft', kind: 'PDFs', extensions: ['pdf'] },
+  { id: 'cadcraft', group: 'Drawing and design', label: 'CADCraft', kind: 'CAD drawings', extensions: ['dxf', 'dwg'] },
+  { id: 'photocraft', group: 'Photo', label: 'PhotoCraft', kind: 'Photo editing', extensions: ['psd', 'pcraft', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff', 'kra', 'ora'] },
+  { id: 'lightcraft', group: 'Photo', label: 'LightCraft', kind: 'Photo develop', extensions: ['dng', 'cr2', 'cr3', 'nef', 'arw', 'raf', 'orf', 'rw2'] },
+  { id: 'vectorcraft', group: 'Drawing and design', label: 'VectorCraft', kind: 'Vector art', extensions: ['svg', 'vectorcraft', 'ai', 'eps'] },
+  { id: 'designcraft', group: 'Drawing and design', label: 'DesignCraft', kind: 'Page layout', extensions: ['designcraft', 'idml'] },
+  { id: 'figcraft', group: 'Drawing and design', label: 'FigCraft', kind: 'Interface design', extensions: ['figcraft', 'fig'] },
+  { id: 'filmcraft', group: 'Video and sound', label: 'FilmCraft', kind: 'Video editing', extensions: ['fcproj', 'mp4', 'mov', 'webm', 'mkv'] },
+  { id: 'effectcraft', group: 'Video and sound', label: 'EffectCraft', kind: 'Motion graphics', extensions: ['ecproj', 'lottie'] },
+  { id: 'soundcraft', group: 'Video and sound', label: 'SoundCraft', kind: 'Audio', extensions: ['wav', 'mp3', 'flac', 'ogg', 'aiff'] },
 ]
 const getEditor = (id: Tool) => allEditors.find(editor => editor.id === id)!
 
@@ -142,16 +146,28 @@ export function OfficeDesk() {
     <p className="privacy">Files stay in this browser, in its own storage on this device. No upload. No account.</p>
     {manifestError && <p id="error" role="alert">{manifestError}</p>}
     {!manifestError && <p id="error" role="alert" hidden={!error}>{error}</p>}
-    <div className="office-toolbar" role="tablist" aria-label="Editors">
-      {editors.map(editor => (
-        <button key={editor.id} role="tab" aria-selected={active === editor.id} id={`tab-${editor.id}`}
-          className={`office-tab${active === editor.id ? ' active' : ''}`}
-          onClick={() => { setError(''); setActive(editor.id) }}>
-          {editor.label} <span className="file-tag">{editor.kind}</span>
-          {dirty[editor.id] && <span className="caption"> · unsaved</span>}
+    <div className="office-toolbar">
+      <div className="office-groups" role="tablist" aria-label="Editors">
+        {[...new Set(editors.map(editor => editor.group))].map(group => (
+          <div key={group} className="office-group" role="presentation">
+            <span className="office-group-label">{group}</span>
+            {editors.filter(editor => editor.group === group).map(editor => (
+              <button key={editor.id} role="tab" aria-selected={active === editor.id} id={`tab-${editor.id}`}
+                className={`office-tab${active === editor.id ? ' active' : ''}`}
+                onClick={() => { setError(''); setActive(editor.id) }}>
+                <span className="office-tab-name">{editor.label}</span> <span className="office-tab-kind">{editor.kind}</span>
+                {dirty[editor.id] && <span className="caption"> · unsaved</span>}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="office-group">
+        <span className="office-group-label">Your files</span>
+        <button className="office-tab office-open" id="office-open-file" onClick={() => fileInput.current?.click()}>
+          <span className="office-tab-name">Open a file</span> <span className="office-tab-kind">from this device</span>
         </button>
-      ))}
-      <button className="button secondary small" id="office-open-file" onClick={() => fileInput.current?.click()}>Open a file from disk</button>
+      </div>
       <input ref={fileInput} type="file" hidden id="office-file-input"
         accept={allEditors.flatMap(editor => editor.extensions.map(extension => `.${extension}`)).join(',')}
         onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
@@ -162,9 +178,11 @@ export function OfficeDesk() {
         <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
         {editors.map(editor => (
           <div key={editor.id} hidden={active !== editor.id}>
-            {opened.has(editor.id) && !manifest?.[editor.id] && framed[editor.id] &&
-              <iframe className="office-frame" src={framed[editor.id]!.path} title={getEditor(editor.id).label} style={{ width: '100%', height: 720, border: 0, display: 'block' }} />}
-            {opened.has(editor.id) && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={720}
+            {opened.has(editor.id) && !manifest?.[editor.id] && framed[editor.id] && <>
+              <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} />
+              <p className="caption office-frame-note">{getEditor(editor.id).label} runs from its own release here. Its File menu opens files from this device, and what it saves goes to your Downloads, not the desk.</p>
+            </>}
+            {opened.has(editor.id) && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight}
               onSave={detail => { if (detail.bytes instanceof ArrayBuffer) void handleSave(editor.id, detail) }}
               onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
               onReady={onReady(editor.id)}
