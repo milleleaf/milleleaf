@@ -67,10 +67,10 @@ export function OfficeDesk() {
     return () => removeEventListener('beforeunload', warn)
   }, [dirty])
 
-  // A save from a page editor downloads, as the framed editors' saves do.
+  // A save from a page editor downloads, as the framed editors' saves do. The unsaved mark follows
+  // the editor's own dirty reports only: an exported copy (a PDF, an image) leaves edits unsaved.
   const handleSave = useCallback((tool: Tool, detail: { name: string; bytes: ArrayBuffer }) => {
     download(detail)
-    setDirty(previous => ({ ...previous, [tool]: false }))
     setNotice(`${getEditor(tool).label} saved ${detail.name} to your Downloads.`)
   }, [])
 
