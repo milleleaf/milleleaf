@@ -6,9 +6,10 @@ import { CraftEditor, FramedEditor, type EditorsManifest } from '../editors/edit
 // wheel (an editor takes the wheel while the pointer is over it). Expand fills the window.
 const editorHeight = 'min(720px, calc(100vh - 160px))'
 
-// /office: the thirteen Craft editors, each used on its own. Editors with a page-host build run in
-// this page; the rest run from their official release page in a same-origin frame. Element ids are
-// what web checks select by. An editor shows only when its build is staged.
+// /office: the thirteen Craft editors, each used on its own. Each runs from its official release page
+// in a same-origin frame; a page-host build is used only for an editor with no staged release (our
+// page-host builds lost input fixes the releases have, such as the caret moving after typed-in text).
+// Element ids are what web checks select by. An editor shows only when its build is staged.
 const allEditors: { id: Tool; label: string; kind: string; group: string }[] = [
   { id: 'wordcraft', group: 'Office', label: 'WordCraft', kind: 'Documents' },
   { id: 'gridcraft', group: 'Office', label: 'GridCraft', kind: 'Spreadsheets' },
@@ -31,7 +32,7 @@ export function OfficeDesk() {
   const [manifestError, setManifestError] = useState('')
   // Editors that run from their own official release page, in a frame (public/apps/frame/).
   const [framed, setFramed] = useState<Partial<Record<Tool, { version: string; path: string }>>>({})
-  // Only the editors whose builds are staged get a tab; a page-host build wins over a framed one.
+  // Only the editors whose builds are staged get a tab; an official release wins over a page-host build.
   const editors = useMemo(() => allEditors.filter(editor => manifest?.[editor.id] || framed[editor.id]), [manifest, framed])
   const [active, setActive] = useState<Tool>('gridcraft')
   // An editor starts the first time its tab is opened (each is tens of megabytes) and then stays alive.
@@ -69,7 +70,7 @@ export function OfficeDesk() {
   }, [])
 
   const onFailed = useCallback((tool: Tool) => (message: string) => setError(`${getEditor(tool).label}: ${message}`), [])
-  const activeManifest = manifest?.[active] ?? framed[active]
+  const activeManifest = framed[active] ?? manifest?.[active]
 
   return <div className="office-desk">
     {manifestError && <p id="error" role="alert">{manifestError}</p>}
@@ -97,15 +98,15 @@ export function OfficeDesk() {
         <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
         {editors.map(editor => (
           <div key={editor.id} hidden={active !== editor.id}>
-            {opened.has(editor.id) && !manifest?.[editor.id] && framed[editor.id] &&
+            {opened.has(editor.id) && framed[editor.id] &&
               <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} />}
-            {opened.has(editor.id) && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight}
+            {opened.has(editor.id) && !framed[editor.id] && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight}
               onSave={detail => { if (detail.bytes instanceof ArrayBuffer) handleSave(editor.id, detail) }}
               onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
               onFailed={onFailed(editor.id)} />}
           </div>
         ))}
-        <p className="caption office-frame-note">Each editor opens files from this device with its own File menu, and what it saves goes to your Downloads.</p>
+        <p className="caption office-frame-note">Each editor opens files from this device with its own File menu and saves back to this device: your browser asks where, or puts the file in your Downloads.</p>
       </div>
     </section>
   </div>

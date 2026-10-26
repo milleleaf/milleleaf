@@ -1,7 +1,8 @@
 // Privacy checks for the site's demo and office pages: files never leave the browser.
 // Run on the box after the site build.
 // /demo: offline drop, compare, sign and verify, zero network requests after load.
-// /flow and /office: the page-host editors load from /apps/* on this site and are allowed to
+// /flow and /office: the editors load from /apps/* on this site (page-host builds on /flow, official
+// release pages in same-origin frames on /office) and are allowed to
 // connect only to this origin; the check fails on any request to another origin and counts
 // every request so an editor save must reach the visitor without touching the network beyond it.
 import { chromium } from '@playwright/test';
@@ -191,7 +192,10 @@ try {
       await flow.close();
     }
 
-    // /office: load an editor, save a file from it: the save is a download, and nothing leaves this origin.
+    // /office: open an editor (each runs from its official release page in a same-origin frame), save a
+    // file from it through its own Save button, and nothing leaves this origin. The release saves through
+    // the browser's save picker where there is one (Chrome, Edge) and as a download elsewhere (Firefox,
+    // Safari), so both paths are checked: the picker is replaced by one that keeps what the app writes.
     {
       const office = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
       watchRequests(office);
@@ -202,20 +206,44 @@ try {
       const officeResponse = await officePage.goto(`${site}/office`);
       const officeCsp = officeResponse.headers()['content-security-policy'];
       assert(officeCsp && /connect-src 'self'/.test(officeCsp), `/office must allow same-origin connections for the editors: ${officeCsp}`);
+      assert(/frame-src 'self'/.test(officeCsp), `/office must frame only its own editor pages: ${officeCsp}`);
       await officePage.locator('#tab-gridcraft').click();
-      await officePage.locator('#gridcraft_canvas').waitFor({ timeout: 120_000 });
+      const frameElement = officePage.locator('iframe[data-app="gridcraft"]');
+      await officePage.frameLocator('iframe[data-app="gridcraft"]').locator('canvas').first().waitFor({ timeout: 120_000 });
+      const editor = await (await frameElement.elementHandle()).contentFrame();
+      assert.equal(new URL(editor.url()).origin, new URL(site).origin, 'the framed editor is served from this site');
       assertSameOrigin('office editor load');
-      // A save through the app's event downloads the file.
-      const saved = officePage.waitForEvent('download', { timeout: 30_000 });
-      await officePage.evaluate(async () => {
-        const canvas = document.getElementById('gridcraft_canvas');
-        const bytes = new Uint8Array([80, 75, 3, 4]);
-        canvas.dispatchEvent(new CustomEvent('gridcraft:save', { detail: { name: 'save-check.xlsx', bytes: bytes.buffer } }));
+      await frameElement.evaluate((element) => element.scrollIntoView({ block: 'start' }));
+      await officePage.waitForTimeout(5000);
+      const box = await frameElement.boundingBox();
+      // Positions in GridCraft's own layout: cell A1, and the Save button in its title bar.
+      const typeCell = async (text) => { await officePage.mouse.click(box.x + 120, box.y + 140); await officePage.keyboard.type(text, { delay: 100 }); await officePage.keyboard.press('Enter'); };
+      const pressSave = () => officePage.mouse.click(box.x + 154, box.y + 18);
+      await editor.evaluate(() => {
+        window.__saved = null;
+        window.showSaveFilePicker = async (options) => ({ name: options?.suggestedName || 'unnamed', async createWritable() {
+          const parts = [];
+          return {
+            async write(data) { parts.push(data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)); },
+            async close() { window.__saved = { name: options?.suggestedName, head: String.fromCharCode(...(parts[0] || []).slice(0, 2)), size: parts.reduce((n, part) => n + part.length, 0) }; },
+          };
+        } });
       });
-      assert.equal((await saved).suggestedFilename(), 'save-check.xlsx', 'an editor save downloads under its own name');
-      assertSameOrigin('office save');
+      await typeCell('42');
+      await pressSave();
+      await editor.waitForFunction(() => window.__saved, null, { timeout: 30_000 });
+      const picked = await editor.evaluate(() => window.__saved);
+      assert.equal(picked.head, 'PK', `the picker save writes an XLSX workbook: ${JSON.stringify(picked)}`);
+      assert(picked.size > 1000, `the picker save writes the whole workbook: ${JSON.stringify(picked)}`);
+      assertSameOrigin('office save (save picker)');
+      await editor.evaluate(() => { window.showSaveFilePicker = undefined; });
+      await typeCell('43');
+      const download = officePage.waitForEvent('download', { timeout: 30_000 });
+      await pressSave();
+      assert.match((await download).suggestedFilename(), /\.xlsx$/, 'without a save picker the save downloads the workbook');
+      assertSameOrigin('office save (download)');
       assert.deepEqual(officeErrors, [], 'no uncaught page errors on /office');
-      console.log('PASS privacy /office: an editor save downloads; every request stays on this origin');
+      console.log('PASS privacy /office: the framed editor saves through the picker or as a download; every request stays on this origin');
       await office.close();
     }
   }

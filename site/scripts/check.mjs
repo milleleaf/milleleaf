@@ -175,7 +175,8 @@ try {
   await page.locator('ml-verify').getByRole('button').click()
   await page.locator('ml-verify').getByRole('status').filter({ hasText: 'Layer hash does not match' }).waitFor()
   // The demos are site pages: the React layout plus one demo component each, under a strict policy.
-  // /office hosts the real editors in the page (same-origin connections only, no iframes).
+  // /office frames the real editors from their official release pages on this site (same-origin
+  // connections only; a frame may only be one of this site's /apps/frame/ editor pages).
   const headers = await readFile('dist/client/_headers', 'utf8')
   for (const path of ['/flow', '/demo', '/office']) {
     const response = await page.goto(origin + path)
@@ -185,8 +186,10 @@ try {
     else assert(csp.includes("connect-src 'self'") && !csp.includes("connect-src 'none'"), `${path} allows same-origin connections only`)
     if (path === '/office') {
       await page.locator('.office-toolbar').waitFor({ timeout: 60_000 })
-      assert.equal(await page.locator('iframe').count(), 0, `No iframe on ${path}`)
-      console.log(`PASS page ${path}: office desk under the strict policy, site layout`)
+      await page.locator('iframe[data-app="gridcraft"]').waitFor({ timeout: 60_000 })
+      const frames = await page.locator('iframe').evaluateAll((elements) => elements.map((element) => element.src))
+      for (const src of frames) assert(new URL(src).origin === origin && new URL(src).pathname.startsWith('/apps/frame/'), `${path}: only this site's editor pages may be framed, found ${src}`)
+      console.log(`PASS page ${path}: office desk under the strict policy, site layout, ${frames.length} framed editor(s) from this site`)
       continue
     }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
