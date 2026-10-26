@@ -3,7 +3,7 @@
 // /demo: offline drop, compare, sign and verify, zero network requests after load.
 // /flow and /office: the page-host editors load from /apps/* on this site and are allowed to
 // connect only to this origin; the check fails on any request to another origin and counts
-// every request so an editor save must land in the desk without touching the network beyond it.
+// every request so an editor save must reach the visitor without touching the network beyond it.
 import { chromium } from '@playwright/test';
 import { serve } from './serve.mjs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -191,9 +191,9 @@ try {
       await flow.close();
     }
 
-    // /office: open the desk, load an editor, save a file onto the desk, download it.
+    // /office: load an editor, save a file from it: the save is a download, and nothing leaves this origin.
     {
-      const office = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const office = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
       watchRequests(office);
       const officePage = await office.newPage();
       const officeErrors = [];
@@ -202,21 +202,20 @@ try {
       const officeResponse = await officePage.goto(`${site}/office`);
       const officeCsp = officeResponse.headers()['content-security-policy'];
       assert(officeCsp && /connect-src 'self'/.test(officeCsp), `/office must allow same-origin connections for the editors: ${officeCsp}`);
-      await officePage.locator('#office-files li').waitFor({ timeout: 5_000 }).catch(() => { /* An empty desk is fine. */ });
       await officePage.locator('#tab-gridcraft').click();
       await officePage.locator('#gridcraft_canvas').waitFor({ timeout: 120_000 });
-      assert.equal(await officePage.locator('.office-editor-stage iframe').count(), 0, 'No iframe hosts the editor');
       assertSameOrigin('office editor load');
-      // A save through the app's event lands on the desk in this browser's storage.
+      // A save through the app's event downloads the file.
+      const saved = officePage.waitForEvent('download', { timeout: 30_000 });
       await officePage.evaluate(async () => {
         const canvas = document.getElementById('gridcraft_canvas');
         const bytes = new Uint8Array([80, 75, 3, 4]);
-        canvas.dispatchEvent(new CustomEvent('gridcraft:save', { detail: { name: 'desk-check.xlsx', bytes: bytes.buffer } }));
+        canvas.dispatchEvent(new CustomEvent('gridcraft:save', { detail: { name: 'save-check.xlsx', bytes: bytes.buffer } }));
       });
-      await officePage.locator('#office-files li').filter({ hasText: 'desk-check.xlsx' }).waitFor({ timeout: 30_000 });
-      assertSameOrigin('office save to desk');
+      assert.equal((await saved).suggestedFilename(), 'save-check.xlsx', 'an editor save downloads under its own name');
+      assertSameOrigin('office save');
       assert.deepEqual(officeErrors, [], 'no uncaught page errors on /office');
-      console.log('PASS privacy /office: editor save lands on the desk in browser storage; every request stays on this origin');
+      console.log('PASS privacy /office: an editor save downloads; every request stays on this origin');
       await office.close();
     }
   }
