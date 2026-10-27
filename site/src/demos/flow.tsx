@@ -295,7 +295,7 @@ export function FlowDemo() {
     setSaveState('saving')
     const atRevision = revision
     try {
-      const result = await saveAsNew(source.handle.name, workbookAccept, await exportBytes('xlsx'))
+      const result = await saveAsNew(source.handle.name, workbookAccept, () => exportBytes('xlsx'))
       if (result.state === 'cancelled') { setSaveState('unsaved'); setStatus('Ready. No file was chosen.'); return }
       applySave(result, atRevision)
     } catch (error) { catchSave(error) }

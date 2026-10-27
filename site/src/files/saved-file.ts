@@ -123,12 +123,20 @@ export async function overwriteSource(source: Source, blob: BlobPart): Promise<S
 
 // "Save as…": the picker must be the very first call, before any await, so the click's activation
 // opens it; the chosen handle becomes the new source.
-export async function saveAsNew(suggestedName: string, accept: Record<string, string[]>, blob: BlobPart): Promise<SaveAsResult> {
+// The picker opens first, while the click's user activation lasts; the bytes are built only after a
+// destination was chosen, so a slow export can't make the browser refuse the picker.
+export async function saveAsNew(suggestedName: string, accept: Record<string, string[]>, makeBlob: () => Promise<BlobPart>): Promise<SaveAsResult> {
   let handle: FileSystemFileHandle
   try {
     handle = await window.showSaveFilePicker!({ suggestedName, types: [{ accept }] })
   } catch (error) {
     if ((error as DOMException).name === 'AbortError') return { state: 'cancelled' }
+    return { state: 'failed', error: message(error) }
+  }
+  let blob: BlobPart
+  try {
+    blob = await makeBlob()
+  } catch (error) {
     return { state: 'failed', error: message(error) }
   }
   const failed = await writeBlob(handle, blob)
