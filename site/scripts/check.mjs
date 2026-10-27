@@ -190,6 +190,20 @@ try {
       const frames = await page.locator('iframe').evaluateAll((elements) => elements.map((element) => element.src))
       for (const src of frames) assert(new URL(src).origin === origin && new URL(src).pathname.startsWith('/apps/frame/'), `${path}: only this site's editor pages may be framed, found ${src}`)
       console.log(`PASS page ${path}: office desk under the strict policy, site layout, ${frames.length} framed editor(s) from this site`)
+      // Closing an editor removes its frame (its memory goes back); a framed editor can't report
+      // unsaved work, so closing it asks first, and its tab opens it again.
+      await page.locator('#office-close').click()
+      await page.locator('#office-close-confirm').waitFor()
+      await page.locator('#office-close-no').click()
+      assert.equal(await page.locator('iframe[data-app="gridcraft"]').count(), 1, '/office: Keep it open keeps the editor')
+      await page.locator('#office-close').click()
+      await page.locator('#office-close-yes').click()
+      await page.locator('#office-reopen').waitFor()
+      assert.equal(await page.locator('iframe[data-app="gridcraft"]').count(), 0, '/office: a closed editor has no frame')
+      assert.match(await page.locator('#office-notice').textContent(), /GridCraft is closed and its memory is released/)
+      await page.locator('#office-reopen').click()
+      await page.locator('iframe[data-app="gridcraft"]').waitFor({ timeout: 60_000 })
+      console.log(`PASS page ${path}: closing an editor asks first, removes its frame, and its tab reopens it`)
       continue
     }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })

@@ -35,9 +35,12 @@ export function OfficeDesk() {
   // Only the editors whose builds are staged get a tab; an official release wins over a page-host build.
   const editors = useMemo(() => allEditors.filter(editor => manifest?.[editor.id] || framed[editor.id]), [manifest, framed])
   const [active, setActive] = useState<Tool>('gridcraft')
-  // An editor starts the first time its tab is opened (each is tens of megabytes) and then stays alive.
+  // An editor starts when its tab is opened (each is tens of megabytes, more with a document) and
+  // stays alive until it is closed: closing removes its frame, which gives its memory back.
   const [opened, setOpened] = useState<Set<Tool>>(() => new Set(['gridcraft']))
-  useEffect(() => setOpened(previous => previous.has(active) ? previous : new Set(previous).add(active)), [active])
+  const open = (tool: Tool) => setOpened(previous => previous.has(tool) ? previous : new Set(previous).add(tool))
+  // The editor waiting for the reader to confirm closing it.
+  const [closing, setClosing] = useState<Tool>()
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [dirty, setDirty] = useState<Partial<Record<Tool, boolean>>>({})
@@ -74,6 +77,16 @@ export function OfficeDesk() {
     setNotice(`${getEditor(tool).label} saved ${detail.name} to your Downloads.`)
   }, [])
 
+  const close = (tool: Tool) => {
+    setOpened(previous => { const next = new Set(previous); next.delete(tool); return next })
+    setDirty(previous => ({ ...previous, [tool]: false }))
+    setClosing(undefined)
+    setNotice(`${getEditor(tool).label} is closed and its memory is released. Open its tab to start it again.`)
+  }
+  // A framed editor doesn't report unsaved changes, so closing it always asks; a page editor asks
+  // only when it reports them.
+  const askClose = (tool: Tool) => framed[tool] || dirty[tool] ? setClosing(tool) : close(tool)
+
   const onFailed = useCallback((tool: Tool) => (message: string) => setError(`${getEditor(tool).label}: ${message}`), [])
   const activeManifest = framed[active] ?? manifest?.[active]
 
@@ -88,9 +101,9 @@ export function OfficeDesk() {
             {editors.filter(editor => editor.group === group).map(editor => (
               <button key={editor.id} role="tab" aria-selected={active === editor.id} id={`tab-${editor.id}`}
                 className={`office-tab${active === editor.id ? ' active' : ''}`}
-                onClick={() => { setError(''); setActive(editor.id) }}>
+                onClick={() => { setError(''); setActive(editor.id); open(editor.id) }}>
                 <span className="office-tab-name">{editor.label}</span> <span className="office-tab-kind">{editor.kind}</span>
-                {dirty[editor.id] && <span className="caption"> · unsaved</span>}
+                {dirty[editor.id] ? <span className="caption"> · unsaved</span> : opened.has(editor.id) && <span className="caption"> · open</span>}
               </button>
             ))}
           </div>
@@ -100,9 +113,18 @@ export function OfficeDesk() {
     <p id="office-notice" role="status">{notice}</p>
     <section className="office-layout">
       <div className="office-editor-stage">
-        <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
+        <div className="office-editor-head">
+          <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
+          {opened.has(active) && !closing && <button type="button" id="office-close" className="button secondary" onClick={() => askClose(active)}>Close {getEditor(active).label}</button>}
+        </div>
+        {closing && <div id="office-close-confirm" role="alertdialog" aria-labelledby="office-close-question" className="office-close-confirm">
+          <p id="office-close-question">Close {getEditor(closing).label}? Anything you haven't saved in it will be lost.</p>
+          <button type="button" id="office-close-yes" className="button" onClick={() => close(closing)}>Close</button>
+          <button type="button" id="office-close-no" className="button secondary" onClick={() => setClosing(undefined)}>Keep it open</button>
+        </div>}
         {routed && editors.map(editor => (
           <div key={editor.id} hidden={active !== editor.id}>
+            {active === editor.id && !opened.has(editor.id) && <p className="office-closed">{editor.label} is closed. <button type="button" id="office-reopen" className="button" onClick={() => open(editor.id)}>Open {editor.label}</button></p>}
             {opened.has(editor.id) && framed[editor.id] &&
               <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} />}
             {opened.has(editor.id) && !framed[editor.id] && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight}
