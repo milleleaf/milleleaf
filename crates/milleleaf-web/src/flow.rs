@@ -685,7 +685,7 @@ fn prefer_referenced_svg(bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = file.name().to_string();
+        let name = file.name().map_err(|e| e.to_string())?.into_owned();
         let options =
             zip::write::SimpleFileOptions::default().compression_method(file.compression());
         if file.is_dir() {
@@ -1518,7 +1518,7 @@ mod tests {
         let mut changed = false;
         for i in 0..src.len() {
             let mut f = src.by_index(i).unwrap();
-            let name = f.name().to_string();
+            let name = f.name().unwrap().into_owned();
             let mut b = Vec::new();
             f.read_to_end(&mut b).unwrap();
             if name == part {
@@ -1552,9 +1552,10 @@ mod tests {
         let mut dst = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for i in 0..src.len() {
             let mut f = src.by_index(i).unwrap();
+            let name = f.name().unwrap().into_owned();
             let mut b = Vec::new();
             f.read_to_end(&mut b).unwrap();
-            dst.start_file(f.name(), zip::write::SimpleFileOptions::default())
+            dst.start_file(name, zip::write::SimpleFileOptions::default())
                 .unwrap();
             dst.write_all(&b).unwrap();
         }
@@ -1678,8 +1679,8 @@ mod tests {
         let svg = (0..archive.len())
             .find_map(|i| {
                 let f = archive.by_index(i).unwrap();
-                (f.name().starts_with("word/media/") && f.name().ends_with(".svg"))
-                    .then(|| f.name().to_string())
+                let name = f.name().unwrap().into_owned();
+                (name.starts_with("word/media/") && name.ends_with(".svg")).then_some(name)
             })
             .unwrap();
         let changed = rewrite(&resaved, &svg, "#277c88", "#ff0000");
@@ -1693,8 +1694,8 @@ mod tests {
         let name = (0..archive.len())
             .find_map(|i| {
                 let f = archive.by_index(i).unwrap();
-                (f.name().starts_with("word/media/") && f.name().ends_with(".svg"))
-                    .then(|| f.name().to_string())
+                let name = f.name().unwrap().into_owned();
+                (name.starts_with("word/media/") && name.ends_with(".svg")).then_some(name)
             })
             .expect("report must contain its rendered SVG chart");
         let mut text = String::new();

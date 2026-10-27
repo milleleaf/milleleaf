@@ -385,10 +385,11 @@ pub fn with_kept_charts(bytes: Vec<u8>, kept: &[Option<Vec<u8>>]) -> Result<Vec<
     let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..z.len() {
         let f = z.by_index(i).map_err(err)?;
-        match swap.get(f.name()) {
+        let name = f.name().map_err(err)?.into_owned();
+        match swap.get(&name) {
             Some(x) => {
                 let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-                w.start_file(f.name(), opts).map_err(err)?;
+                w.start_file(&name, opts).map_err(err)?;
                 w.write_all(x).map_err(|e| crate::GridError::Xlsx(e.to_string()))?;
             }
             None => w.raw_copy_file(f).map_err(err)?,

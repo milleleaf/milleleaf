@@ -65,7 +65,7 @@ pub(super) fn add_png_fallbacks(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut parts: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for i in 0..archive.len() {
         let mut f = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = f.name().to_string();
+        let name = f.name().map_err(|e| e.to_string())?.into_owned();
         let mut data = Vec::new();
         f.read_to_end(&mut data).map_err(|e| e.to_string())?;
         names.push(name.clone());

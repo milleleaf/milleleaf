@@ -20,7 +20,7 @@ serde_json.workspace = true
 wasm-bindgen = "=0.2.129"
 # Browser randomness for the existing signing implementations.
 getrandom = { version = "=0.2.17", features = ["js"] }
-zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 # The flow chart's PNG picture (the raster a a:blip picture names; the SVG rides along as
 # Word's own extension). Drawn with the site's bundled font only.
 usvg = { version = "=0.47.0", default-features = false, features = ["text"] }

@@ -20,7 +20,7 @@ milleleaf-store = { workspace = true }
 milleleaf-formats = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-zip = { version = "=3.0.0", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 # TLS for https time-stamp calendars and Bitcoin header sources: the BoringSSL that milleleaf-seal already
 # links (same pin, no new crate in the tree).
 boring = "=5.3.0"

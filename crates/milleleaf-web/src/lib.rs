@@ -64,7 +64,7 @@ fn parts(bytes: &[u8]) -> Result<BTreeMap<String, String>> {
         if total > MAX_EXPANDED {
             return Err("The expanded file exceeds this demo's 256 MiB limit.".into());
         }
-        let name = f.name().to_string();
+        let name = f.name().map_err(|e| e.to_string())?.into_owned();
         if out.contains_key(&name) {
             return Err(format!("Duplicate archive part: {name}"));
         }

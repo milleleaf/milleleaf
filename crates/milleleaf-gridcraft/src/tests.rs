@@ -633,8 +633,9 @@ fn an_unchanged_chart_exports_its_own_xml_and_a_changed_one_gridcrafts() {
         let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         for i in 0..z.len() {
             let f = z.by_index(i).unwrap();
-            if f.name() == "xl/charts/chart1.xml" {
-                w.start_file(f.name(), zip::write::SimpleFileOptions::default()).unwrap();
+            let name = f.name().unwrap().into_owned();
+            if name == "xl/charts/chart1.xml" {
+                w.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
                 w.write_all(marked.as_bytes()).unwrap();
             } else {
                 w.raw_copy_file(f).unwrap();

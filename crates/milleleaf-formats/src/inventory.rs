@@ -39,7 +39,7 @@ pub struct Loss {
 /// `docx`, `xlsx` or `pptx`, and the counts. Errors only on a file that isn't one of the three.
 pub fn inventory(bytes: &[u8]) -> Result<(&'static str, Counts), String> {
     let mut z = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("not a zip: {e}"))?;
-    let names: Vec<String> = z.file_names().map(String::from).collect();
+    let names: Vec<String> = z.file_names().map(|n| n.map(|n| n.into_owned())).collect::<Result<_, _>>().map_err(|e| format!("bad part name: {e}"))?;
     let mut part = |n: &str| -> Result<Vec<u8>, String> {
         let f = z.by_name(n).map_err(|e| format!("{n}: {e}"))?;
         if f.size() > MAX_PART {
