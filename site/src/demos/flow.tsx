@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { json, saveFile, useEngine } from './engine'
 import { canPickFiles, conflictMessage, openFile, overwriteSource, saveAsNew, saveToSource, type SaveState, type Source } from '../files/saved-file'
 import { fileSize, Status, tooBig } from './status'
@@ -158,6 +158,8 @@ export function FlowDemo() {
   // revision counts every workbook change after opening; savedRevision is where the last
   // confirmed save left the file on disk. Unsaved means the project is ahead of it.
   const [source, setSource] = useState<Source>()
+  // The file a picker chose, waiting for its workbook to open: opening sets it as the save target.
+  const pendingSource = useRef<Source | undefined>(undefined)
   const [revision, setRevision] = useState(0)
   const [savedRevision, setSavedRevision] = useState(0)
   const [saveState, setSaveState] = useState<SaveState>('unsaved')
@@ -207,7 +209,7 @@ export function FlowDemo() {
     // editor's save is already one change ahead of the file on disk, so it counts as unsaved
     // from the start; the handle it was opened from stays the save target.
     setRevision(fromEditor ? 1 : 0); setSavedRevision(0); setSaveState('unsaved'); setSaveError('')
-    if (!fromEditor) setSource(undefined)
+    if (!fromEditor) { setSource(pendingSource.current); pendingSource.current = undefined }
     // A workbook-defined table first; otherwise the sheet with the longest label-and-number run.
     const sheets: any[] = next.sheets || []
     const pick = sheets.find(s => s.range !== s.full_range) || sheets.reduce((top, s) => (best(s.rows)?.length || 0) > (best(top?.rows)?.length || 0) ? s : top, sheets[0])
@@ -240,8 +242,8 @@ export function FlowDemo() {
   const pickWorkbook = () => operation('Reading your workbook locally…', async () => {
     const choice = await openFile(workbookAccept)
     if (!choice) { setStatus('Ready. No workbook was chosen.'); return }
-    await openWorkbook(choice.file)
-    setSource(choice.source) // after openWorkbook resets the project and the save tracking
+    pendingSource.current = choice.source
+    try { await openWorkbook(choice.file) } finally { pendingSource.current = undefined }
   })
   async function importRevised(file?: File) {
     if (!file) return
