@@ -204,6 +204,23 @@ try {
       await page.locator('#office-reopen').click()
       await page.locator('iframe[data-app="gridcraft"]').waitFor({ timeout: 60_000 })
       console.log(`PASS page ${path}: closing an editor asks first, removes its frame, and its tab reopens it`)
+      // An app's button opens it in full window by default; the reader can turn that off, and the
+      // choice is remembered in this browser.
+      const fullWindow = page.locator('#office-full-window')
+      assert(await fullWindow.isChecked(), '/office: apps open in full window by default')
+      await page.locator('#tab-gridcraft').click()
+      await page.locator('.craft-editor-shell.expanded').waitFor()
+      await page.locator('.craft-editor-exit').click()
+      await page.locator('.craft-editor-shell.expanded').waitFor({ state: 'detached' })
+      await fullWindow.uncheck()
+      await page.locator('#tab-gridcraft').click()
+      await page.waitForTimeout(500)
+      assert.equal(await page.locator('.craft-editor-shell.expanded').count(), 0, '/office: with the option off, an app opens in the page')
+      await page.reload()
+      await page.locator('#office-full-window').waitFor()
+      await page.waitForFunction(() => !document.querySelector('#office-full-window').checked)
+      await page.locator('#office-full-window').check()
+      console.log(`PASS page ${path}: app buttons open in full window by default; the reader can turn it off and the choice is remembered`)
       continue
     }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })

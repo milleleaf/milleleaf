@@ -33,6 +33,8 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
 page.setDefaultTimeout(180_000)
 await page.goto(origin + '/office')
 await page.locator('.office-toolbar').waitFor()
+// Apps stay in the page, so the Close button stays reachable between steps.
+await page.locator('#office-full-window').uncheck()
 const tabs = await page.locator('.office-tab').evaluateAll(elements => elements.map(element => element.id.replace(/^tab-/, '')))
 const settle = () => page.waitForTimeout(4000)
 // A framed editor is running once its canvas has a size.

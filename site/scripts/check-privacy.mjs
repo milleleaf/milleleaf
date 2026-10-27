@@ -207,6 +207,7 @@ try {
       const officeCsp = officeResponse.headers()['content-security-policy'];
       assert(officeCsp && /connect-src 'self'/.test(officeCsp), `/office must allow same-origin connections for the editors: ${officeCsp}`);
       assert(/frame-src 'self'/.test(officeCsp), `/office must frame only its own editor pages: ${officeCsp}`);
+      await officePage.locator('#office-full-window').uncheck();
       await officePage.locator('#tab-gridcraft').click();
       const frameElement = officePage.locator('iframe[data-app="gridcraft"]');
       await officePage.frameLocator('iframe[data-app="gridcraft"]').locator('canvas').first().waitFor({ timeout: 120_000 });

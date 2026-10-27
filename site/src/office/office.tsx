@@ -44,6 +44,12 @@ export function OfficeDesk() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [dirty, setDirty] = useState<Partial<Record<Tool, boolean>>>({})
+  // Opening an app from its button fills the window unless the reader turned that off; the choice
+  // is remembered in this browser. Each press counts up, so pressing it again expands it again.
+  const [fullWindow, setFullWindow] = useState(true)
+  useEffect(() => { try { if (localStorage.getItem('office-full-window') === 'off') setFullWindow(false) } catch { /* No storage: keep the default. */ } }, [])
+  const chooseFullWindow = (on: boolean) => { setFullWindow(on); try { localStorage.setItem('office-full-window', on ? 'on' : 'off') } catch { /* Not remembered. */ } }
+  const [expandRequests, setExpandRequests] = useState<Partial<Record<Tool, number>>>({})
 
   // Both lists arrive before any editor mounts, so an editor never starts as one kind and is then
   // replaced by the other.
@@ -101,7 +107,7 @@ export function OfficeDesk() {
             {editors.filter(editor => editor.group === group).map(editor => (
               <button key={editor.id} role="tab" aria-selected={active === editor.id} id={`tab-${editor.id}`}
                 className={`office-tab${active === editor.id ? ' active' : ''}`}
-                onClick={() => { setError(''); setActive(editor.id); open(editor.id) }}>
+                onClick={() => { setError(''); setActive(editor.id); open(editor.id); if (fullWindow) setExpandRequests(previous => ({ ...previous, [editor.id]: (previous[editor.id] || 0) + 1 })) }}>
                 <span className="office-tab-name">{editor.label}</span> <span className="office-tab-kind">{editor.kind}</span>
                 {dirty[editor.id] ? <span className="caption"> · unsaved</span> : opened.has(editor.id) && <span className="caption"> · open</span>}
               </button>
@@ -109,6 +115,7 @@ export function OfficeDesk() {
           </div>
         ))}
       </div>
+      <label className="office-full-window"><input type="checkbox" id="office-full-window" checked={fullWindow} onChange={e => chooseFullWindow(e.target.checked)} /> Open apps in full window</label>
     </div>
     <p id="office-notice" role="status">{notice}</p>
     <section className="office-layout">
@@ -126,8 +133,8 @@ export function OfficeDesk() {
           <div key={editor.id} hidden={active !== editor.id}>
             {active === editor.id && !opened.has(editor.id) && <p className="office-closed">{editor.label} is closed. <button type="button" id="office-reopen" className="button" onClick={() => open(editor.id)}>Open {editor.label}</button></p>}
             {opened.has(editor.id) && framed[editor.id] &&
-              <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} />}
-            {opened.has(editor.id) && !framed[editor.id] && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight}
+              <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} expandRequest={expandRequests[editor.id]} />}
+            {opened.has(editor.id) && !framed[editor.id] && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight} expandRequest={expandRequests[editor.id]}
               onSave={detail => { if (detail.bytes instanceof ArrayBuffer) handleSave(editor.id, detail) }}
               onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
               onFailed={onFailed(editor.id)} />}

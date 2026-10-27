@@ -24,6 +24,8 @@ export type CraftEditorProps = {
   app: string
   label: string
   height: number | string
+  /** Each new value opens the editor in full window (0 or unset: inline). */
+  expandRequest?: number
   /** Fired on APP:save (detail: name, bytes, and saveAs for PdfCraft and WordCraft). */
   onSave?: (detail: { name: string; bytes: ArrayBuffer; saveAs?: boolean }) => void
   /** Fired on APP:dirty (detail: dirty). */
@@ -192,7 +194,7 @@ function ExpandControls({ label, expanded, setExpanded }: { label: string; expan
 // behaves like CraftEditor (Expand, loading and failure states); it is ready once the app has
 // drawn its canvas. It does not take files from the page or report saves: its own File menu
 // opens files and downloads what it saves.
-export function FramedEditor({ app, label, src, height }: { app: string; label: string; src: string; height: number | string }) {
+export function FramedEditor({ app, label, src, height, expandRequest }: { app: string; label: string; src: string; height: number | string; expandRequest?: number }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [expanded, setExpanded] = useState(false)
@@ -241,6 +243,7 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
   }, [expanded])
   const collapse = useCallback(() => setExpanded(false), [])
   useLeaveOnDoubleEscape(expanded, collapse, frame)
+  useEffect(() => { if (expandRequest) setExpanded(true) }, [expandRequest])
 
   return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
     <ExpandControls label={label} expanded={expanded} setExpanded={setExpanded} />
@@ -254,7 +257,7 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
   </div>
 }
 
-export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFailed }: CraftEditorProps) {
+export function CraftEditor({ app, label, height, expandRequest, onSave, onDirty, onReady, onFailed }: CraftEditorProps) {
   const box = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [error, setError] = useState('')
@@ -312,6 +315,7 @@ export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFa
   }, [expanded])
   const collapse = useCallback(() => setExpanded(false), [])
   useLeaveOnDoubleEscape(expanded, collapse)
+  useEffect(() => { if (expandRequest) setExpanded(true) }, [expandRequest])
 
   return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
     <ExpandControls label={label} expanded={expanded} setExpanded={setExpanded} />
