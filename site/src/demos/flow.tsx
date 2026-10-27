@@ -374,9 +374,9 @@ export function FlowDemo() {
         <h2>Start with a workbook</h2><p>Made in Excel, Calc or GridCraft. Every app is a place to work.</p>
         <div className="actions">
           <button id="sample" className="button" disabled={!ready || busy} onClick={() => replaceOk() && operation('Opening the bundled workbook…', async () => { opened(await call('sample', [who(), now()]), 'Hello Table · finance.xlsx') })}>Try the finance workbook</button>
-          {picking
-            ? <button id="workbook-pick" className="button secondary" disabled={!ready || busy} onClick={() => { if (replaceOk()) pickWorkbook() }}>Choose a workbook</button>
-            : <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => { if (replaceOk()) picked(e, openWorkbook, 'Reading your workbook locally:'); else e.target.value = '' }} /></label>}
+          {/* The input stays in the page in every browser (a drop or an automated check uses it); where
+              the browser has file pickers, a click opens the picker instead, so the file can be saved back. */}
+          <label id="workbook-pick" className="button secondary file-button" onClick={e => { if (!picking) return; e.preventDefault(); if (!ready || busy) return; if (replaceOk()) pickWorkbook() }}>Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => { if (replaceOk()) picked(e, openWorkbook, 'Reading your workbook locally:'); else e.target.value = '' }} /></label>
         </div>
         <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model. Up to 64 MiB per file.</p>
         <p id="workbook-name" className="caption">{name}</p>
