@@ -243,7 +243,9 @@ export function FlowDemo() {
     const choice = await openFile(workbookAccept)
     if (!choice) { setStatus('Ready. No workbook was chosen.'); return }
     pendingSource.current = choice.source
-    try { await openWorkbook(choice.file) } finally { pendingSource.current = undefined }
+    // Kept until opened() takes it (the workbook can be applied after openWorkbook resolves); a
+    // failed open drops it.
+    try { await openWorkbook(choice.file) } catch (error) { pendingSource.current = undefined; throw error }
   })
   async function importRevised(file?: File) {
     if (!file) return
