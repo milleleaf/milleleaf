@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 // One page-host editor component for the four Craft apps. Each app runs in the page's own
 // document: the page renders the app's <canvas> (with data-host="page"), listens for the
@@ -163,6 +163,31 @@ export function openInEditor(app: string, name: string, bytes: ArrayBuffer) {
   return true
 }
 
+// Expanded, an editor fills the browser window edge to edge; a small floating button or Escape
+// twice in quick succession leaves. One Escape still belongs to the app, which uses it itself.
+// The listener goes on the page and, for a framed editor, on the frame's own window, since keys
+// typed into the frame never reach the page.
+function useLeaveOnDoubleEscape(active: boolean, leave: () => void, frame?: RefObject<HTMLIFrameElement | null>) {
+  useEffect(() => {
+    if (!active) return
+    let last = 0
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.repeat) return
+      const now = Date.now()
+      if (now - last < 500) { last = 0; leave() } else last = now
+    }
+    const targets = [window, frame?.current?.contentWindow].filter((target): target is Window => !!target)
+    for (const target of targets) target.addEventListener('keydown', onKey, true)
+    return () => { for (const target of targets) target.removeEventListener('keydown', onKey, true) }
+  }, [active, leave, frame])
+}
+
+function ExpandControls({ label, expanded, setExpanded }: { label: string; expanded: boolean; setExpanded: (next: boolean) => void }) {
+  return expanded
+    ? <button type="button" className="craft-editor-exit" aria-pressed="true" onClick={() => setExpanded(false)} title="Exit full window (Esc twice)">Exit full window</button>
+    : <div className="craft-editor-bar"><span /><button type="button" className="button secondary small" aria-pressed="false" onClick={() => setExpanded(true)}>Expand</button></div>
+}
+
 // An editor that runs from its own official release page in a same-origin frame. It looks and
 // behaves like CraftEditor (Expand, loading and failure states); it is ready once the app has
 // drawn its canvas. It does not take files from the page or report saves: its own File menu
@@ -214,14 +239,11 @@ export function FramedEditor({ app, label, src, height }: { app: string; label: 
     frame.current?.focus()
     return () => root.classList.remove('craft-editor-open')
   }, [expanded])
+  const collapse = useCallback(() => setExpanded(false), [])
+  useLeaveOnDoubleEscape(expanded, collapse, frame)
 
   return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
-    <div className="craft-editor-bar">
-      <span>{expanded ? label : ''}</span>
-      <button type="button" className="button secondary small" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>
-        {expanded ? 'Collapse' : 'Expand'}
-      </button>
-    </div>
+    <ExpandControls label={label} expanded={expanded} setExpanded={setExpanded} />
     <div className="craft-editor" style={expanded ? undefined : { height: typeof height === 'number' ? `${height}px` : height }} aria-label={`${label} editor`}>
       <iframe key={attempt} ref={frame} src={src} title={`${label} editor`} data-app={app} />
       {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p>
@@ -280,7 +302,7 @@ export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFa
     }
   }, [app, label])
 
-  // Expanded, the editor fills the browser window. Only the button collapses it: the apps use Escape themselves.
+  // Expanded, the editor fills the browser window (see useLeaveOnDoubleEscape for leaving it).
   useEffect(() => {
     if (!expanded) return
     const root = document.documentElement
@@ -288,14 +310,11 @@ export function CraftEditor({ app, label, height, onSave, onDirty, onReady, onFa
     box.current?.querySelector('canvas')?.focus()
     return () => root.classList.remove('craft-editor-open')
   }, [expanded])
+  const collapse = useCallback(() => setExpanded(false), [])
+  useLeaveOnDoubleEscape(expanded, collapse)
 
   return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
-    <div className="craft-editor-bar">
-      <span>{expanded ? label : ''}</span>
-      <button type="button" className="button secondary small" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>
-        {expanded ? 'Collapse' : 'Expand'}
-      </button>
-    </div>
+    <ExpandControls label={label} expanded={expanded} setExpanded={setExpanded} />
     <div className="craft-editor" style={expanded ? undefined : { height: typeof height === 'number' ? `${height}px` : height }} ref={box} aria-label={`${label} editor`}>
       {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label.toLowerCase()}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p></div>}
       {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not load.</strong></p><p className="caption">{error || 'The editor is unavailable in this browser.'}</p><p className="caption">The {label.toLowerCase()} preview below stays available.</p></div>}
