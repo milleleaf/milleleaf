@@ -137,6 +137,9 @@ type ChartParts = HashMap<String, Vec<(Option<CellRef>, Vec<u8>)>>;
 pub(crate) fn chart_parts(bytes: &[u8]) -> ChartParts {
     let mut out = HashMap::new();
     let Ok(mut z) = zip::ZipArchive::new(Cursor::new(bytes)) else { return out };
+    if z.validate_header_consistency().is_err() {
+        return out;
+    }
     let wb_rels = rels(&mut z, "xl/workbook.xml");
     let Some(wb_xml) = zip_part(&mut z, "xl/workbook.xml") else { return out };
     let mut sheets = Vec::new();
@@ -382,6 +385,7 @@ pub fn with_kept_charts(bytes: Vec<u8>, kept: &[Option<Vec<u8>>]) -> Result<Vec<
         swap.insert(format!("xl/charts/chart{}{}.xml", if ex { "Ex" } else { "" }, i + 1), x);
     }
     let mut z = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).map_err(err)?;
+    z.validate_header_consistency().map_err(err)?;
     let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..z.len() {
         let f = z.by_index(i).map_err(err)?;

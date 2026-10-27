@@ -567,6 +567,7 @@ pub fn export(
 /// routes that keep identity).
 pub fn import(kind: Kind, ext: &str, bytes: Vec<u8>) -> Result<(Vec<u8>, Choice), FormatError> {
     let choice = choose(kind, Import, ext)?;
+    check_zip_headers(&bytes).map_err(FormatError::Failed)?;
     let r = &choice.route;
     let out = match r.id {
         "wordcraft-docx" | "gridcraft-xlsx" | "deckcraft-pptx" => bytes,
@@ -584,11 +585,24 @@ pub fn import(kind: Kind, ext: &str, bytes: Vec<u8>) -> Result<(Vec<u8>, Choice)
 #[cfg(test)]
 mod tests;
 
+/// Refuses a ZIP-based file (OOXML, ODF) whose central directory and local file headers disagree:
+/// such a file can show different parts to different readers (CVE-2026-115905), so no reader may see
+/// it. Bytes that aren't a ZIP are left to the format's own reader.
+pub fn check_zip_headers(bytes: &[u8]) -> Result<(), String> {
+    if !bytes.starts_with(b"PK") {
+        return Ok(());
+    }
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("not a readable ZIP: {e}"))?;
+    z.validate_header_consistency()
+        .map_err(|e| format!("the file's ZIP headers disagree ({e}), so programs could read different content from it"))
+}
+
 /// The application that last saved an Office file (`docProps/app.xml`), e.g.
 /// `LibreOffice/24.2.7.2$Linux_X86_64 …` or `Microsoft Excel`.
 pub fn saved_by(bytes: &[u8]) -> Option<String> {
     use std::io::Read;
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    z.validate_header_consistency().ok()?;
     let mut s = String::new();
     z.by_name("docProps/app.xml").ok()?.read_to_string(&mut s).ok()?;
     let start = s.find("<Application>")? + "<Application>".len();

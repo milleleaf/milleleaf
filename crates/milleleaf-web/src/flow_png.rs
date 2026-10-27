@@ -61,6 +61,7 @@ pub(super) fn add_png_fallbacks(bytes: &[u8]) -> Result<Vec<u8>> {
     use std::collections::BTreeMap;
     use std::io::{Cursor, Read, Write};
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
+    archive.validate_header_consistency().map_err(|e| e.to_string())?;
     let mut names: Vec<String> = Vec::new();
     let mut parts: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for i in 0..archive.len() {

@@ -176,6 +176,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             // A file Milleleaf didn't make: read it into a new layer, and say what isn't carried.
             let out = out.ok_or("`adopt` needs --out LAYER.mleaf.json")?;
             let bytes = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+            milleleaf_formats::check_zip_headers(&bytes).map_err(|e| format!("{}: {e}", file.display()))?;
             let sha = milleleaf_store::hash_of(&bytes);
             let ext = file
                 .extension()

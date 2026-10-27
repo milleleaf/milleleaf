@@ -245,3 +245,21 @@ fn a_notes_page_with_only_its_slide_number_isnt_counted() {
     let (_, c) = inventory(&bytes).unwrap();
     assert_eq!((c["notes slides"], c["notes slide-number fields"]), (1, 2));
 }
+
+/// CVE-2026-115905: a ZIP whose local file header names a different part than its central
+/// directory shows different content to different readers. It is refused before any reader sees
+/// it; the untouched file still opens.
+#[test]
+fn zip_headers_that_disagree_are_refused() {
+    let good = docx_of(&[("word/document.xml", "<w:document/>"), ("word/styles.xml", "<w:styles/>")]);
+    assert_eq!(crate::check_zip_headers(&good), Ok(()));
+    assert!(import(Kind::Document, "docx", good.clone()).is_ok());
+    // Rename the first part in its local header only (same length, so every offset still holds).
+    let mut cloaked = good.clone();
+    let at = cloaked.windows(17).position(|w| w == b"word/document.xml").expect("local header name");
+    assert!(at < 64, "the first match is the local header, not the central directory");
+    cloaked[at..at + 17].copy_from_slice(b"word/documenX.xml");
+    assert!(crate::check_zip_headers(&cloaked).is_err());
+    assert!(matches!(import(Kind::Document, "docx", cloaked), Err(FormatError::Failed(_))));
+    assert_eq!(crate::check_zip_headers(b"not a zip"), Ok(()));
+}

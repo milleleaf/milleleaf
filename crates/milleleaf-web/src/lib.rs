@@ -49,6 +49,7 @@ fn parts(bytes: &[u8]) -> Result<BTreeMap<String, String>> {
     if bytes.len() > MAX_FILE {
         return Err("This demo accepts files up to 64 MiB.".into());
     }
+    milleleaf_formats::check_zip_headers(bytes)?;
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
     if archive.len() > MAX_PARTS {
         return Err("The file contains more than 20,000 archive parts.".into());
@@ -84,6 +85,7 @@ fn parts(bytes: &[u8]) -> Result<BTreeMap<String, String>> {
 // Core timestamps order the two files; absence leaves the browser's lastModified fallback.
 fn modified(bytes: &[u8]) -> Option<String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
+    archive.validate_header_consistency().ok()?;
     let mut xml = String::new();
     archive
         .by_name("docProps/core.xml")

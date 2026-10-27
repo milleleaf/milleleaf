@@ -532,6 +532,7 @@ fn prefer_referenced_svg(bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     }
     parts(bytes)?;
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
+    archive.validate_header_consistency().map_err(|e| e.to_string())?;
     let Some(xml) = part(&mut archive, "word/document.xml").and_then(|v| String::from_utf8(v).ok())
     else {
         return Ok(None);
