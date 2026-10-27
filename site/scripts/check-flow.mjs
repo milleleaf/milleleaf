@@ -271,9 +271,11 @@ try {
     await flow.locator('#workbook-pick').click();
     await flow.locator('#status').filter({ hasText: 'Workbook ready' }).waitFor();
     assert((await flow.locator('#workbook-name').textContent()).includes('finance.xlsx'), 'the stubbed picker opened the workbook');
-    await flow.locator('#save-workbook-status').filter({ hasText: 'Saved to finance.xlsx' }).waitFor();
+    // The status lives in the project section, which stays hidden until Create: wait for it attached, not visible.
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Saved to finance.xlsx' }).waitFor({ state: 'attached' });
     assert.equal(await flow.locator('#save-workbook-status').textContent(), 'Saved to finance.xlsx', 'the opened file counts as saved until an edit');
     await flow.locator('#create').click();
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Saved to finance.xlsx' }).waitFor();
     await flow.locator('#project:not([hidden])').waitFor();
     await flow.locator('#edited-file').setInputFiles('../_out/flow/finance-edited.xlsx');
     await flow.locator('#save-workbook-status').filter({ hasText: 'Unsaved changes' }).waitFor();
