@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { json, saveFile, useEngine } from './engine'
+import { canPickFiles, conflictMessage, openFile, overwriteSource, saveAsNew, saveToSource, type SaveState, type Source } from '../files/saved-file'
 import { fileSize, Status, tooBig } from './status'
 import { CraftEditor, openWhenReady } from '../editors/editor'
 
@@ -44,6 +45,11 @@ function best(rows: any[][] = []): { range: string; length: number } | undefined
   return found
 }
 const suggest = (rows?: any[][]) => best(rows)?.range
+// The File System Access pickers take MIME types mapped to extension lists.
+const workbookAccept = {
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+  'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
+}
 // A table the workbook defines (its range differs from the whole sheet) wins over the suggestion.
 const startRange = (sheet: any) => sheet && (sheet.range !== sheet.full_range ? sheet.range : suggest(sheet.rows) || sheet.range)
 
@@ -148,6 +154,17 @@ export function FlowDemo() {
   const [app, setApp] = useState('')
   const [signature, setSignature] = useState('')
   const [dragging, setDragging] = useState(false)
+  // Saving back to the file the workbook was opened from (browsers with the file pickers). The
+  // revision counts every workbook change after opening; savedRevision is where the last
+  // confirmed save left the file on disk. Unsaved means the project is ahead of it.
+  const [source, setSource] = useState<Source>()
+  const [revision, setRevision] = useState(0)
+  const [savedRevision, setSavedRevision] = useState(0)
+  const [saveState, setSaveState] = useState<SaveState>('unsaved')
+  const [saveError, setSaveError] = useState('')
+  // The pickers exist only in the browser, so detect after mount and keep the page server-safe.
+  const [picking, setPicking] = useState(false)
+  useEffect(() => setPicking(canPickFiles()), [])
   // The real editors (page host mode): the workbook opens in GridCraft, the report in WordCraft.
   // The table/document previews stay as the fallback while an editor loads or if it fails.
   const [gridcraftWanted, setGridcraftWanted] = useState(false)
@@ -183,9 +200,14 @@ export function FlowDemo() {
     setSheetPath(path)
     setRange(startRange(from?.sheets?.find((s: any) => s.path === path)) || 'A1:B5')
   }
-  function opened(next: any, label: string) {
+  function opened(next: any, label: string, fromEditor = false) {
     setSnapshot(undefined); setImported(false); setSignature(''); setGridcraftWanted(false); setWordcraftWanted(false)
     setInfo(next); setName(label); setChart('-1')
+    // Save tracking starts again with the opened workbook. A workbook that arrived from an
+    // editor's save is already one change ahead of the file on disk, so it counts as unsaved
+    // from the start; the handle it was opened from stays the save target.
+    setRevision(fromEditor ? 1 : 0); setSavedRevision(0); setSaveState('unsaved'); setSaveError('')
+    if (!fromEditor) setSource(undefined)
     // A workbook-defined table first; otherwise the sheet with the longest label-and-number run.
     const sheets: any[] = next.sheets || []
     const pick = sheets.find(s => s.range !== s.full_range) || sheets.reduce((top, s) => (best(s.rows)?.length || 0) > (best(top?.rows)?.length || 0) ? s : top, sheets[0])
@@ -194,6 +216,10 @@ export function FlowDemo() {
   }
   function received(next: any, wasImported: boolean) {
     setSnapshot(next); setImported(wasImported); setSignature('')
+    // A layer recorded from an edit or an import holds content the file on disk (if the workbook
+    // was opened from one) does not: one revision of unsaved work.
+    if (wasImported) setRevision(current => current + 1)
+    setSaveState(current => (current === 'failed' ? 'unsaved' : current))
     setStatus(wasImported ? 'Saved as a new layer. The current report and deck are ready to download.' : 'Ready. Your report and deck share one source, each in its own style.')
   }
   // Opening another workbook discards the project, which lives only in this tab: ask first.
@@ -208,6 +234,15 @@ export function FlowDemo() {
     tooBig(file)
     opened(await call('open', [await file.arrayBuffer(), who(), now()]), `${file.name} · ${fileSize(file.size)}`)
   }
+  // With the browser's file pickers, "Choose a workbook" keeps the handle it was opened from so
+  // its edits can be saved straight back. The picker call stays the task's first await, so the
+  // click's activation still opens it.
+  const pickWorkbook = () => operation('Reading your workbook locally…', async () => {
+    const choice = await openFile(workbookAccept)
+    if (!choice) { setStatus('Ready. No workbook was chosen.'); return }
+    await openWorkbook(choice.file)
+    setSource(choice.source) // after openWorkbook resets the project and the save tracking
+  })
   async function importRevised(file?: File) {
     if (!file) return
     if (!snapshot) throw new Error('Create the linked report and deck before bringing an edited file back.')
@@ -220,10 +255,50 @@ export function FlowDemo() {
     if (!/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/i.test(range.trim())) throw new Error('Enter a cell range such as A1:B5.')
     received(await call('create', [sheetPath, range.trim().toUpperCase(), Number(chart), who(), now()]), false)
   })
+  // One engine export path, shared by the downloads, the page-host editors and the save-back.
+  const exportBytes = (ext: 'docx' | 'pptx' | 'xlsx') => call('export_file', [ext])
   const download = (kind: 'report' | 'deck' | 'workbook') => operation('Preparing your local download…', async () => {
-    const ext = { report: 'docx', deck: 'pptx', workbook: 'xlsx' }[kind]
-    saveFile(await call('export_file', [ext]), `milleleaf-${kind}.${ext}`)
+    const ext = ({ report: 'docx', deck: 'pptx', workbook: 'xlsx' } as const)[kind]
+    saveFile(await exportBytes(ext), `milleleaf-${kind}.${ext}`)
     setStatus(`Ready. The ${kind} download was prepared in this browser.`)
+  })
+  // Save-back: the workbook goes to the file it was opened from. The browser stages the write
+  // until close(), so the status confirms only after that; a file that changed on disk first is
+  // a conflict, never a silent overwrite.
+  function applySave(result: { state: 'saved' | 'conflict' | 'failed' | 'cancelled'; error?: string; source?: Source }, atRevision: number) {
+    if (result.state === 'saved' && result.source) {
+      setSource(result.source); setSavedRevision(atRevision); setSaveState('saved')
+      setStatus('Ready. The workbook was saved to its file in this browser.')
+    } else if (result.state === 'conflict') {
+      setSaveState('conflict'); setStatus('Ready. The workbook was not saved.')
+    } else if (result.state === 'failed') {
+      setSaveState('failed'); setSaveError(result.error || 'The workbook could not be written.'); setStatus('Ready. The workbook was not saved.')
+    } else setSaveState('unsaved')
+  }
+  const catchSave = (error: unknown) => {
+    setSaveState('failed'); setSaveError((error as Error)?.message || String(error)); setStatus('Ready. The workbook was not saved.')
+  }
+  const saveWorkbook = () => operation('Saving the workbook to its file…', async () => {
+    if (!source) return
+    setSaveState('saving')
+    const atRevision = revision // a save that finishes after more edits stays behind them
+    try { applySave(await saveToSource(source, await exportBytes('xlsx')), atRevision) } catch (error) { catchSave(error) }
+  })
+  const overwriteWorkbook = () => operation('Overwriting the workbook file on disk…', async () => {
+    if (!source) return
+    setSaveState('saving')
+    const atRevision = revision
+    try { applySave(await overwriteSource(source, await exportBytes('xlsx')), atRevision) } catch (error) { catchSave(error) }
+  })
+  const saveWorkbookAs = () => operation('Choosing where to save the workbook…', async () => {
+    if (!source) return
+    setSaveState('saving')
+    const atRevision = revision
+    try {
+      const result = await saveAsNew(source.handle.name, workbookAccept, await exportBytes('xlsx'))
+      if (result.state === 'cancelled') { setSaveState('unsaved'); setStatus('Ready. No file was chosen.'); return }
+      applySave(result, atRevision)
+    } catch (error) { catchSave(error) }
   })
   const sign = () => operation('Signing the current layer locally…', async () => {
     saveFile(json(await call('sign')), 'milleleaf-layer-proof.json', 'application/json')
@@ -263,7 +338,7 @@ export function FlowDemo() {
   const gridcraftSave = (detail: { name: string; bytes: ArrayBuffer }) => editorSaved(async () => {
     if (!/\.xlsx$/i.test(detail.name)) return keep(detail, 'the demo takes in XLSX workbooks.')
     if (snapshot) received(await call('import_file', [detail.bytes, detail.name, who(), now(), 'GridCraft']), true)
-    else opened(await call('open', [detail.bytes, who(), now()]), `${detail.name} · ${fileSize(detail.bytes.byteLength)} · saved in GridCraft`)
+    else opened(await call('open', [detail.bytes, who(), now()]), `${detail.name} · ${fileSize(detail.bytes.byteLength)} · saved in GridCraft`, true)
     setApp('GridCraft')
   })
   // A report saved in WordCraft arrives as a review layer, like a dropped report.
@@ -276,9 +351,19 @@ export function FlowDemo() {
   const noWorkbook = busy || !sheets.length, noProject = busy || !snapshot
   const changes: any[] = snapshot?.changes || [], conflicts: any[] = snapshot?.conflicts || []
   const warnings: any[] = snapshot?.warnings || info?.warnings || []
-  let source: ReactNode = <p className="caption">The selected cells appear after you create the linked files.</p>
-  if (snapshot?.report?.table) source = <Table value={snapshot.report.table} />
-  else if (sheet?.rows?.length) source = <Table value={sheet.rows} />
+  let sourceTable: ReactNode = <p className="caption">The selected cells appear after you create the linked files.</p>
+  if (snapshot?.report?.table) sourceTable = <Table value={snapshot.report.table} />
+  else if (sheet?.rows?.length) sourceTable = <Table value={sheet.rows} />
+  const dirty = revision > savedRevision
+  // The save-back status: a verdict about the file on disk outranks the rest, then the failure,
+  // then the write in progress, then whether the project holds unsaved work.
+  const saveStatus: ReactNode = saveState === 'conflict' && source
+    ? <>{conflictMessage(source.handle.name)} <button id="save-overwrite" className="button secondary small" disabled={busy} onClick={overwriteWorkbook}>Overwrite anyway</button> <button id="save-as" className="button secondary small" disabled={busy} onClick={saveWorkbookAs}>Save as…</button></>
+    : saveState === 'failed' ? `Couldn't save: ${saveError}`
+    : saveState === 'saving' ? 'Saving…'
+    : !source ? ''
+    : dirty ? 'Unsaved changes'
+    : `Saved to ${source.handle.name}`
 
   return <div className="demo-flow">
     <p className="privacy">Files stay in this browser. No upload. No account.</p>
@@ -289,7 +374,9 @@ export function FlowDemo() {
         <h2>Start with a workbook</h2><p>Made in Excel, Calc or GridCraft. Every app is a place to work.</p>
         <div className="actions">
           <button id="sample" className="button" disabled={!ready || busy} onClick={() => replaceOk() && operation('Opening the bundled workbook…', async () => { opened(await call('sample', [who(), now()]), 'Hello Table · finance.xlsx') })}>Try the finance workbook</button>
-          <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => { if (replaceOk()) picked(e, openWorkbook, 'Reading your workbook locally:'); else e.target.value = '' }} /></label>
+          {picking
+            ? <button id="workbook-pick" className="button secondary" disabled={!ready || busy} onClick={() => { if (replaceOk()) pickWorkbook() }}>Choose a workbook</button>
+            : <label className="button secondary file-button">Choose a workbook<input id="workbook-file" type="file" accept=".xlsx,.ods" disabled={!ready || busy} onChange={e => { if (replaceOk()) picked(e, openWorkbook, 'Reading your workbook locally:'); else e.target.value = '' }} /></label>}
         </div>
         <p className="caption">ODS data import reads values, text and merges. Formula cells use saved cached values; ODS styles and charts are not carried. Keep your original workbook. XLSX carries the richer workbook model. Up to 64 MiB per file.</p>
         <p id="workbook-name" className="caption">{name}</p>
@@ -304,7 +391,7 @@ export function FlowDemo() {
             </select></label>
           </div>
           <p id="chart-note" className="caption" aria-live="polite" hidden={!chartNote}>{chartNote}</p>
-          <div id="source-table" className="table-scroll">{source}{!snapshot && sheet?.preview_note && <p className="caption">{sheet.preview_note}</p>}</div>
+          <div id="source-table" className="table-scroll">{sourceTable}{!snapshot && sheet?.preview_note && <p className="caption">{sheet.preview_note}</p>}</div>
           <div className="actions"><button id="create" className="button primary" disabled={noWorkbook} onClick={create}>Use it in a report and a deck</button>
           <button id="open-gridcraft" className="button secondary" disabled={noWorkbook} onClick={showInGridcraft}>Open in real GridCraft</button></div>
           {gridcraftWanted && <div id="gridcraft-editor"><CraftEditor app="gridcraft" label="GridCraft" height={560}
@@ -334,7 +421,9 @@ export function FlowDemo() {
       <div className="section-heading"><div><h2>Change it anywhere. Bring it back.</h2></div>
         <p id="keep-note" className="caption">This project lives only in this browser tab. Leaving or reloading the page discards it; download the project layers to keep them.</p>
         <button id="download-project" className="button secondary" disabled={noProject} onClick={project}>Download project layers</button>
-        <button id="download-workbook" className="button secondary" disabled={noProject} onClick={() => download('workbook')}>Download current workbook</button></div>
+        <button id="download-workbook" className="button secondary" disabled={noProject} onClick={() => download('workbook')}>Download current workbook</button>
+        {source && <button id="save-workbook" className="button secondary" disabled={noProject} onClick={saveWorkbook}>Save workbook</button>}
+        <p id="save-workbook-status" role="status" hidden={!source}>{saveStatus}</p></div>
       <div className="review-layout">
         <article className="panel bring-back">
           <div className="fields"><label>Claimed name<input id="author" value={author} maxLength={120} onChange={e => setAuthor(e.target.value)} /></label><label>App used<input id="app" placeholder="e.g. Calc, Word, DeckCraft" maxLength={120} value={app} onChange={e => setApp(e.target.value)} /></label></div>

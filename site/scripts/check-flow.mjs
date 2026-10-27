@@ -216,5 +216,90 @@ try {
     console.log(`PASS real editors: WordCraft opens the current report, typed text keeps its order, a GridCraft save adds layer ${await history()} and keeps the project`);
     await editors.close();
   }
+  // Save-back: a stubbed File System Access API with an in-memory file. The page opens the
+  // bundled workbook through the fake picker, records one layer, saves the workbook bytes into
+  // the fake file, meets an outside edit as a conflict that writes nothing, and overwrites it
+  // on request.
+  {
+    const savers = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    await savers.addInitScript((base64) => {
+      const fake = {
+        name: 'finance.xlsx',
+        content: Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)),
+        lastModified: 1000,
+        writes: 0,
+        saveAsName: '',
+      };
+      const handle = {
+        kind: 'file',
+        name: fake.name,
+        async getFile() { return new File([fake.content], fake.name, { lastModified: fake.lastModified }) },
+        async queryPermission() { return 'granted' },
+        async requestPermission() { return 'granted' },
+        async createWritable() {
+          const chunks = [];
+          return {
+            async write(chunk) { chunks.push(chunk instanceof Blob ? await chunk.arrayBuffer() : chunk) },
+            async close() {
+              // The page may write Blobs, ArrayBuffers or views; merge them into one file.
+              const parts = []; let total = 0;
+              for (const chunk of chunks) {
+                const part = chunk instanceof ArrayBuffer ? new Uint8Array(chunk)
+                  : ArrayBuffer.isView(chunk) ? new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+                  : new Uint8Array(0);
+                parts.push(part); total += part.length;
+              }
+              const merged = new Uint8Array(total); let at = 0;
+              for (const part of parts) { merged.set(part, at); at += part.length }
+              fake.content = merged; fake.writes += 1; fake.lastModified = 2000 + fake.writes;
+            },
+            async abort() {},
+          };
+        },
+      };
+      window.__fakeWorkbookFile = fake;
+      window.showOpenFilePicker = async () => [handle];
+      window.showSaveFilePicker = async (options) => { fake.saveAsName = options?.suggestedName ?? ''; return handle };
+    }, (await readFile(resolve('../_out/flow/finance.xlsx'))).toString('base64'));
+    const flow = await savers.newPage();
+    const saveErrors = [];
+    flow.on('pageerror', (error) => saveErrors.push(error.message));
+    flow.setDefaultTimeout(180_000);
+    await flow.goto(origin);
+    await flow.locator('#workbook-pick').waitFor();
+    await flow.locator('#status').filter({ hasText: /^Ready\./ }).waitFor();
+    await flow.locator('#workbook-pick').click();
+    await flow.locator('#status').filter({ hasText: 'Workbook ready' }).waitFor();
+    assert((await flow.locator('#workbook-name').textContent()).includes('finance.xlsx'), 'the stubbed picker opened the workbook');
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Saved to finance.xlsx' }).waitFor();
+    assert.equal(await flow.locator('#save-workbook-status').textContent(), 'Saved to finance.xlsx', 'the opened file counts as saved until an edit');
+    await flow.locator('#create').click();
+    await flow.locator('#project:not([hidden])').waitFor();
+    await flow.locator('#edited-file').setInputFiles('../_out/flow/finance-edited.xlsx');
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Unsaved changes' }).waitFor();
+    await flow.locator('#save-workbook').click();
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Saved to finance.xlsx' }).waitFor();
+    const saved = await flow.evaluate(() => { const fake = window.__fakeWorkbookFile; return { writes: fake.writes, head: String.fromCharCode(fake.content[0], fake.content[1]), length: fake.content.length } });
+    assert.equal(saved.writes, 1, 'one write reached the file');
+    assert.equal(saved.head, 'PK', 'the saved workbook bytes are a ZIP package');
+    assert(saved.length > 500, 'the saved workbook holds real content');
+    // The file changes on disk behind the page's back: the next save is a conflict that writes nothing.
+    await flow.evaluate(() => { window.__fakeWorkbookFile.lastModified += 90000 });
+    await flow.locator('#edited-file').setInputFiles('../_out/flow/finance-edited.xlsx');
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Unsaved changes' }).waitFor();
+    await flow.locator('#save-workbook').click();
+    await flow.locator('#save-workbook-status').filter({ hasText: 'changed on disk since you opened it.' }).waitFor();
+    assert.equal(await flow.evaluate(() => window.__fakeWorkbookFile.writes), 1, 'a conflict writes nothing');
+    assert(await flow.locator('#save-overwrite').isVisible() && await flow.locator('#save-as').isVisible(), 'the conflict offers Overwrite anyway and Save as…');
+    await flow.locator('#save-overwrite').click();
+    await flow.locator('#save-workbook-status').filter({ hasText: 'Saved to finance.xlsx' }).waitFor();
+    const overwritten = await flow.evaluate(() => { const fake = window.__fakeWorkbookFile; return { writes: fake.writes, head: String.fromCharCode(fake.content[0], fake.content[1]) } });
+    assert.equal(overwritten.writes, 2, 'Overwrite anyway wrote the file');
+    assert.equal(overwritten.head, 'PK');
+    assert.equal(await flow.locator('#error').isVisible(), false, 'the save-back flow raises no error');
+    assert.deepEqual(saveErrors, [], 'no uncaught page errors in the save-back flow');
+    console.log(`PASS save-back: stubbed pickers opened the workbook, one recorded layer showed unsaved, Save wrote ${saved.length} PK bytes into the fake file, an outside edit became a conflict that wrote nothing, and Overwrite anyway wrote it`);
+    await savers.close();
+  }
   console.log('PASS browser flow: bundled workbook, sheet/range/chart, real Office downloads, both linked outputs updated, readable cell changes, linked-value conflict, independent report edit, claimed app history, demo proof, local-only operations, mobile layout, replace and leave warnings');
 } finally { await browser.close(); await new Promise((done) => server.close(done)); }
