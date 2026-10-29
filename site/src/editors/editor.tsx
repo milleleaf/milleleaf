@@ -34,6 +34,8 @@ export type CraftEditorProps = {
   onReady?: () => void
   /** Fired on APP:failed or when the glue/wasm fails to load. */
   onFailed?: (message: string) => void
+  /** Fired on APP:handoff: the app passes the page a file another app edits. */
+  onHandoff?: (detail: Handoff) => void
 }
 
 // An app binds to one canvas forever and cannot start twice in a document, so every app gets
@@ -165,6 +167,32 @@ export function openInEditor(app: string, name: string, bytes: ArrayBuffer) {
   return true
 }
 
+// A file an app hands to the page because another app edits it (the apps' `handoff` message).
+export type Handoff = { name: string; file?: Blob; bytes?: ArrayBuffer; size?: number }
+
+// Framed editors that speak the host messages: their frames, and those that said they are ready.
+const frames = new Map<string, HTMLIFrameElement>()
+const framesReady = new Set<string>()
+
+// Send one host message to an app, whichever way it runs: an event on its canvas in this page, or a
+// postMessage to its frame on this page's own origin.
+export function sendToApp(app: string, type: string, fields: Record<string, unknown>) {
+  const canvas = canvases.get(app)
+  if (canvas?.isConnected) { canvas.dispatchEvent(new CustomEvent(`${app}:${type}`, { detail: fields })); return true }
+  const frame = frames.get(app)
+  if (frame?.contentWindow) { frame.contentWindow.postMessage({ type: `${app}:${type}`, ...fields }, location.origin); return true }
+  return false
+}
+
+// Open a file in a framed editor once it has said it is ready (its `ready` host message).
+export async function openFramedWhenReady(app: string, name: string, bytes: ArrayBuffer) {
+  for (let waited = 0; !framesReady.has(app); waited += 100) {
+    if (waited > 90_000) throw new Error(`The ${app} editor did not get ready for a file.`)
+    await new Promise(done => setTimeout(done, 100))
+  }
+  if (!sendToApp(app, 'open', { name, bytes: bytes.slice(0) })) throw new Error(`The ${app} editor could not open ${name}.`)
+}
+
 // Expanded, an editor fills the browser window edge to edge; a small floating button or Escape
 // twice in quick succession leaves. One Escape still belongs to the app, which uses it itself.
 // The listener goes on the page and, for a framed editor, on the frame's own window, since keys
@@ -194,13 +222,46 @@ function ExpandControls({ label, expanded, setExpanded }: { label: string; expan
 // behaves like CraftEditor (Expand, loading and failure states); it is ready once the app has
 // drawn its canvas. It does not take files from the page or report saves: its own File menu
 // opens files and downloads what it saves.
-export function FramedEditor({ app, label, src, height, expandRequest }: { app: string; label: string; src: string; height: number | string; expandRequest?: number }) {
+export function FramedEditor({ app, label, src, height, expandRequest, hostBridge, onSave, onDirty, onHandoff }: {
+  app: string; label: string; src: string; height: number | string; expandRequest?: number
+  /** The release speaks the host messages: framed with ?host=parent, its saves come to the page. */
+  hostBridge?: boolean
+  onSave?: (detail: { name: string; bytes: ArrayBuffer }) => void
+  onDirty?: (dirty: boolean) => void
+  onHandoff?: (detail: Handoff) => void
+}) {
   const frame = useRef<HTMLIFrameElement>(null)
+  const callbacks = useRef({ onSave, onDirty, onHandoff })
+  callbacks.current = { onSave, onDirty, onHandoff }
+  const frameSrc = hostBridge ? `${src}${src.includes('?') ? '&' : '?'}host=parent` : src
+
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [expanded, setExpanded] = useState(false)
 
   const [slow, setSlow] = useState(false)
   const [attempt, setAttempt] = useState(0)
+
+  // The app's host messages come from its frame. Any framed app may hand a file off; only one framed
+  // with ?host=parent sends ready, save and dirty, and is told the page takes hand-offs.
+  useEffect(() => {
+    const element = frame.current
+    if (!element) return
+    frames.set(app, element)
+    framesReady.delete(app)
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== element.contentWindow || event.origin !== location.origin) return
+      const data = event.data
+      if (!data || typeof data.type !== 'string' || !data.type.startsWith(`${app}:`)) return
+      const kind = data.type.slice(app.length + 1)
+      if (kind === 'handoff') callbacks.current.onHandoff?.(data)
+      if (!hostBridge) return
+      if (kind === 'ready') { framesReady.add(app); sendToApp(app, 'host', { version: '1', handoff: true }) }
+      if (kind === 'save' && data.bytes instanceof ArrayBuffer) callbacks.current.onSave?.({ name: String(data.name || 'drawing'), bytes: data.bytes })
+      if (kind === 'dirty') callbacks.current.onDirty?.(data.dirty === true)
+    }
+    addEventListener('message', onMessage)
+    return () => { removeEventListener('message', onMessage); framesReady.delete(app); if (frames.get(app) === element) frames.delete(app) }
+  }, [app, hostBridge, attempt])
 
   // Ready once the app has started: its canvas has a size and its own loading notice is gone. An
   // HTML load alone is not a start (the WebAssembly can still fail). An uncaught error or rejected
@@ -248,7 +309,7 @@ export function FramedEditor({ app, label, src, height, expandRequest }: { app: 
   return <div className={`craft-editor-shell${expanded ? ' expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-label={expanded ? `${label}, full window` : undefined}>
     <ExpandControls label={label} expanded={expanded} setExpanded={setExpanded} />
     <div className="craft-editor" style={expanded ? undefined : { height: typeof height === 'number' ? `${height}px` : height }} aria-label={`${label} editor`}>
-      <iframe key={attempt} ref={frame} src={src} title={`${label} editor`} data-app={app} />
+      <iframe key={attempt} ref={frame} src={frameSrc} title={`${label} editor`} data-app={app} />
       {state === 'loading' && <div className="craft-editor-state" role="status"><p><strong>Opening {label}…</strong></p><p className="caption">The first visit takes a moment. The editor runs on this device.</p>
         {slow && <button type="button" className="button secondary small craft-editor-retry" onClick={() => setAttempt(n => n + 1)}>Reload {label}</button>}</div>}
       {state === 'failed' && <div className="craft-editor-state" role="alert"><p><strong>{label} could not start.</strong></p><p className="caption">{failure || 'The editor is unavailable in this browser.'}</p>
@@ -257,13 +318,13 @@ export function FramedEditor({ app, label, src, height, expandRequest }: { app: 
   </div>
 }
 
-export function CraftEditor({ app, label, height, expandRequest, onSave, onDirty, onReady, onFailed }: CraftEditorProps) {
+export function CraftEditor({ app, label, height, expandRequest, onSave, onDirty, onReady, onFailed, onHandoff }: CraftEditorProps) {
   const box = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(false)
-  const callbacks = useRef({ onSave, onDirty, onReady, onFailed })
-  callbacks.current = { onSave, onDirty, onReady, onFailed }
+  const callbacks = useRef({ onSave, onDirty, onReady, onFailed, onHandoff })
+  callbacks.current = { onSave, onDirty, onReady, onFailed, onHandoff }
 
   useEffect(() => {
     const canvas = getCanvas(app)
@@ -274,7 +335,9 @@ export function CraftEditor({ app, label, height, expandRequest, onSave, onDirty
     // canvas the moment a component for it mounts, ahead of the glue import.
     const onSaveEvent = (event: Event) => callbacks.current.onSave?.((event as CustomEvent).detail)
     const onDirtyEvent = (event: Event) => callbacks.current.onDirty?.((event as CustomEvent).detail?.dirty === true)
-    const onReadyEvent = () => { markReady(app); setState('ready'); callbacks.current.onReady?.() }
+    // Once ready, the app is told this page takes hand-offs.
+    const onReadyEvent = () => { markReady(app); setState('ready'); sendToApp(app, 'host', { version: '1', handoff: true }); callbacks.current.onReady?.() }
+    const onHandoffEvent = (event: Event) => callbacks.current.onHandoff?.((event as CustomEvent).detail)
     const onFailedEvent = (event: Event) => {
       const message = String((event as CustomEvent).detail?.error || `${label} could not start.`)
       readiness.set(app, false)
@@ -284,6 +347,7 @@ export function CraftEditor({ app, label, height, expandRequest, onSave, onDirty
     canvas.addEventListener(`${app}:dirty`, onDirtyEvent)
     canvas.addEventListener(`${app}:ready`, onReadyEvent)
     canvas.addEventListener(`${app}:failed`, onFailedEvent)
+    canvas.addEventListener(`${app}:handoff`, onHandoffEvent)
 
     // Move the one registry canvas into this box. If it already sits in another box, take it out.
     if (canvas.parentNode && canvas.parentNode !== element) canvas.parentNode.removeChild(canvas)
@@ -298,7 +362,7 @@ export function CraftEditor({ app, label, height, expandRequest, onSave, onDirty
     return () => {
       for (const [name, handler] of [
         [`${app}:save`, onSaveEvent], [`${app}:dirty`, onDirtyEvent],
-        [`${app}:ready`, onReadyEvent], [`${app}:failed`, onFailedEvent],
+        [`${app}:ready`, onReadyEvent], [`${app}:failed`, onFailedEvent], [`${app}:handoff`, onHandoffEvent],
       ] as const) canvas.removeEventListener(name, handler)
       // Park the canvas off-screen instead of destroying it: the app inside it stays alive.
       if (canvas.parentNode === element) element.removeChild(canvas)

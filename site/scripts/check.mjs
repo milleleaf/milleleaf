@@ -221,6 +221,44 @@ try {
       await page.waitForFunction(() => !document.querySelector('#office-full-window').checked)
       await page.locator('#office-full-window').check()
       console.log(`PASS page ${path}: app buttons open in full window by default; the reader can turn it off and the choice is remembered`)
+      // An app hands the page a file another app edits: from GridCraft's frame, a small DXF goes to
+      // CADCraft and a small PDF to PdfCraft, whose releases speak the host messages. The target's tab
+      // opens with the file, GridCraft hears the hand-off is done, and the target's own save reaches
+      // the page as a download.
+      await page.locator('iframe[data-app="gridcraft"]').waitFor({ timeout: 60_000 })
+      const gridFrame = page.frame({ url: /\/apps\/frame\/gridcraft\// })
+      await gridFrame.evaluate(() => {
+        window.__replies = []
+        addEventListener('message', (event) => { if (String(event.data?.type).startsWith('gridcraft:')) window.__replies.push(event.data) })
+      })
+      const pdfObjects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+        '<< /Length 37 >>\nstream\nBT /F1 24 Tf 72 700 Td (Report) Tj ET\nendstream', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+      let pdf = '%PDF-1.4\n'
+      const offsets = pdfObjects.map((object, i) => { const at = pdf.length; pdf += `${i + 1} 0 obj\n${object}\nendobj\n`; return at })
+      const xref = pdf.length
+      pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.map((at) => `${String(at).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+      const handoffs = [
+        { app: 'cadcraft', label: 'CADCraft', name: 'plan.dxf', text: '0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n30\n0\n11\n100\n21\n100\n31\n0\n0\nENDSEC\n0\nEOF\n' },
+        { app: 'pdfcraft', label: 'PdfCraft', name: 'report.pdf', text: pdf },
+      ]
+      for (const { app, label, name, text } of handoffs) {
+        await gridFrame.evaluate(({ name, text }) => parent.postMessage({ type: 'gridcraft:handoff', name, bytes: new TextEncoder().encode(text).buffer }, location.origin), { name, text })
+        const target = page.locator(`iframe[data-app="${app}"]`)
+        await target.waitFor({ timeout: 60_000 })
+        assert.equal(new URL(await target.getAttribute('src'), origin).searchParams.get('host'), 'parent', `/office: ${label} is framed with ?host=parent`)
+        await page.locator('#office-notice').filter({ hasText: `${name} opened in ${label}.` }).waitFor({ timeout: 120_000 })
+        assert.equal(await page.locator(`#tab-${app}`).getAttribute('aria-selected'), 'true', `/office: the hand-off opens the ${label} tab`)
+        await gridFrame.waitForFunction((app) => window.__replies.some((reply) => reply.type === 'gridcraft:handoff-done' && reply.app === app), app, { timeout: 30_000 })
+        const saved = page.waitForEvent('download', { timeout: 30_000 })
+        await target.scrollIntoViewIfNeeded()
+        const box = await target.boundingBox()
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+        await page.keyboard.press('Control+s')
+        assert.equal((await saved).suggestedFilename(), name, `/office: a ${label} save downloads ${name}`)
+        await page.locator('#office-notice').filter({ hasText: `${label} saved ${name} to your Downloads.` }).waitFor()
+        console.log(`PASS page ${path}: ${name} handed off from GridCraft opens in ${label} (?host=parent), GridCraft hears it is done, and ${label}'s save downloads it`)
+      }
       continue
     }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })

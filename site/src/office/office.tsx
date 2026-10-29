@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { download, type Tool } from './library'
-import { CraftEditor, FramedEditor, type EditorsManifest } from '../editors/editor'
+import { download, framedBridge, ownerOf, type Tool } from './library'
+import { CraftEditor, FramedEditor, openFramedWhenReady, openWhenReady, sendToApp, type EditorsManifest, type Handoff } from '../editors/editor'
 
 // Tall enough to work in, short enough that the page around the editor stays reachable with the
 // wheel (an editor takes the wheel while the pointer is over it). Expand fills the window.
@@ -94,6 +94,39 @@ export function OfficeDesk() {
   const askClose = (tool: Tool) => framed[tool] || dirty[tool] ? setClosing(tool) : close(tool)
 
   const onFailed = useCallback((tool: Tool) => (message: string) => setError(`${getEditor(tool).label}: ${message}`), [])
+
+  // An app hands over a file another app edits: the page picks that app by the file's type, opens
+  // its tab, gives it the file and tells the sender. An editor here that can't be handed a file
+  // gets its tab opened and the file in Downloads, to open with its own File menu.
+  const handoff = useCallback(async (from: Tool, detail: Handoff) => {
+    const name = String(detail?.name || 'document')
+    const target = ownerOf(name)
+    const reply = (type: string, fields: Record<string, unknown>) => sendToApp(from, type, fields)
+    if (!target || target === from || !editors.some(editor => editor.id === target)) {
+      reply('failed', { error: `No other editor here opens ${name}.` })
+      return
+    }
+    const label = getEditor(target).label
+    setError(''); setActive(target); open(target)
+    try {
+      const bytes = detail.bytes instanceof ArrayBuffer ? detail.bytes : await detail.file!.arrayBuffer()
+      const takesFiles = framed[target] ? framedBridge.has(target) : !!manifest?.[target]
+      if (!takesFiles) {
+        download({ name, bytes })
+        setNotice(`${name} is for ${label}: it is in your Downloads; open it there with ${label}'s File menu.`)
+        reply('failed', { error: `${label} here can't be handed a file; it was saved to Downloads.` })
+        return
+      }
+      if (framed[target]) await openFramedWhenReady(target, name, bytes)
+      else await openWhenReady(target, name, bytes)
+      setNotice(`${name} opened in ${label}.`)
+      reply('handoff-done', { name, app: target })
+    } catch (e) {
+      const message = String((e as Error)?.message || e)
+      setError(`${label}: ${message}`)
+      reply('failed', { error: message })
+    }
+  }, [editors, framed, manifest])
   const activeManifest = framed[active] ?? manifest?.[active]
 
   return <div className="office-desk">
@@ -133,11 +166,16 @@ export function OfficeDesk() {
           <div key={editor.id} hidden={active !== editor.id}>
             {active === editor.id && !opened.has(editor.id) && <p className="office-closed">{editor.label} is closed. <button type="button" id="office-reopen" className="button" onClick={() => open(editor.id)}>Open {editor.label}</button></p>}
             {opened.has(editor.id) && framed[editor.id] &&
-              <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} expandRequest={expandRequests[editor.id]} />}
+              <FramedEditor app={editor.id} label={getEditor(editor.id).label} src={framed[editor.id]!.path} height={editorHeight} expandRequest={expandRequests[editor.id]}
+                hostBridge={framedBridge.has(editor.id)}
+                onSave={detail => handleSave(editor.id, detail)}
+                onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
+                onHandoff={detail => void handoff(editor.id, detail)} />}
             {opened.has(editor.id) && !framed[editor.id] && manifest?.[editor.id] && <CraftEditor app={editor.id} label={getEditor(editor.id).label} height={editorHeight} expandRequest={expandRequests[editor.id]}
               onSave={detail => { if (detail.bytes instanceof ArrayBuffer) handleSave(editor.id, detail) }}
               onDirty={value => setDirty(previous => ({ ...previous, [editor.id]: value }))}
-              onFailed={onFailed(editor.id)} />}
+              onFailed={onFailed(editor.id)}
+              onHandoff={detail => void handoff(editor.id, detail)} />}
           </div>
         ))}
         <p className="caption office-frame-note">Each editor opens files from this device with its own File menu and saves back to this device: your browser asks where, or puts the file in your Downloads.</p>
