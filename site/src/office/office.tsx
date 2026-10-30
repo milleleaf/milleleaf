@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { download, framedBridge, ownerOf, type Tool } from './library'
-import { CraftEditor, FramedEditor, openFramedWhenReady, openWhenReady, sendToApp, type EditorsManifest, type Handoff } from '../editors/editor'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { appWeightMiB, download, framedBridge, memoryBudgetMiB, ownerOf, type Tool } from './library'
+import { CraftEditor, FramedEditor, openFramedWhenReady, openWhenReady, sendToApp, wasmGrowthMiB, type EditorsManifest, type Handoff } from '../editors/editor'
 
 // Tall enough to work in, short enough that the page around the editor stays reachable with the
 // wheel (an editor takes the wheel while the pointer is over it). Expand fills the window.
@@ -27,8 +27,8 @@ const allEditors: { id: Tool; label: string; kind: string; group: string }[] = [
   { id: 'soundcraft', group: 'Video and sound', label: 'SoundCraft', kind: 'Audio' },
 ]
 const getEditor = (id: Tool) => allEditors.find(editor => editor.id === id)!
-// Most editors alive at once: each runs a whole app, and clicking through all of them crashed browsers.
-const LIVE_LIMIT = 3
+// A file kept to reopen an editor closed to make room is at most this large.
+const REOPEN_MAX_BYTES = 64 * 1024 * 1024
 
 export function OfficeDesk() {
   const [manifest, setManifest] = useState<EditorsManifest>()
@@ -40,8 +40,9 @@ export function OfficeDesk() {
   const [active, setActive] = useState<Tool>('gridcraft')
   // An editor starts when its tab is opened (each is tens to hundreds of megabytes, more with a
   // document) and stays alive until it is closed: closing removes its frame, which gives its memory
-  // back. At most LIVE_LIMIT stay alive (see the effect below), so clicking through the tabs can't
-  // run the browser out of memory.
+  // back. Together they stay within a memory budget for this device (see the effect below), so
+  // clicking through the tabs can't run the browser out of memory: clicking through all of them crashed
+  // browsers.
   const [opened, setOpened] = useState<Set<Tool>>(() => new Set(['gridcraft']))
   // The editors in the order they were last opened or shown, least recent first.
   const [recent, setRecent] = useState<Tool[]>(['gridcraft'])
@@ -52,6 +53,18 @@ export function OfficeDesk() {
   // The editor the page asks to close to make room, and the ones the reader chose to keep open.
   const [makingRoom, setMakingRoom] = useState<Tool>()
   const [kept, setKept] = useState<ReadonlySet<Tool>>(new Set())
+  // The memory the running editors may use together (set in the browser), and a beat every few seconds
+  // so an editor whose documents grow is weighed again.
+  const [budget, setBudget] = useState(1500)
+  useEffect(() => setBudget(memoryBudgetMiB()), [])
+  const [beat, setBeat] = useState(0)
+  useEffect(() => { const timer = setInterval(() => setBeat(n => n + 1), 5000); return () => clearInterval(timer) }, [])
+  const weight = (tool: Tool) => appWeightMiB[tool] + (framed[tool] ? wasmGrowthMiB(tool) : 0)
+  // The last file each editor that takes files was given or saved, so an editor closed to make room
+  // opens it again when its tab comes back.
+  const lastFile = useRef(new Map<Tool, { name: string; bytes: ArrayBuffer }>())
+  const remember = (tool: Tool, name: string, bytes: ArrayBuffer) => { if (bytes.byteLength <= REOPEN_MAX_BYTES) lastFile.current.set(tool, { name, bytes: bytes.slice(0) }) }
+  const [reopenWith, setReopenWith] = useState<ReadonlySet<Tool>>(new Set())
   // The editor waiting for the reader to confirm closing it.
   const [closing, setClosing] = useState<Tool>()
   const [notice, setNotice] = useState('')
@@ -93,6 +106,7 @@ export function OfficeDesk() {
   // the editor's own dirty reports only: an exported copy (a PDF, an image) leaves edits unsaved.
   const handleSave = useCallback((tool: Tool, detail: { name: string; bytes: ArrayBuffer }) => {
     download(detail)
+    remember(tool, detail.name, detail.bytes)
     setNotice(`${getEditor(tool).label} saved ${detail.name} to your Downloads.`)
   }, [])
 
@@ -104,17 +118,37 @@ export function OfficeDesk() {
     setMakingRoom(previous => previous === tool ? undefined : previous)
     setNotice(notice)
   }
-  // Over the limit, the editor used least recently (never the one on screen) closes: by itself when
-  // it reports no unsaved changes, otherwise only once the reader agrees.
+  // Over the budget, the editor used least recently (never the one on screen) closes: by itself when
+  // it reports no unsaved changes, otherwise only once the reader agrees. One that takes files reopens
+  // with its last one.
+  const takesFiles = (tool: Tool) => framed[tool] ? framedBridge.has(tool) : !!manifest?.[tool]
+  const closeForRoom = (tool: Tool) => {
+    const label = getEditor(tool).label, file = takesFiles(tool) ? lastFile.current.get(tool) : undefined
+    if (file) setReopenWith(previous => new Set(previous).add(tool))
+    close(tool, `${label} was closed to keep this page within its memory budget (about ${budget} MB on this device).${file ? ` Open its tab and ${file.name} opens again.` : ' Open its tab to start it again.'}`)
+  }
+  const using = [...opened].reduce((sum, tool) => sum + weight(tool), 0)
   useEffect(() => {
-    if (opened.size <= LIVE_LIMIT || makingRoom) return
+    if (using <= budget || makingRoom) return
     const oldest = recent.find(tool => opened.has(tool) && tool !== active && !kept.has(tool))
     if (!oldest) return
-    const label = getEditor(oldest).label
     const reportsUnsaved = !framed[oldest] || framedBridge.has(oldest)
-    if (reportsUnsaved && !dirty[oldest]) close(oldest, `${label} was closed to keep memory down (at most ${LIVE_LIMIT} apps run at once). Open its tab to start it again.`)
+    if (reportsUnsaved && !dirty[oldest]) closeForRoom(oldest)
     else setMakingRoom(oldest)
-  }, [opened, recent, active, kept, dirty, framed, makingRoom])
+  }, [opened, recent, active, kept, dirty, framed, makingRoom, budget, beat])
+  // An editor closed to make room gets its last file back once it runs again.
+  useEffect(() => {
+    for (const tool of reopenWith) {
+      if (!opened.has(tool)) continue
+      setReopenWith(previous => { const next = new Set(previous); next.delete(tool); return next })
+      const file = lastFile.current.get(tool)
+      if (!file) continue
+      const label = getEditor(tool).label
+      ;(framed[tool] ? openFramedWhenReady(tool, file.name, file.bytes.slice(0)) : openWhenReady(tool, file.name, file.bytes.slice(0)))
+        .then(() => setNotice(`${label} reopened with ${file.name}.`))
+        .catch(e => setError(`${label}: ${String((e as Error)?.message || e)}`))
+    }
+  }, [opened, reopenWith, framed])
   // A framed editor doesn't report unsaved changes, so closing it always asks; a page editor asks
   // only when it reports them.
   const askClose = (tool: Tool) => framed[tool] || dirty[tool] ? setClosing(tool) : close(tool)
@@ -143,6 +177,7 @@ export function OfficeDesk() {
         reply('failed', { error: `${label} here can't be handed a file; it was saved to Downloads.` })
         return
       }
+      remember(target, name, bytes)
       if (framed[target]) await openFramedWhenReady(target, name, bytes)
       else await openWhenReady(target, name, bytes)
       setNotice(`${name} opened in ${label}.`)
@@ -184,8 +219,8 @@ export function OfficeDesk() {
           {opened.has(active) && !closing && <button type="button" id="office-close" className="button secondary" onClick={() => askClose(active)}>Close {getEditor(active).label}</button>}
         </div>
         {makingRoom && !closing && <div id="office-room-confirm" role="alertdialog" aria-labelledby="office-room-question" className="office-close-confirm">
-          <p id="office-room-question">{opened.size} apps are running, and at most {LIVE_LIMIT} keep this page from running out of memory. Close {getEditor(makingRoom).label}, the one you used least recently? Anything you haven't saved in it will be lost.</p>
-          <button type="button" id="office-room-yes" className="button" onClick={() => close(makingRoom)}>Close {getEditor(makingRoom).label}</button>
+          <p id="office-room-question">The apps running here use about {Math.round(using)} MB, more than this page’s memory budget of about {budget} MB on this device. Close {getEditor(makingRoom).label}, the one you used least recently? Anything you haven't saved in it will be lost.</p>
+          <button type="button" id="office-room-yes" className="button" onClick={() => closeForRoom(makingRoom)}>Close {getEditor(makingRoom).label}</button>
           <button type="button" id="office-room-no" className="button secondary" onClick={() => { setKept(previous => new Set(previous).add(makingRoom)); setMakingRoom(undefined) }}>Keep it open</button>
         </div>}
         {closing && <div id="office-close-confirm" role="alertdialog" aria-labelledby="office-close-question" className="office-close-confirm">

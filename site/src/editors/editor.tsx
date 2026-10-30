@@ -172,6 +172,15 @@ export type Handoff = { name: string; file?: Blob; bytes?: ArrayBuffer; size?: n
 
 // Framed editors that speak the host messages: their frames, and those that said they are ready.
 const frames = new Map<string, HTMLIFrameElement>()
+// A framed app's WebAssembly memory, kept when its start-up script announces the module
+// (TrunkApplicationStarted; apps that start another way aren't seen), and its size then.
+const wasmMemory = new Map<string, { memory: WebAssembly.Memory; startMiB: number }>()
+// How far a framed app's WebAssembly memory has grown since it started, in MiB: what its documents
+// add to its measured weight. 0 when the app isn't seen.
+export function wasmGrowthMiB(app: string): number {
+  const seen = wasmMemory.get(app)
+  return seen ? Math.max(0, seen.memory.buffer.byteLength / 1048576 - seen.startMiB) : 0
+}
 const framesReady = new Set<string>()
 
 // Send one host message to an app, whichever way it runs: an event on its canvas in this page, or a
@@ -260,7 +269,7 @@ export function FramedEditor({ app, label, src, height, expandRequest, hostBridg
       if (kind === 'dirty') callbacks.current.onDirty?.(data.dirty === true)
     }
     addEventListener('message', onMessage)
-    return () => { removeEventListener('message', onMessage); framesReady.delete(app); if (frames.get(app) === element) frames.delete(app) }
+    return () => { removeEventListener('message', onMessage); framesReady.delete(app); wasmMemory.delete(app); if (frames.get(app) === element) frames.delete(app) }
   }, [app, hostBridge, attempt])
 
   // Ready once the app has started: its canvas has a size and its own loading notice is gone. An
@@ -283,6 +292,11 @@ export function FramedEditor({ app, label, src, height, expandRequest, hostBridg
         if (win && doc && doc.URL !== 'about:blank' && win !== watched) {
           watched?.removeEventListener('error', onError); watched?.removeEventListener('unhandledrejection', onRejection)
           watched = win; win.addEventListener('error', onError); win.addEventListener('unhandledrejection', onRejection)
+          wasmMemory.delete(app)
+          win.addEventListener('TrunkApplicationStarted', (event: Event) => {
+            const memory = (event as CustomEvent<{ wasm?: { memory?: WebAssembly.Memory } }>).detail?.wasm?.memory
+            if (memory) wasmMemory.set(app, { memory, startMiB: memory.buffer.byteLength / 1048576 })
+          })
         }
         // Phones and tablets open their keyboard for the app through craft-touch-keyboard.js, staged
         // beside the release. It goes in from here, so the release's own page stays unchanged (its

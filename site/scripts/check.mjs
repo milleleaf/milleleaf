@@ -178,6 +178,8 @@ try {
   // /office frames the real editors from their official release pages on this site (same-origin
   // connections only; a frame may only be one of this site's /apps/frame/ editor pages).
   const headers = await readFile('dist/client/_headers', 'utf8')
+  // /office budgets memory by the device; the check runs as a 2 GB device.
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 2, configurable: true }))
   for (const path of ['/flow', '/demo', '/office']) {
     const response = await page.goto(origin + path)
     const csp = response.headers()['content-security-policy']
@@ -260,29 +262,28 @@ try {
         await page.locator('#office-notice').filter({ hasText: `${label} saved ${name} to your Downloads.` }).waitFor()
         console.log(`PASS page ${path}: ${name} handed off from GridCraft opens in ${label} (?host=parent), GridCraft hears it is done, and ${label}'s save downloads it`)
       }
-      // At most three apps run at once: GridCraft, CADCraft and PdfCraft are running now. A fourth asks
-      // to close GridCraft (used least recently, and it can't report unsaved work); keeping it open is
-      // respected and not asked again. A fifth then closes the apps that report no unsaved work, by
-      // themselves, until three run, and GridCraft stays.
-      const running = () => page.locator('iframe[data-app]').count()
+      // The running apps stay within a memory budget for the device: this page reports 2 GB
+      // (navigator.deviceMemory), so the budget is 512 MB. GridCraft, CADCraft and PdfCraft run now (about
+      // 379 MB by their measured weights). SolidCraft (340) goes over: the page asks to close GridCraft
+      // (used least recently, and it can't report unsaved work); keeping it is respected, then CADCraft
+      // and PdfCraft, which report no unsaved work, close by themselves until the apps fit. CADCraft's
+      // tab then reopens it with the file it had, plan.dxf.
+      assert.equal(await page.evaluate(() => navigator.deviceMemory), 2, '/office: the check runs as a 2 GB device')
+      const running = (app) => page.locator(`iframe[data-app="${app}"]`).count()
       await page.locator('#office-full-window').uncheck()
-      await page.locator('#tab-wordcraft').click()
+      await page.locator('#tab-solidcraft').click()
       await page.locator('#office-room-confirm').filter({ hasText: 'GridCraft' }).waitFor({ timeout: 60_000 })
+      assert.match(await page.locator('#office-room-question').textContent(), /budget of about 512 MB/)
       await page.locator('#office-room-no').click()
-      assert.equal(await page.locator('iframe[data-app="gridcraft"]').count(), 1, '/office: Keep it open keeps GridCraft')
-      assert.equal(await page.locator('#office-room-confirm').count(), 0, '/office: a kept app is not asked about again')
-      await page.locator('#tab-designcraft').click()
-      await page.waitForFunction(() => document.querySelectorAll('iframe[data-app]').length <= 3 || document.querySelector('#office-room-confirm'), null, { timeout: 60_000 })
-      while (await page.locator('#office-room-confirm').count()) {
-        await page.locator('#office-room-yes').click()
-        await page.waitForTimeout(500)
-      }
-      assert.equal(await running(), 3, '/office: at most three apps run')
-      assert.equal(await page.locator('iframe[data-app="gridcraft"]').count(), 1, '/office: the kept app still runs')
-      assert.equal(await page.locator('iframe[data-app="designcraft"]').count(), 1, '/office: the app just opened runs')
-      assert.match(await page.locator('#office-notice').textContent(), /was closed to keep memory down|is closed and its memory is released/)
+      await page.waitForFunction(() => !document.querySelector('iframe[data-app="cadcraft"]') && !document.querySelector('iframe[data-app="pdfcraft"]') || document.querySelector('#office-room-confirm'), null, { timeout: 60_000 })
+      while (await page.locator('#office-room-confirm').count()) { await page.locator('#office-room-yes').click(); await page.waitForTimeout(500) }
+      assert.equal(await running('gridcraft'), 1, '/office: the kept app still runs')
+      assert.equal(await running('solidcraft'), 1, '/office: the app just opened runs')
+      assert.equal((await running('cadcraft')) + (await running('pdfcraft')), 0, '/office: the apps that report no unsaved work closed to make room')
+      await page.locator('#tab-cadcraft').click()
+      await page.locator('#office-notice').filter({ hasText: 'CADCraft reopened with plan.dxf.' }).waitFor({ timeout: 120_000 })
       await page.locator('#office-full-window').check()
-      console.log(`PASS page ${path}: at most three apps run; the least recently used goes first, by itself when it reports no unsaved work, and a kept app stays`)
+      console.log(`PASS page ${path}: the apps stay within the device's memory budget (512 MB on a 2 GB device); the least recently used goes first, by itself when it reports no unsaved work, a kept app stays, and CADCraft reopens with its file`)
       continue
     }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
