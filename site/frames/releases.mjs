@@ -14,6 +14,10 @@ const [mode, dir] = process.argv.slice(2)
 // The GitHub owner of each app's repository: the storytold org unless named here.
 const owners = { solidcraft: 'tangency-labs' }
 const repo = (app) => `${owners[app] ?? 'storytold'}/${app}`
+// Releases known not to start here, kept off until a newer one comes out; each with its issue.
+const skip = {
+  photocraft: { '0.17.0': 'storytold/photocraft#10017: app/photocraft-web.js imports ./snippets/…/inline0.js, which the zip ships only at the top level' },
+}
 
 async function get(url, init) {
   const response = await fetch(url, init)
@@ -27,6 +31,11 @@ if (mode === 'latest') {
   for (const app of Object.keys(versions)) {
     const release = await (await get(`https://api.github.com/repos/${repo(app)}/releases/latest`, { headers })).json()
     const version = release.tag_name.replace(/^v/, '')
+    if (skip[app]?.[version]) {
+      console.log(`${app}: ${version} skipped (${skip[app][version]}), keeping ${versions[app]}`)
+      next[app] = versions[app]
+      continue
+    }
     if (!release.assets.some((asset) => asset.name === `${app}-web-${version}.zip`)) {
       console.log(`${app}: ${version} has no web build, keeping ${versions[app]}`)
       next[app] = versions[app]
