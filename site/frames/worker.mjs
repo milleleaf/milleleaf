@@ -19,7 +19,10 @@ export default {
           ETag: `"${entry.sha256}"`,
           'X-Content-Type-Options': 'nosniff',
         }
-        if (request.headers.get('If-None-Match') === headers.ETag) return new Response(null, { status: 304, headers })
+        // Cloudflare's edge weakens the tag it passes on (W/"…"), and browsers send that form back:
+        // compare without the W/ (weak comparison, RFC 9110 §13.1.2), in a list or alone.
+        const tags = (request.headers.get('If-None-Match') || '').split(',').map((tag) => tag.trim().replace(/^W\//, ''))
+        if (tags.includes(headers.ETag) || tags.includes('*')) return new Response(null, { status: 304, headers })
         const parts = await Promise.all(entry.parts.map((part) => env.ASSETS.fetch(new URL(part, url))))
         const failed = parts.find((r) => !r.ok)
         if (failed) return new Response(`${failed.url}: ${failed.status}`, { status: 502 })
