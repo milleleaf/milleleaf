@@ -3,8 +3,8 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
-const paths = ['/', '/flow', '/demo', '/office', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/keystone', '/standards']
-const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'Fourteen editors.Nothing to install.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
+const paths = ['/', '/flow', '/demo', '/office', '/how-it-works', '/compare', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/keystone', '/standards']
+const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'Fourteen editors.Nothing to install.', 'One source. Every presentation.', 'Compared with other ways.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -61,19 +61,25 @@ try {
   for (const path of ['/', '/how-it-works']) {
     await staticPage.goto(origin + path)
     const copy = await staticPage.locator('main').innerText()
-    assert(copy.includes('Why not just open it in another app?'))
     assert(copy.includes('Microsoft Office: checked with real Word/Excel/PowerPoint 16 files'))
     assert(copy.includes('LibreOffice: checked with LibreOffice re-saves and edits'))
     assert(copy.includes('ArtCraft apps: files written through WordCraft, GridCraft and DeckCraft'))
     assert(!copy.includes('—'), 'No em dashes')
   }
+  // The homepage says what is on the site; the comparison has its own page.
   await staticPage.goto(origin)
+  const here = await staticPage.locator('.whats-here').innerText()
+  for (const text of ['Fourteen apps in your browser.', 'The Milleleaf tool']) assert(here.includes(text), `homepage: ${text}`)
+  assert.equal(await staticPage.locator('.whats-here a[href="/compare"]').count(), 1, 'homepage links to the comparison')
+  assert.equal(await staticPage.locator('.alternatives-table').count(), 0, 'the comparison table is not on the homepage')
+  assert((await staticPage.locator('.app-families').innerText()).includes('Being checked in the browser flow'))
+  await staticPage.goto(origin + '/compare')
+  assert(!(await staticPage.locator('main').innerText()).includes('—'), 'No em dashes on /compare')
   assert.equal(await staticPage.locator('.alternatives-table tbody tr').count(), 5)
   assert.deepEqual(await staticPage.locator('.alternatives-table tbody th').allTextContents(), ['Copy/paste', 'Paste Link', 'Import/export', 'Plugins', 'Milleleaf'])
   assert.equal(await staticPage.locator('.alternatives-table tbody td small').count(), 20)
-  assert((await staticPage.locator('.app-families').innerText()).includes('Being checked in the browser flow'))
-  await staticPage.goto(origin + '/how-it-works')
-  for (const text of ['Why not copy and paste?', 'Why not Paste Link or linked objects?', 'Why not import and export?', 'Why not a plugin or add-in?', 'What Milleleaf adds', '400 cells', 'not documented', 'signing is optional today']) assert((await staticPage.locator('main').innerText()).includes(text))
+  await staticPage.goto(origin + '/compare')
+  for (const text of ['Why not just open it in another app?', 'Why not copy and paste?', 'Why not Paste Link or linked objects?', 'Why not import and export?', 'Why not a plugin or add-in?', 'What Milleleaf adds', '400 cells', 'not documented', 'signing is optional today']) assert((await staticPage.locator('main').innerText()).includes(text))
   assert(evidence.flow, 'Real mixed-app flow generated')
   for (const snapshot of [evidence.flow.before, evidence.flow.after]) {
     assert.equal(snapshot.checks.length, 3)
@@ -113,7 +119,7 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow ${path} ${width} ${theme}`)
       assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior), 'auto')
       assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), theme)
-      if (path === '/') {
+      if (path === '/compare') {
         if (width === 400) assert((await page.locator('.alternatives-table caption').boundingBox()).width >= width * .75, 'Mobile caption uses the table width')
         if (width === 1280) assert.equal(await page.locator('.alternatives-table thead th').first().evaluate(el => getComputedStyle(el).color), await page.locator('.alternatives-band h2').evaluate(el => getComputedStyle(el).color), 'Table header uses dark ink on mint')
         for (const cell of await page.locator('.alternatives-table td').all()) assert(await cell.locator('small').isVisible(), 'Every comparison cell has visible evidence')

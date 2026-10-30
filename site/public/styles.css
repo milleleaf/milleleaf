@@ -118,7 +118,8 @@ ml-revisions{display:block;min-height:55px}
 .article-links{display:flex;flex-wrap:wrap;gap:12px 28px}
 .article-links a{font-size:16px;font-weight:550}
 .page-how-it-works .page-leaves{margin-top:65px}
-.page-how-it-works .page-leaf:nth-child(3){background:var(--back-paper);padding:35px;margin:10px 0;box-shadow:10px 10px 0 var(--mint)}
+.page-compare .page-leaves{margin-top:65px}
+.page-compare .page-leaf:nth-child(2){background:var(--back-paper);padding:35px;margin:10px 0;box-shadow:10px 10px 0 var(--mint)}
 .data-sheets{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;margin:15px 20px 65px 0;align-items:start}
 .map-sheet{padding:38px 40px;background:var(--mint);color:var(--tool-ink);box-shadow:12px 12px 0 var(--teal)}
 .map-sheet span{font-size:15px}
@@ -191,7 +192,7 @@ ml-revisions{display:block;min-height:55px}
   .open-work{padding-block:50px;display:block}.open-work>h2{margin-bottom:35px}.open-tool{margin-bottom:30px}.open-data{padding:28px;margin:0 12px 45px 0;transform:none;box-shadow:7px 7px 0 var(--teal)}.open-data h3{font-size:var(--t4)}.open-method{padding-top:25px}.release-note{padding-block:35px 45px}
   .content-page{padding-block:30px 50px}.breadcrumbs{font-size:12px;margin-bottom:28px;gap:8px}.page-heading{padding-bottom:30px}.page-topic{font-size:15px;margin-bottom:14px}.page-heading h1{font-size:var(--t5)}.lead{font-size:19px}
   .page-leaf{display:block;padding:28px 0}.page-leaf h2{font-size:var(--t3);margin-bottom:18px}.page-leaf p{font-size:16px}.article-links{display:grid;gap:13px}.article-links a{font-size:15px}
-  .page-how-it-works .page-leaves{margin-top:45px}.page-how-it-works .page-leaf:nth-child(3){padding:25px 20px;margin-right:10px}
+  .page-how-it-works .page-leaves{margin-top:45px}.page-compare .page-leaves{margin-top:45px}.page-compare .page-leaf:nth-child(2){padding:25px 20px;margin-right:10px}
   .data-sheets{grid-template-columns:1fr;gap:30px;margin-right:12px;margin-bottom:45px}.map-sheet{padding:28px;box-shadow:8px 8px 0 var(--teal)}.map-sheet h2{font-size:var(--t4);margin-block:25px}.world-sheet{margin-top:0;margin-left:24px;box-shadow:8px 8px 0 var(--mint)}
   .data-page .page-leaf{padding:25px 20px;margin-right:8px}.page-data-round-trip .comparison-stack{margin-bottom:45px}
   .evidence-ladder{margin-right:45px;margin-bottom:50px}.evidence-ladder li{display:block;padding:18px;font-size:18px}.evidence-ladder strong,.evidence-ladder span{display:block}.evidence-ladder span{font-size:15px;margin-top:7px}.evidence-ladder li:nth-child(6){margin-left:40px;margin-right:-40px}
