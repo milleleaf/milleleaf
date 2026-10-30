@@ -6,7 +6,7 @@ import { CraftEditor, FramedEditor, openFramedWhenReady, openWhenReady, sendToAp
 // wheel (an editor takes the wheel while the pointer is over it). Expand fills the window.
 const editorHeight = 'min(720px, calc(100vh - 160px))'
 
-// /office: the thirteen Craft editors, each used on its own. Each runs from its official release page
+// /office: the fourteen Craft editors, each used on its own. Each runs from its official release page
 // in a same-origin frame, so the site's styles never reach the app; a page-host build is used only for
 // an editor with no staged release.
 // Element ids are what web checks select by. An editor shows only when its build is staged.
@@ -16,6 +16,7 @@ const allEditors: { id: Tool; label: string; kind: string; group: string }[] = [
   { id: 'deckcraft', group: 'Office', label: 'DeckCraft', kind: 'Presentations' },
   { id: 'pdfcraft', group: 'Office', label: 'PdfCraft', kind: 'PDFs' },
   { id: 'cadcraft', group: 'Drawing and design', label: 'CADCraft', kind: 'CAD drawings' },
+  { id: 'solidcraft', group: 'Drawing and design', label: 'SolidCraft', kind: 'Parametric 3D CAD' },
   { id: 'photocraft', group: 'Photo', label: 'PhotoCraft', kind: 'Photo editing' },
   { id: 'lightcraft', group: 'Photo', label: 'LightCraft', kind: 'Photo develop' },
   { id: 'vectorcraft', group: 'Drawing and design', label: 'VectorCraft', kind: 'Vector art' },
@@ -26,6 +27,8 @@ const allEditors: { id: Tool; label: string; kind: string; group: string }[] = [
   { id: 'soundcraft', group: 'Video and sound', label: 'SoundCraft', kind: 'Audio' },
 ]
 const getEditor = (id: Tool) => allEditors.find(editor => editor.id === id)!
+// Most editors alive at once: each runs a whole app, and clicking through all of them crashed browsers.
+const LIVE_LIMIT = 3
 
 export function OfficeDesk() {
   const [manifest, setManifest] = useState<EditorsManifest>()
@@ -35,10 +38,20 @@ export function OfficeDesk() {
   // Only the editors whose builds are staged get a tab; an official release wins over a page-host build.
   const editors = useMemo(() => allEditors.filter(editor => manifest?.[editor.id] || framed[editor.id]), [manifest, framed])
   const [active, setActive] = useState<Tool>('gridcraft')
-  // An editor starts when its tab is opened (each is tens of megabytes, more with a document) and
-  // stays alive until it is closed: closing removes its frame, which gives its memory back.
+  // An editor starts when its tab is opened (each is tens to hundreds of megabytes, more with a
+  // document) and stays alive until it is closed: closing removes its frame, which gives its memory
+  // back. At most LIVE_LIMIT stay alive (see the effect below), so clicking through the tabs can't
+  // run the browser out of memory.
   const [opened, setOpened] = useState<Set<Tool>>(() => new Set(['gridcraft']))
-  const open = (tool: Tool) => setOpened(previous => previous.has(tool) ? previous : new Set(previous).add(tool))
+  // The editors in the order they were last opened or shown, least recent first.
+  const [recent, setRecent] = useState<Tool[]>(['gridcraft'])
+  const open = (tool: Tool) => {
+    setRecent(previous => [...previous.filter(t => t !== tool), tool])
+    setOpened(previous => previous.has(tool) ? previous : new Set(previous).add(tool))
+  }
+  // The editor the page asks to close to make room, and the ones the reader chose to keep open.
+  const [makingRoom, setMakingRoom] = useState<Tool>()
+  const [kept, setKept] = useState<ReadonlySet<Tool>>(new Set())
   // The editor waiting for the reader to confirm closing it.
   const [closing, setClosing] = useState<Tool>()
   const [notice, setNotice] = useState('')
@@ -83,12 +96,25 @@ export function OfficeDesk() {
     setNotice(`${getEditor(tool).label} saved ${detail.name} to your Downloads.`)
   }, [])
 
-  const close = (tool: Tool) => {
+  const close = (tool: Tool, notice = `${getEditor(tool).label} is closed and its memory is released. Open its tab to start it again.`) => {
     setOpened(previous => { const next = new Set(previous); next.delete(tool); return next })
     setDirty(previous => ({ ...previous, [tool]: false }))
+    setKept(previous => { const next = new Set(previous); next.delete(tool); return next })
     setClosing(undefined)
-    setNotice(`${getEditor(tool).label} is closed and its memory is released. Open its tab to start it again.`)
+    setMakingRoom(previous => previous === tool ? undefined : previous)
+    setNotice(notice)
   }
+  // Over the limit, the editor used least recently (never the one on screen) closes: by itself when
+  // it reports no unsaved changes, otherwise only once the reader agrees.
+  useEffect(() => {
+    if (opened.size <= LIVE_LIMIT || makingRoom) return
+    const oldest = recent.find(tool => opened.has(tool) && tool !== active && !kept.has(tool))
+    if (!oldest) return
+    const label = getEditor(oldest).label
+    const reportsUnsaved = !framed[oldest] || framedBridge.has(oldest)
+    if (reportsUnsaved && !dirty[oldest]) close(oldest, `${label} was closed to keep memory down (at most ${LIVE_LIMIT} apps run at once). Open its tab to start it again.`)
+    else setMakingRoom(oldest)
+  }, [opened, recent, active, kept, dirty, framed, makingRoom])
   // A framed editor doesn't report unsaved changes, so closing it always asks; a page editor asks
   // only when it reports them.
   const askClose = (tool: Tool) => framed[tool] || dirty[tool] ? setClosing(tool) : close(tool)
@@ -157,6 +183,11 @@ export function OfficeDesk() {
           <p id="office-editor-name" className="caption">{activeManifest ? `${getEditor(active).label} ${activeManifest.version} · ${getEditor(active).kind}` : getEditor(active).label}</p>
           {opened.has(active) && !closing && <button type="button" id="office-close" className="button secondary" onClick={() => askClose(active)}>Close {getEditor(active).label}</button>}
         </div>
+        {makingRoom && !closing && <div id="office-room-confirm" role="alertdialog" aria-labelledby="office-room-question" className="office-close-confirm">
+          <p id="office-room-question">{opened.size} apps are running, and at most {LIVE_LIMIT} keep this page from running out of memory. Close {getEditor(makingRoom).label}, the one you used least recently? Anything you haven't saved in it will be lost.</p>
+          <button type="button" id="office-room-yes" className="button" onClick={() => close(makingRoom)}>Close {getEditor(makingRoom).label}</button>
+          <button type="button" id="office-room-no" className="button secondary" onClick={() => { setKept(previous => new Set(previous).add(makingRoom)); setMakingRoom(undefined) }}>Keep it open</button>
+        </div>}
         {closing && <div id="office-close-confirm" role="alertdialog" aria-labelledby="office-close-question" className="office-close-confirm">
           <p id="office-close-question">Close {getEditor(closing).label}? Anything you haven't saved in it will be lost.</p>
           <button type="button" id="office-close-yes" className="button" onClick={() => close(closing)}>Close</button>

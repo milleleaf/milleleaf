@@ -11,6 +11,9 @@ const here = import.meta.dirname
 const versionsFile = path.join(here, 'versions.json')
 const versions = JSON.parse(await readFile(versionsFile, 'utf8'))
 const [mode, dir] = process.argv.slice(2)
+// The GitHub owner of each app's repository: the storytold org unless named here.
+const owners = { solidcraft: 'tangency-labs' }
+const repo = (app) => `${owners[app] ?? 'storytold'}/${app}`
 
 async function get(url, init) {
   const response = await fetch(url, init)
@@ -22,7 +25,7 @@ if (mode === 'latest') {
   const headers = { Accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) }
   const next = {}
   for (const app of Object.keys(versions)) {
-    const release = await (await get(`https://api.github.com/repos/storytold/${app}/releases/latest`, { headers })).json()
+    const release = await (await get(`https://api.github.com/repos/${repo(app)}/releases/latest`, { headers })).json()
     const version = release.tag_name.replace(/^v/, '')
     if (!release.assets.some((asset) => asset.name === `${app}-web-${version}.zip`)) {
       console.log(`${app}: ${version} has no web build, keeping ${versions[app]}`)
@@ -35,7 +38,7 @@ if (mode === 'latest') {
   await writeFile(versionsFile, JSON.stringify(next, null, 2) + '\n')
 } else if (mode === 'fetch' && dir) {
   for (const [app, version] of Object.entries(versions)) {
-    const base = `https://github.com/storytold/${app}/releases/download/v${version}`
+    const base = `https://github.com/${repo(app)}/releases/download/v${version}`
     const name = `${app}-web-${version}.zip`
     const sums = await (await get(`${base}/SHA256SUMS.txt`)).text()
     const expected = sums.split('\n').map((line) => line.trim().split(/\s+/)).find(([, file]) => file === name)?.[0]

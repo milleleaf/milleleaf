@@ -70,6 +70,8 @@ try {
   })
   const tablet = await touch.newPage()
   await tablet.goto(`${origin}/apps/frame/gridcraft/`)
+  // /office adds the keyboard script to each app's page (the release's page is served unchanged); do the same here.
+  await tablet.addScriptTag({ url: `${origin}/apps/frame/gridcraft/craft-touch-keyboard.js` })
   await tablet.locator('canvas').first().waitFor({ timeout: 180_000 })
   await tablet.waitForFunction(() => !!document.querySelector('input[type=text]'), null, { timeout: 120_000 })
   await tablet.waitForTimeout(5000)

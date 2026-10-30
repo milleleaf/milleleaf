@@ -3,7 +3,9 @@
 {
   "name": "milleleaf-apps",
   "compatibility_date": "2026-10-26",
-  "assets": { "directory": "./dist" },
+  // worker.mjs answers only the large wasm files staged as gzip parts; every other file is an asset.
+  "main": "./worker.mjs",
+  "assets": { "directory": "./dist", "binding": "ASSETS" },
   "routes": [
     { "pattern": "milleleaf.com/apps/frame/*", "zone_name": "milleleaf.com" },
     { "pattern": "www.milleleaf.com/apps/frame/*", "zone_name": "milleleaf.com" }

@@ -1,8 +1,9 @@
-export type Tool = 'wordcraft' | 'gridcraft' | 'deckcraft' | 'pdfcraft' | 'cadcraft' | 'designcraft' | 'effectcraft' | 'figcraft' | 'filmcraft' | 'lightcraft' | 'photocraft' | 'soundcraft' | 'vectorcraft'
+export type Tool = 'wordcraft' | 'gridcraft' | 'deckcraft' | 'pdfcraft' | 'cadcraft' | 'designcraft' | 'effectcraft' | 'figcraft' | 'filmcraft' | 'lightcraft' | 'photocraft' | 'solidcraft' | 'soundcraft' | 'vectorcraft'
 
 // Which editor edits a file type, for a file one app hands to another (an app that only references a
 // file, such as a drawing placed in a model, keeps reading it itself). Only types an editor here opens.
-const owners: Record<string, Tool> = { dwg: 'cadcraft', dxf: 'cadcraft', xlsx: 'gridcraft', xls: 'gridcraft', ods: 'gridcraft', csv: 'gridcraft', pdf: 'pdfcraft', docx: 'wordcraft' }
+const owners: Record<string, Tool> = { dwg: 'cadcraft', dxf: 'cadcraft', xlsx: 'gridcraft', xls: 'gridcraft', ods: 'gridcraft', csv: 'gridcraft', pdf: 'pdfcraft', docx: 'wordcraft',
+  sc: 'solidcraft', step: 'solidcraft', stp: 'solidcraft', iges: 'solidcraft', igs: 'solidcraft', '3mf': 'solidcraft', stl: 'solidcraft' }
 export function ownerOf(name: string): Tool | undefined {
   const dot = name.lastIndexOf('.')
   return dot > 0 ? owners[name.slice(dot + 1).toLowerCase()] : undefined

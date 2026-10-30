@@ -284,6 +284,15 @@ export function FramedEditor({ app, label, src, height, expandRequest, hostBridg
           watched?.removeEventListener('error', onError); watched?.removeEventListener('unhandledrejection', onRejection)
           watched = win; win.addEventListener('error', onError); win.addEventListener('unhandledrejection', onRejection)
         }
+        // Phones and tablets open their keyboard for the app through craft-touch-keyboard.js, staged
+        // beside the release. It goes in from here, so the release's own page stays unchanged (its
+        // service worker checks that page against the release).
+        if (doc && doc.URL !== 'about:blank' && (doc.head || doc.body) && !doc.getElementById('craft-touch-keyboard')) {
+          const script = doc.createElement('script')
+          script.id = 'craft-touch-keyboard'
+          script.src = new URL('craft-touch-keyboard.js', doc.URL).href
+          ;(doc.head || doc.body)!.appendChild(script)
+        }
         const canvas = doc?.querySelector('canvas'), notice = doc?.querySelector(`#${app}_loading`)
         if (canvas && canvas.width > 0 && canvas.height > 0 && !(notice && (notice as HTMLElement).offsetParent)) { stopped = true; setState('ready'); return }
       } catch { /* Not reachable yet. */ }

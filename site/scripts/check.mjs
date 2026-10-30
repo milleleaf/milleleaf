@@ -4,7 +4,7 @@ import { chromium } from '@playwright/test'
 import { serve } from './serve.mjs'
 
 const paths = ['/', '/flow', '/demo', '/office', '/how-it-works', '/data', '/data/round-trip', '/data/worldviews', '/data/datasets', '/method', '/docs', '/docs/getting-started', '/status', '/about', '/privacy', '/keystone', '/standards']
-const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'Thirteen editors.Nothing to install.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
+const headings = ['Make it once.Use it in every app.', 'Make it once.Use it in every app.', 'Follow the file.See what changed.', 'Fourteen editors.Nothing to install.', 'One source. Every presentation.', 'Follow the data to its source.', 'What survives the save?', 'Real places. Sources in view.', 'Datasets and their terms.', 'Make the claim the evidence supports.', 'Start with a file you can check.', 'Try it. Inspect what comes back.', 'Built. Checked. Still to come.', 'Useful tools. Evidence in view.', 'We collect nothing about you.', 'Keystone: openBIM ecosystem', 'Standards, with the checks beside them.']
 const { server, origin } = await serve()
 const browser = await chromium.launch({ headless: true })
 const captures = []
@@ -189,7 +189,8 @@ try {
       await page.locator('iframe[data-app="gridcraft"]').waitFor({ timeout: 60_000 })
       const frames = await page.locator('iframe').evaluateAll((elements) => elements.map((element) => element.src))
       for (const src of frames) assert(new URL(src).origin === origin && new URL(src).pathname.startsWith('/apps/frame/'), `${path}: only this site's editor pages may be framed, found ${src}`)
-      console.log(`PASS page ${path}: office desk under the strict policy, site layout, ${frames.length} framed editor(s) from this site`)
+      await page.frameLocator('iframe[data-app="gridcraft"]').locator('script#craft-touch-keyboard').waitFor({ state: 'attached', timeout: 60_000 })
+      console.log(`PASS page ${path}: office desk under the strict policy, site layout, ${frames.length} framed editor(s) from this site, each given the touch keyboard script`)
       // Closing an editor removes its frame (its memory goes back); a framed editor can't report
       // unsaved work, so closing it asks first, and its tab opens it again.
       await page.locator('#office-close').click()
@@ -259,6 +260,29 @@ try {
         await page.locator('#office-notice').filter({ hasText: `${label} saved ${name} to your Downloads.` }).waitFor()
         console.log(`PASS page ${path}: ${name} handed off from GridCraft opens in ${label} (?host=parent), GridCraft hears it is done, and ${label}'s save downloads it`)
       }
+      // At most three apps run at once: GridCraft, CADCraft and PdfCraft are running now. A fourth asks
+      // to close GridCraft (used least recently, and it can't report unsaved work); keeping it open is
+      // respected and not asked again. A fifth then closes the apps that report no unsaved work, by
+      // themselves, until three run, and GridCraft stays.
+      const running = () => page.locator('iframe[data-app]').count()
+      await page.locator('#office-full-window').uncheck()
+      await page.locator('#tab-wordcraft').click()
+      await page.locator('#office-room-confirm').filter({ hasText: 'GridCraft' }).waitFor({ timeout: 60_000 })
+      await page.locator('#office-room-no').click()
+      assert.equal(await page.locator('iframe[data-app="gridcraft"]').count(), 1, '/office: Keep it open keeps GridCraft')
+      assert.equal(await page.locator('#office-room-confirm').count(), 0, '/office: a kept app is not asked about again')
+      await page.locator('#tab-designcraft').click()
+      await page.waitForFunction(() => document.querySelectorAll('iframe[data-app]').length <= 3 || document.querySelector('#office-room-confirm'), null, { timeout: 60_000 })
+      while (await page.locator('#office-room-confirm').count()) {
+        await page.locator('#office-room-yes').click()
+        await page.waitForTimeout(500)
+      }
+      assert.equal(await running(), 3, '/office: at most three apps run')
+      assert.equal(await page.locator('iframe[data-app="gridcraft"]').count(), 1, '/office: the kept app still runs')
+      assert.equal(await page.locator('iframe[data-app="designcraft"]').count(), 1, '/office: the app just opened runs')
+      assert.match(await page.locator('#office-notice').textContent(), /was closed to keep memory down|is closed and its memory is released/)
+      await page.locator('#office-full-window').check()
+      console.log(`PASS page ${path}: at most three apps run; the least recently used goes first, by itself when it reports no unsaved work, and a kept app stays`)
       continue
     }
     await page.locator('#status').filter({ hasText: /^Ready\./ }).waitFor({ timeout: 60_000 })
@@ -281,6 +305,8 @@ try {
     })
     const grid = await touch.newPage()
     await grid.goto(origin + '/apps/frame/gridcraft/')
+  // /office adds the keyboard script to each app's page (the release's page is served unchanged); do the same here.
+    await grid.addScriptTag({ url: origin + '/apps/frame/gridcraft/craft-touch-keyboard.js' })
     await grid.locator('canvas').first().waitFor({ timeout: 120_000 })
     await grid.waitForFunction(() => !!document.querySelector('input[type=text]'), null, { timeout: 120_000 })
     await grid.waitForTimeout(5000)
@@ -293,6 +319,26 @@ try {
     assert.equal(await active(), 'canvas', 'a tap on the ribbon hands focus back to the app')
     console.log('PASS touch keyboard: GridCraft focuses its text field during the tap that starts editing')
     await touch.close()
+  }
+  // Apps that ship a service worker (EffectCraft, SolidCraft) get it working: the release is served
+  // unchanged, so its worker finds every file it lists with the hash it expects, installs, and the app
+  // then starts again with the network off.
+  for (const app of ['effectcraft', 'solidcraft']) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    const tab = await context.newPage()
+    await tab.goto(`${origin}/apps/frame/${app}/`)
+    await tab.locator('canvas').first().waitFor({ timeout: 180_000 })
+    const state = await tab.evaluate(() => new Promise((resolve) => {
+      const done = () => navigator.serviceWorker.getRegistration().then((r) => r?.active?.state === 'activated' && resolve('activated'))
+      navigator.serviceWorker.ready.then(done)
+      setTimeout(() => navigator.serviceWorker.getRegistration().then((r) => resolve(r?.installing?.state || r?.waiting?.state || r?.active?.state || 'none')), 170_000)
+    }))
+    assert.equal(state, 'activated', `${app}: its service worker installs and activates`)
+    await context.setOffline(true)
+    await tab.reload()
+    await tab.waitForFunction(() => { const c = document.querySelector('canvas'); return c && c.width > 0 && c.height > 0 }, null, { timeout: 120_000 })
+    console.log(`PASS ${app}: its service worker installs from the unchanged release, and the app starts again offline`)
+    await context.close()
   }
   // The office desk must appear in the main navigation alongside the demos.
   await page.goto(origin + '/')

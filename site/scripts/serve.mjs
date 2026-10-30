@@ -21,6 +21,8 @@ async function headerRules(root) {
 export async function serve(directory = 'dist/client', port = 0, onRequest) {
   const root = resolve(directory)
   const rules = await headerRules(root)
+  // Large app wasm staged as gzip parts, answered at its own URL as frames/worker.mjs does.
+  const wasmParts = JSON.parse(await readFile(resolve(root, 'apps/frame/wasm-parts.json'), 'utf8').catch(() => '{}'))
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.png': 'image/png', '.wasm': 'application/wasm', '.json': 'application/json' }
   const server = createServer(async (req, res) => {
     onRequest?.({ method: req.method, url: req.url })
@@ -29,6 +31,15 @@ export async function serve(directory = 'dist/client', port = 0, onRequest) {
       if (pattern === pathname || (pattern.endsWith('*') && pathname.startsWith(pattern.slice(0, -1)))) for (const [name, value] of Object.entries(values)) res.setHeader(name, value)
     }
     if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405).end(); return }
+    const joined = wasmParts[pathname]
+    if (joined) {
+      try {
+        const parts = await Promise.all(joined.parts.map(part => readFile(resolve(root, '.' + pathname, '..', part))))
+        res.writeHead(200, { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip', ETag: `"${joined.sha256}"` })
+        res.end(req.method === 'HEAD' ? undefined : Buffer.concat(parts))
+      } catch { res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('Missing wasm parts') }
+      return
+    }
     try {
       let file = resolve(root, '.' + pathname)
       if (file !== root && !file.startsWith(root + sep)) throw new Error('Outside root')

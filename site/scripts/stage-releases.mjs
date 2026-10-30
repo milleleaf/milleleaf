@@ -7,14 +7,16 @@
 //
 // The host rejects any file over 25 MiB, and most apps' wasm is larger. So every wasm over 1 MiB
 // is gzipped at level 9 and, if still too large, cut into 20 MiB parts; the plain wasm is not
-// staged. A small script, run first in each app's page, answers the app's own fetch of that wasm
-// from the gzip (its parts joined) through DecompressionStream, so the release's loader is
-// untouched. The wasm's preload link goes, since the file it names is no longer there.
+// staged. wasm-parts.json lists each one's parts and SHA-256: the server (frames/worker.mjs, and
+// scripts/serve.mjs for the checks) answers the wasm's own URL with them joined as gzip. Every
+// other file is the release's own, unchanged, so the apps' service workers find the files they list.
 //
-// Every app's page also loads scripts/craft-touch-keyboard.js first, so phones and tablets open their
-// on-screen keyboard when the app wants text (see that file).
+// Each app's folder also gets scripts/craft-touch-keyboard.js, which /office adds to the app's page
+// so phones and tablets open their on-screen keyboard when the app wants text (see that file).
 
+import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
+import { readFileSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat, writeFile, cp } from 'node:fs/promises'
 import path from 'node:path'
 import { frameRule } from './frame-csp.mjs'
@@ -31,30 +33,6 @@ if (!src) {
 const site = path.resolve(import.meta.dirname, '..')
 const out = process.env.RELEASES_OUT ? path.resolve(process.env.RELEASES_OUT) : path.join(site, 'public', 'apps', 'frame')
 
-// Runs before the app's modules; MAP is filled in per app.
-const shim = `// Answers this app's fetch of its wasm from the gzipped copy (or its parts) staged beside it.
-(() => {
-  const map = MAP
-  const original = window.fetch.bind(window)
-  window.fetch = (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), location.href)
-    const parts = url.origin === location.origin && map[url.pathname.split('/').pop()]
-    if (!parts) return original(input, init)
-    return (async () => {
-      const responses = await Promise.all(parts.map((part) => original(new URL(part, url))))
-      const failed = responses.find((r) => !r.ok)
-      if (failed) throw new Error(failed.url + ': ' + failed.status)
-      const joined = new Blob(await Promise.all(responses.map((r) => r.arrayBuffer())))
-      // A server that labels the file Content-Encoding: gzip has the browser unzip it already;
-      // decompress only what still starts with the gzip signature.
-      const head = new Uint8Array(await joined.slice(0, 2).arrayBuffer())
-      const body = head[0] === 0x1f && head[1] === 0x8b ? joined.stream().pipeThrough(new DecompressionStream('gzip')) : joined.stream()
-      return new Response(body, { headers: { 'Content-Type': 'application/wasm' } })
-    })()
-  }
-})()
-`
-
 async function files(dir) {
   const found = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -66,6 +44,7 @@ async function files(dir) {
 }
 
 const index = []
+const wasmParts = {}
 let failed = false
 for (const app of (await readdir(src)).sort()) {
   const appDir = path.join(src, app)
@@ -80,39 +59,39 @@ for (const app of (await readdir(src)).sort()) {
   const map = {}
   for (const file of await files(destination)) {
     if (!file.endsWith('.wasm') || (await stat(file)).size <= MIN_COMPRESS) continue
-    const gzipped = gzipSync(await readFile(file), { level: 9 })
+    const wasm = await readFile(file)
+    const gzipped = gzipSync(wasm, { level: 9 })
     const name = path.basename(file)
+    // Parts are named <wasm>.gz.part-a, -b…, a name no release uses (LightCraft ships its own .gz and
+    // .br beside its files, which stay as they are); a name the release has is refused.
     const parts = []
-    if (gzipped.byteLength <= MAX_BYTES) {
-      await writeFile(`${file}.gz`, gzipped)
-      parts.push(`${name}.gz`)
-    } else {
-      for (let offset = 0, n = 0; offset < gzipped.byteLength; offset += PART_BYTES, n++) {
-        const part = `${name}.gz.part-${String.fromCharCode(97 + n)}`
-        await writeFile(path.join(path.dirname(file), part), gzipped.subarray(offset, offset + PART_BYTES))
-        parts.push(part)
+    for (let offset = 0, n = 0; offset < gzipped.byteLength; offset += PART_BYTES, n++) {
+      const part = `${name}.gz.part-${String.fromCharCode(97 + n)}`
+      const target = path.join(path.dirname(file), part)
+      if (await stat(target).then(() => true, () => false)) {
+        console.error(`FAIL ${app}: ${part} is already in the release`)
+        failed = true
+        continue
       }
+      await writeFile(target, gzipped.subarray(offset, offset + PART_BYTES))
+      parts.push(part)
     }
     await rm(file)
     map[name] = parts
-  }
-
-  const page = path.join(destination, 'index.html')
-  let html = await readFile(page, 'utf8')
-  for (const name of Object.keys(map)) {
-    html = html.replace(new RegExp(`<link[^>]*href="[^"]*${name.replace(/[.]/g, '\\.')}"[^>]*>\\s*`, 'g'), '')
-  }
-  if (Object.keys(map).length) {
-    await writeFile(path.join(destination, 'craft-wasm-gz.js'), shim.replace('MAP', JSON.stringify(map)))
-    html = html.replace(/<head>/i, '<head><script src="./craft-wasm-gz.js"></script>')
+    const dir = path.relative(out, path.dirname(file)).split(path.sep).join('/')
+    wasmParts[`/apps/frame/${dir}/${name}`] = { parts, sha256: createHash('sha256').update(wasm).digest('hex') }
   }
   await cp(path.join(site, 'scripts', 'craft-touch-keyboard.js'), path.join(destination, 'craft-touch-keyboard.js'))
-  html = html.replace(/<head>/i, '<head><script src="./craft-touch-keyboard.js"></script>')
-  if (!html.includes('<script src="./craft-touch-keyboard.js"></script>')) {
-    console.error(`FAIL ${app}: could not add the touch keyboard script to index.html`)
-    failed = true
+  // Every file of the release is staged as it is, but for the wasm kept as parts (checked by hash).
+  for (const original of await files(path.join(appDir, release))) {
+    const relative = path.relative(path.join(appDir, release), original)
+    const staged = path.join(destination, relative)
+    const kept = map[path.basename(original)] && wasmParts[`/apps/frame/${app}/${relative.split(path.sep).join('/')}`]
+    const same = kept
+      ? createHash('sha256').update(await readFile(original)).digest('hex') === kept.sha256
+      : await readFile(staged).then((bytes) => bytes.equals(readFileSync(original))).catch(() => false)
+    if (!same) { console.error(`FAIL ${app}: ${relative} is not staged as the release has it`); failed = true }
   }
-  await writeFile(page, html)
 
   for (const file of await files(destination)) {
     const size = (await stat(file)).size
@@ -126,6 +105,7 @@ for (const app of (await readdir(src)).sort()) {
   console.log(`PASS ${app} ${version}: ${Object.entries(map).map(([name, parts]) => `${name} → ${parts.length} gzip file(s)`).join(', ') || 'no wasm over 1 MiB'}`)
 }
 await writeFile(path.join(out, 'index.json'), JSON.stringify(index, null, 2) + '\n')
+await writeFile(path.join(out, 'wasm-parts.json'), JSON.stringify(wasmParts, null, 2) + '\n')
 if (process.env.RELEASES_HEADERS) {
   const rules = []
   for (const { app } of index) rules.push(frameRule(app, await readFile(path.join(out, app, 'index.html'), 'utf8')))
